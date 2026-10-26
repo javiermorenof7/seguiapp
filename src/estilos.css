@@ -7,6 +7,8 @@
   --acento: #0B6E4F;
   --t1: #0B6E4F; --t2: #C2410C; --t3: #BE185D; --t4: #1D4ED8; --t5: #6D28D9; --t6: #0F766E; --t7: #A16207;
   --radio: 22px;
+  /* estado frente a la meta, apto para daltonismo y siempre con texto */
+  --en-meta: #1D4ED8; --cerca: #B45309; --fuera: #BE123C;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -16,6 +18,7 @@
     --tenue: #9DB2A4;
     --linea: #24352B;
     --t1: #0E7F5C;
+    --en-meta: #60A5FA; --cerca: #F59E0B; --fuera: #FB7185;
   }
 }
 
@@ -88,3 +91,26 @@ button:disabled { opacity: .6; cursor: default; }
 .politica { max-width: 720px; }
 .politica h2 { margin-top: 28px; }
 .politica p, .politica li { line-height: 1.6; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { background: transparent; color: var(--tinta); padding: 8px 14px; border-radius: 999px; border: 1px solid var(--linea); }
+.chip[aria-checked="true"] { background: var(--acento); border-color: var(--acento); color: #FFFFFF; font-weight: 700; }
+.formulario legend { font-weight: 600; padding: 0 6px; }
+.resumen-finanzas { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; margin: 8px 0 24px; }
+.resumen-finanzas .cifra { display: block; font-size: clamp(44px, 11vw, 72px); font-weight: 800; letter-spacing: -2px; line-height: 1; color: var(--acento); margin: 6px 0; }
+.resumen-finanzas .cifras { display: grid; gap: 10px; align-content: end; }
+.resumen-finanzas .cifras p { display: grid; margin: 0; }
+.resumen-finanzas .cifras strong { font-size: 24px; }
+.lista li.dos { grid-template-columns: 1fr auto; }
+.lista li.tres { grid-template-columns: 1fr auto auto; }
+.resumen-finanzas .cifra.negativo { color: var(--fuera); }
+.resumen-finanzas .estado.fuera { background: var(--fuera); color: var(--fondo); margin-bottom: 6px; }
+.lista .estado.cerca { background: var(--cerca); color: var(--fondo); }
+.lista .estado.fuera { background: var(--fuera); color: var(--fondo); }
+.fila-presupuesto { display: grid; grid-template-columns: 1fr minmax(0, 170px) auto; gap: 8px 12px; align-items: center; width: 100%; }
+.fila-presupuesto input { font: inherit; color: var(--tinta); background: var(--fondo); border: 1px solid var(--linea); border-radius: 12px; padding: 10px 12px; min-width: 0; }
+.fila-presupuesto label .tenue { display: block; font-size: 14px; margin: 2px 0 0; }
+.fila-presupuesto button:disabled { opacity: .4; }
+.fila-presupuesto [role="status"] { grid-column: 1 / -1; margin: 0; }
+.lista li:has(> .fila-presupuesto) { display: block; }
+@media (max-width: 420px) { .fila-presupuesto { grid-template-columns: 1fr auto; } .fila-presupuesto label { grid-column: 1 / -1; } }

@@ -11,6 +11,7 @@ import {
 } from './indicadores'
 import Grafico from './Grafico'
 import Privacidad from './Privacidad'
+import Finanzas from './finanzas/Finanzas'
 
 const TEXTO_ESTADO: Record<Estado, string> = { fuera: '✕ Fuera de la meta', cerca: '◐ Cerca de la meta', en_meta: '✓ Vas bien' }
 const TEXTO_PERIODO: Record<Periodo, string> = { dia: 'día', semana: 'semana', mes: 'mes', ano: 'año' }
@@ -115,7 +116,10 @@ function Panel({ sesion, alPrivacidad }: { sesion: Session; alPrivacidad: () => 
           alCrear={async id => { await cargar(); setVista({ tipo: 'detalle', id }) }}
         />
       )}
-      {vista.tipo === 'detalle' && actual && (
+      {vista.tipo === 'detalle' && actual?.codigo_plantilla === 'finanzas' && (
+        <Finanzas seguimientos={seguimientos!} registros={registros} alVolver={() => setVista({ tipo: 'inicio' })} alCambiar={cargar} />
+      )}
+      {vista.tipo === 'detalle' && actual && actual.codigo_plantilla !== 'finanzas' && (
         <Detalle
           seguimiento={actual}
           indice={seguimientos!.indexOf(actual)}

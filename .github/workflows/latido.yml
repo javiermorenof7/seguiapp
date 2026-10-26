@@ -1,0 +1,20 @@
+name: Latido
+
+# Supabase pausa los proyectos gratis tras 7 días sin actividad: una consulta semanal lo evita.
+on:
+  schedule:
+    - cron: '0 13 * * 1' # lunes 8:00 Bogotá
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  latido:
+    runs-on: ubuntu-latest
+    steps:
+      - run: >-
+          curl --fail --silent --show-error -X POST
+          https://soanuxwzrixrtslsqpyf.supabase.co/rest/v1/rpc/latido
+          -H "apikey: sb_publishable_irghiEwZOPnUIof8HXIoPw_1DX0G218"
+          -H "Content-Type: application/json"
+          -d '{}'

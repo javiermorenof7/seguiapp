@@ -9,6 +9,9 @@ import {
   saldoDespues, type EstadoPresupuesto, type Movimiento, type TipoMovimiento,
 } from './calculos'
 import Barras from './Barras'
+import Ultimos from './Ultimos'
+import Asistente from './Asistente'
+import { cincuentaTreintaVeinte, gastoInusual } from './aprende'
 
 type Datos = Awaited<ReturnType<typeof obtenerFinanzas>>
 type Grupo = 'auto' | 'basico' | 'personal'
@@ -54,7 +57,7 @@ export default function Finanzas({ seguimientos, registros, alVolver, alCambiar 
     const tipoDe = new Map((['gasto', 'ingreso', 'ahorro'] as const).map(t => [id(t), t]))
     return registros.flatMap(r => {
       const tipo = tipoDe.get(r.id_seguimiento)
-      return tipo ? [{ fecha: r.fecha, valor: r.valor, tipo, id_etiqueta: r.id_etiqueta }] : []
+      return tipo ? [{ fecha: r.fecha, valor: r.valor, tipo, id_etiqueta: r.id_etiqueta, grupo: r.grupo, nota: r.nota }] : []
     })
   }, [registros, seguimientos])
 
@@ -92,9 +95,17 @@ export default function Finanzas({ seguimientos, registros, alVolver, alCambiar 
             ids={{ gasto: idGastos, ingreso: id('ingreso'), ahorro: id('ahorro') }}
             gastadoDe={idEtiqueta => cuentas.filas.find(f => f.id_etiqueta === idEtiqueta)?.gastado ?? 0}
             presupuestos={cuentas.presupuestos}
+            inusual={nuevo => gastoInusual(movimientos, nuevo, mes)}
             alGuardar={async aprendio => { await Promise.all([alCambiar(), aprendio ? cargar() : null]) }}
           />
+          <Ultimos
+            registros={registros.filter(r => [idGastos, id('ingreso'), id('ahorro')].includes(r.id_seguimiento)).slice(0, 6)}
+            idGastos={idGastos}
+            categorias={datos.categorias}
+            alCambiar={async () => { await Promise.all([alCambiar(), cargar()]) }}
+          />
           <Resumen cuentas={cuentas} acumulado={acumuladoAno(movimientos, mes)} />
+          <Reparto movimientos={movimientos} mes={mes} categorias={datos.categorias} />
           <PorCategoria filas={cuentas.filas} />
           <MesAMes meses={mesAMes(movimientos, mes)} />
           {cuentas.pendientes.length > 0 && (
@@ -114,6 +125,7 @@ export default function Finanzas({ seguimientos, registros, alVolver, alCambiar 
             alGuardar={(idEtiqueta, valor) => guardarPresupuesto(idGastos, idEtiqueta,
               datos.presupuestos.find(p => p.id_etiqueta === idEtiqueta), valor).then(cargar)}
           />
+          <Asistente idGastos={idGastos} categorias={datos.categorias} alCambiar={async () => { await Promise.all([alCambiar(), cargar()]) }} />
         </>
       )}
       {!datos && !error && <p className="tenue">Cargando…</p>}
@@ -121,11 +133,12 @@ export default function Finanzas({ seguimientos, registros, alVolver, alCambiar 
   )
 }
 
-function NuevoMovimiento({ datos, ids, gastadoDe, presupuestos, alGuardar }: {
+function NuevoMovimiento({ datos, ids, gastadoDe, presupuestos, inusual, alGuardar }: {
   datos: Datos
   ids: Record<TipoMovimiento, string | undefined>
   gastadoDe: (idEtiqueta: string) => number
   presupuestos: Map<string, number>
+  inusual: (nuevo: { valor: number; descripcion: string; id_etiqueta: string | null }) => ReturnType<typeof gastoInusual>
   alGuardar: (aprendio: boolean) => Promise<void>
 }) {
   const [tipo, setTipo] = useState<TipoMovimiento>('gasto')
@@ -167,6 +180,8 @@ function NuevoMovimiento({ datos, ids, gastadoDe, presupuestos, alGuardar }: {
         const presupuesto = presupuestos.get(categoria!.id_etiqueta) ?? null
         const total = gastadoDe(categoria!.id_etiqueta) + leido.valor
         const e = estadoPresupuesto(total, presupuesto)
+        const raro = inusual({ valor: leido.valor, descripcion: leido.descripcion, id_etiqueta: categoria!.id_etiqueta })
+        if (raro) mensaje += ` Ojo: es más del doble de lo normal (${pesos(raro.promedio)} en promedio ${raro.base === 'descripcion' ? `en "${leido.descripcion}"` : `en ${categoria!.nombre}`}).`
         if (e) mensaje += ` ${TEXTO_PRESUPUESTO[e]} del presupuesto de ${categoria!.nombre}: ${pesos(total)} de ${pesos(presupuesto!)}.`
       }
       setAviso(mensaje)
@@ -229,6 +244,30 @@ function NuevoMovimiento({ datos, ids, gastadoDe, presupuestos, alGuardar }: {
     </form>
   )
 }
+
+function Reparto({ movimientos, mes, categorias }: { movimientos: Movimiento[]; mes: string; categorias: Categoria[] }) {
+  const r = useMemo(() => cincuentaTreintaVeinte(movimientos, mes, new Map(categorias.map(c => [c.id_etiqueta, c.grupo]))),
+    [movimientos, mes, categorias])
+  const series = useMemo(() => r && [
+    { nombre: 'Este mes', datos: [r.basicos, r.personales, r.ahorro], color: [
+      cssVar(r.basicos > 50 ? '--fuera' : '--en-meta'), cssVar(r.personales > 30 ? '--fuera' : '--en-meta'),
+      cssVar(r.ahorro >= 20 ? '--en-meta' : '--cerca')] },
+    { nombre: 'Lo sano', datos: [50, 30, 20], color: cssVar('--linea'), borde: cssVar('--tenue') },
+  ], [r])
+  if (!r || !series) return null
+  return (
+    <section>
+      <h2>¿Cómo reparto mis ingresos? (50-30-20)</h2>
+      <Barras horizontal etiquetas={ETIQUETAS_REPARTO} series={series} formato={v => `${Math.round(v)} %`}
+        colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
+        descripcion={`Básicos ${r.basicos} %, personales ${r.personales} %, ahorro ${r.ahorro} % de los ingresos del mes, frente a 50, 30 y 20`} />
+      {r.avisos.map(a => <p key={a} className="estado fuera aviso-reparto">✕ {a}</p>)}
+      {!r.avisos.length && <p className="tenue">✓ Vas dentro del 50-30-20 en gastos.</p>}
+    </section>
+  )
+}
+
+const ETIQUETAS_REPARTO = ['Básicos (≤ 50 %)', 'Personales (≤ 30 %)', 'Ahorro (≥ 20 %)']
 
 function Resumen({ cuentas, acumulado }: { cuentas: Cuentas; acumulado: number }) {
   const { delMes, despues } = cuentas

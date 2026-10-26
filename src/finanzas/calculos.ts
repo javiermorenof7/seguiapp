@@ -1,7 +1,10 @@
 // Cuentas de la pantalla Finanzas. Todo en pesos enteros; "mes" es 'AAAA-MM'.
 
 export type TipoMovimiento = 'gasto' | 'ingreso' | 'ahorro'
-export interface Movimiento { fecha: string; valor: number; tipo: TipoMovimiento; id_etiqueta: string | null }
+export interface Movimiento {
+  fecha: string; valor: number; tipo: TipoMovimiento; id_etiqueta: string | null
+  grupo?: 'basico' | 'personal' | null; nota?: string | null
+}
 export interface Recibo { id_recibo: string; nombre_servicio: string; nombre_ubicacion: string | null; tipo_recibo: 'hogar' | 'personal' }
 export interface PagoRecibo { id_recibo: string; fecha_periodo: string; valor: number; estado: string }
 export interface Pendiente { id_recibo: string; nombre: string; valor: number; tipo_recibo: 'hogar' | 'personal' }

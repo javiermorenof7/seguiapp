@@ -67,6 +67,7 @@ export async function obtenerRegistros(desde: string, idSeguimiento?: string): P
     .eq('estado', 'activo')
     .gte('fecha_registro', desde)
     .order('fecha_registro', { ascending: false })
+    .order('fecha_creacion', { ascending: false })
   if (idSeguimiento) consulta = consulta.eq('id_seguimiento', idSeguimiento)
   return revisar(await consulta).map(({ fecha_registro, ...r }) => ({ ...r, fecha: fecha_registro }))
 }
@@ -149,6 +150,23 @@ export async function guardarPresupuesto(idGastos: string, idEtiqueta: string, a
       id_seguimiento: idGastos, id_etiqueta: idEtiqueta, valor, direccion: 'menos_es_mejor', periodo: 'mes',
     }))
   }
+}
+
+// Corregir monto, categoría o descripción; la base valida igual que al registrar.
+export async function corregirRegistro(id: string, cambios: { valor: number; nota: string | null; id_etiqueta?: string | null }) {
+  revisar(await supabase.from('registro').update(cambios).eq('id_registro', id))
+}
+
+// shortcut: trae hasta 1.000 gastos sin categoría de todos los años; paginar si alguien tiene más.
+export async function obtenerSinCategoria(idGastos: string) {
+  return revisar(await supabase.from('registro').select('id_registro, nota, valor')
+    .eq('id_seguimiento', idGastos).eq('estado', 'activo').is('id_etiqueta', null)) as { id_registro: string; nota: string | null; valor: number }[]
+}
+
+// Solo cambia la categoría, nunca montos ni fechas. En tandas de 100 para no alargar la URL.
+export async function categorizar(ids: string[], idEtiqueta: string) {
+  for (let i = 0; i < ids.length; i += 100)
+    revisar(await supabase.from('registro').update({ id_etiqueta: idEtiqueta }).in('id_registro', ids.slice(i, i + 100)).is('id_etiqueta', null))
 }
 
 export async function cerrarSesion() {

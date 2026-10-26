@@ -1,0 +1,38 @@
+/* Estilo Trópico: cada seguimiento con su color pleno; el estado va siempre con texto e ícono. */
+:root {
+  --fondo: #F3F5F1;
+  --tinta: #13241B;
+  --tenue: #516357;
+  --linea: #DDE3DA;
+  --acento: #0B6E4F;
+  --t1: #0B6E4F; --t2: #C2410C; --t3: #BE185D; --t4: #1D4ED8; --t5: #6D28D9; --t6: #0F766E; --t7: #A16207;
+  --radio: 22px;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: #0E1712;
+    --tinta: #EAF2EC;
+    --tenue: #9DB2A4;
+    --linea: #24352B;
+    --t1: #0E7F5C;
+  }
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--fondo);
+  color: var(--tinta);
+  font-family: 'Bricolage Grotesque Variable', system-ui, sans-serif;
+  line-height: 1.45;
+}
+:focus-visible { outline: 3px solid var(--acento); outline-offset: 2px; }
+
+.contenedor { max-width: 1100px; margin: 0 auto; padding: 16px; }
+.encabezado h1 { margin: 24px 0 0; font-size: clamp(38px, 8vw, 64px); font-weight: 800; letter-spacing: -1.5px; line-height: 1; }
+.tenue { color: var(--tenue); margin: 6px 0 0; }
+
+.tarjeta { margin-top: 24px; padding: 20px; border-radius: var(--radio); background: var(--t1); color: #FFFFFF; }
+.tarjeta h2 { margin: 0; font-size: 22px; font-weight: 700; }
+.tarjeta p { margin: 8px 0 0; color: rgba(255, 255, 255, .9); }

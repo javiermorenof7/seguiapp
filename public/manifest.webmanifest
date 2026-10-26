@@ -1,0 +1,12 @@
+{
+  "name": "seguiapp",
+  "short_name": "seguiapp",
+  "description": "Seguimiento personal: lo que no se mide no se controla.",
+  "lang": "es",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F3F5F1",
+  "theme_color": "#0B6E4F",
+  "icons": [{ "src": "icono.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

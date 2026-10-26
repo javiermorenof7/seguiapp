@@ -3,7 +3,7 @@ import { CSP } from './csp'
 
 describe('CSP', () => {
   it('no permite código ni estilos en línea', () => {
-    expect(CSP).not.toMatch(/unsafe-inline|unsafe-eval|\*(?!\.supabase\.co)/)
+    expect(CSP).not.toMatch(/unsafe-inline|unsafe-eval|\*/)
   })
 
   it('cierra lo que no se usa', () => {

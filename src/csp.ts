@@ -5,7 +5,7 @@ export const CSP = [
   "style-src 'self'",
   "font-src 'self'",
   "img-src 'self' data: https://lh3.googleusercontent.com",
-  "connect-src 'self' https://*.supabase.co",
+  "connect-src 'self' https://soanuxwzrixrtslsqpyf.supabase.co",
   "manifest-src 'self'",
   "worker-src 'self'",
   "object-src 'none'",

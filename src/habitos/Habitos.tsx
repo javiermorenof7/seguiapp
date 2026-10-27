@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
-  aprenderNombre, crearHabito, guardarMeta, obtenerAlias, quitarSeguimiento, registrar, renombrarHabito, type RegistroGuardado, type Seguimiento,
+  aprenderNombre, crearHabito, eliminarRegistro, guardarMeta, obtenerAlias, quitarSeguimiento, registrar, renombrarHabito, type RegistroGuardado, type Seguimiento,
 } from '../datos'
 import { formatoValor } from '../indicadores'
 import { normalizar } from '../finanzas/parseo'
 import Grafico from '../Grafico'
 import Barras from '../finanzas/Barras'
+import Historial, { FilaSimple } from '../historial/Historial'
 import { parecido, restarDias } from '../salud/calculos'
 import { dias, diasHechos, leerCantidad, mismoNombre, mejorRacha, racha, totalDelDia, ultimosDias, type Leido, type Marca } from './calculos'
 
@@ -41,6 +42,7 @@ export default function Habitos({ seguimientos, registros, enfocar, alVolver, al
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [confirmar, setConfirmar] = useState<string | null>(null)
+  const [pestana, setPestana] = useState<'hoy' | 'historial'>('hoy')
   const [renombrando, setRenombrando] = useState<{ id: string; nombre: string } | null>(null)
 
   useEffect(() => { obtenerAlias('habito').then(setAlias).catch(e => setError((e as Error).message)) }, [])
@@ -132,6 +134,15 @@ export default function Habitos({ seguimientos, registros, enfocar, alVolver, al
     <>
       <button className="volver" onClick={alVolver}>← Mi seguimiento</button>
       <header className="encabezado"><div><h1>Hábitos</h1></div></header>
+      <div className="chips pestanas" role="radiogroup" aria-label="Sección de Hábitos">
+        {(['hoy', 'historial'] as const).map(p => (
+          <button key={p} type="button" role="radio" aria-checked={pestana === p} className="chip" onClick={() => setPestana(p)}>
+            {p === 'hoy' ? 'Hoy' : 'Historial'}
+          </button>
+        ))}
+      </div>
+      {pestana === 'hoy' && (
+        <>
       <Formulario habitos={habitos} hoy={hoy} enviando={enviando || !alias} enfocar={enfocar} alEnviar={enviar} />
       {pregunta && (
         <div className="chips" role="group" aria-label="¿Quisiste decir…?">
@@ -184,6 +195,23 @@ export default function Habitos({ seguimientos, registros, enfocar, alVolver, al
           <Constancia habitos={habitos} marcas={marcas} hoy={hoy} />
           <Detalle habitos={habitos} marcas={marcas} hoy={hoy} alCambiar={alCambiar} />
         </>
+      )}
+        </>
+      )}
+      {pestana === 'historial' && (
+        <Historial
+          ids={habitos.map(h => h.id_seguimiento)}
+          registros={registros}
+          filtros={[{ nombre: 'Hábito', opciones: habitos.map(h => [h.id_seguimiento, h.nombre] as [string, string]), de: r => r.id_seguimiento }]}
+          suma={false}
+          total={lista => `${new Set(lista.map(r => r.fecha)).size} días con hábitos`}
+          fila={r => {
+            const h = habitos.find(x => x.id_seguimiento === r.id_seguimiento)!
+            return <FilaSimple key={r.id_registro} fecha={r.fecha} titulo={h.nombre}
+              detalle={h.tipo_medida === 'si_no' ? 'hecho' : formatoValor('numero', r.valor, h.unidad)}
+              alBorrar={() => eliminarRegistro(r.id_registro).then(alCambiar)} />
+          }}
+        />
       )}
     </>
   )

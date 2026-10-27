@@ -158,3 +158,9 @@ button:disabled { opacity: .6; cursor: default; }
   .contenedor:has(.crear) { padding-bottom: 96px; }
 }
 .formulario .campos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.periodo { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0 8px; max-width: 520px; }
+.periodo h2 { text-align: center; }
+.periodo h2::first-letter { text-transform: uppercase; }
+.filtros { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 8px 0 12px; max-width: 720px; }
+.filtros label { display: grid; gap: 6px; font-weight: 600; }
+.filtros select, .filtros input { font: inherit; color: var(--tinta); background: var(--fondo); border: 1px solid var(--linea); border-radius: 12px; padding: 10px 12px; min-width: 0; }

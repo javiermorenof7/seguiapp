@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
-  aprenderNombre, crearEjercicio, crearSeguimiento, guardarMeta, obtenerSalud, registrar, registrarSerie,
+  aprenderNombre, crearEjercicio, crearSeguimiento, eliminarRegistro, guardarMeta, obtenerSalud, registrar, registrarSerie,
   type RegistroGuardado, type Seguimiento,
 } from '../datos'
 import { formatoValor, type Direccion } from '../indicadores'
 import Grafico from '../Grafico'
+import Historial, { FilaSimple } from '../historial/Historial'
 import Barras from '../finanzas/Barras'
 import { normalizar } from '../finanzas/parseo'
 import {
@@ -34,7 +35,7 @@ export default function Salud({ seguimientos, registros, abrir, alVolver, alCamb
   alVolver: () => void
   alCambiar: () => Promise<void>
 }) {
-  const [pestana, setPestana] = useState<'gym' | 'cuerpo'>(abrir === 'medida' ? 'cuerpo' : 'gym')
+  const [pestana, setPestana] = useState<'gym' | 'cuerpo' | 'historial'>(abrir === 'medida' ? 'cuerpo' : 'gym')
   const [error, setError] = useState('')
   const creando = useRef(false)
   const gym = seguimientos.find(s => s.codigo_plantilla === 'gym')
@@ -54,9 +55,9 @@ export default function Salud({ seguimientos, registros, abrir, alVolver, alCamb
       <header className="encabezado"><div><h1>Salud</h1></div></header>
       {error && <p role="alert" className="error">{error}</p>}
       <div className="chips pestanas" role="radiogroup" aria-label="Sección de Salud">
-        {(['gym', 'cuerpo'] as const).map(p => (
+        {(['gym', 'cuerpo', 'historial'] as const).map(p => (
           <button key={p} type="button" role="radio" aria-checked={pestana === p} className="chip" onClick={() => setPestana(p)}>
-            {p === 'gym' ? 'Gym' : 'Cuerpo'}
+            {p === 'gym' ? 'Gym' : p === 'cuerpo' ? 'Cuerpo' : 'Historial'}
           </button>
         ))}
       </div>
@@ -64,6 +65,7 @@ export default function Salud({ seguimientos, registros, abrir, alVolver, alCamb
       {gym && pestana === 'gym' && (
         <Gym idGym={gym.id_seguimiento} registros={registros.filter(r => r.id_seguimiento === gym.id_seguimiento)} enfocar={abrir === 'ejercicio'} alCambiar={alCambiar} />
       )}
+      {gym && pestana === 'historial' && <HistorialSalud gym={gym} medidas={medidas} registros={registros} alCambiar={alCambiar} />}
       {pestana === 'cuerpo' && (
         <>
           {medidas.map(m => (
@@ -380,5 +382,43 @@ function NuevaMedida({ inicial, alCrear }: { inicial?: boolean; alCrear: (nombre
         </form>
       )}
     </section>
+  )
+}
+
+// Gym y medidas juntos; las series del gym se leen de su tabla para mostrar el detalle.
+function HistorialSalud({ gym, medidas, registros, alCambiar }: {
+  gym: Seguimiento; medidas: Seguimiento[]; registros: RegistroGuardado[]; alCambiar: () => Promise<void>
+}) {
+  const [datos, setDatos] = useState<Datos | null>(null)
+  const [error, setError] = useState('')
+  useEffect(() => { obtenerSalud(gym.id_seguimiento, restarDias(hoyIso(), 366)).then(setDatos, e => setError((e as Error).message)) }, [gym.id_seguimiento, registros])
+  if (!datos) return error ? <p role="alert" className="error">{error}</p> : <p className="tenue">Cargando…</p>
+  const ejercicios = new Map(datos.ejercicios.map(e => [e.id_etiqueta, e.nombre]))
+  const series = new Map(datos.series.map(s => [s.id_registro, s]))
+  const seguimientos = [gym, ...medidas]
+  const nombreDe = (r: RegistroGuardado) => r.id_seguimiento === gym.id_seguimiento
+    ? ejercicios.get(r.id_etiqueta ?? '') ?? 'Ejercicio'
+    : seguimientos.find(s => s.id_seguimiento === r.id_seguimiento)?.nombre ?? ''
+  return (
+    <Historial
+      ids={seguimientos.map(s => s.id_seguimiento)}
+      registros={registros}
+      filtros={[
+        { nombre: 'Qué', opciones: seguimientos.map(s => [s.id_seguimiento, s.nombre] as [string, string]), de: r => r.id_seguimiento },
+        { nombre: 'Ejercicio', opciones: [...ejercicios].sort((a, b) => a[1].localeCompare(b[1])), de: r => r.id_etiqueta ?? '' },
+      ]}
+      suma={false}
+      total={lista => {
+        const entreno = new Set(lista.filter(r => r.id_seguimiento === gym.id_seguimiento).map(r => r.fecha)).size
+        return `${entreno} ${entreno === 1 ? 'día' : 'días'} de gym`
+      }}
+      fila={r => {
+        const s = series.get(r.id_registro)
+        const medida = seguimientos.find(x => x.id_seguimiento === r.id_seguimiento)
+        const detalle = s ? serie({ ejercicio: '', series: s.cantidad_series, repeticiones: s.cantidad_repeticiones, peso: s.peso_kilogramos === null ? null : Number(s.peso_kilogramos) })
+          : formatoValor('numero', r.valor, medida?.unidad)
+        return <FilaSimple key={r.id_registro} fecha={r.fecha} titulo={nombreDe(r)} detalle={detalle} alBorrar={() => eliminarRegistro(r.id_registro).then(alCambiar)} />
+      }}
+    />
   )
 }

@@ -13,27 +13,35 @@ export default function Ultimos({ registros, idGastos, categorias, alCambiar }: 
   categorias: Categoria[]
   alCambiar: () => Promise<void>
 }) {
-  const [abierto, setAbierto] = useState<string | null>(null)
   if (!registros.length) return null
   return (
     <section>
       <h2>Últimos movimientos</h2>
       <ul className="lista">
-        {registros.map(r => abierto === r.id_registro
-          ? <Corregir key={r.id_registro} registro={r} esGasto={r.id_seguimiento === idGastos} categorias={categorias}
-              alTerminar={async cambio => { if (cambio) await alCambiar(); setAbierto(null) }} />
-          : (
-            <li key={r.id_registro} className="ultimo">
-              <span>{r.fecha.split('-').reverse().join('/')}</span>
-              <strong>{pesos(r.valor)}</strong>
-              <span className="tenue">
-                {r.nota}{r.id_seguimiento === idGastos && ` · ${categorias.find(c => c.id_etiqueta === r.id_etiqueta)?.nombre ?? 'Sin categoría'}`}
-              </span>
-              <button className="secundario" onClick={() => setAbierto(r.id_registro)}>Corregir</button>
-            </li>
-          ))}
+        {registros.map(r => <FilaMovimiento key={r.id_registro} registro={r} idGastos={idGastos} categorias={categorias} alCambiar={alCambiar} />)}
       </ul>
     </section>
+  )
+}
+
+// Un movimiento con "Corregir"; también lo usa el historial (tipo = Ingreso o Ahorro cuando van mezclados).
+export function FilaMovimiento({ registro: r, idGastos, categorias, tipo, alCambiar }: {
+  registro: RegistroGuardado; idGastos: string; categorias: Categoria[]; tipo?: string; alCambiar: () => Promise<void>
+}) {
+  const [abierto, setAbierto] = useState(false)
+  if (abierto) return (
+    <Corregir registro={r} esGasto={r.id_seguimiento === idGastos} categorias={categorias}
+      alTerminar={async cambio => { if (cambio) await alCambiar(); setAbierto(false) }} />
+  )
+  return (
+    <li className="ultimo">
+      <span>{r.fecha.split('-').reverse().join('/')}</span>
+      <strong>{pesos(r.valor)}</strong>
+      <span className="tenue">
+        {[tipo, r.nota, r.id_seguimiento === idGastos && (categorias.find(c => c.id_etiqueta === r.id_etiqueta)?.nombre ?? 'Sin categoría')].filter(Boolean).join(' · ')}
+      </span>
+      <button className="secundario" onClick={() => setAbierto(true)}>Corregir</button>
+    </li>
   )
 }
 

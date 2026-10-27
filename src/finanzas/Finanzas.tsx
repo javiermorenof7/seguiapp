@@ -9,7 +9,8 @@ import {
   saldoDespues, type EstadoPresupuesto, type Movimiento, type TipoMovimiento,
 } from './calculos'
 import Barras from './Barras'
-import Ultimos from './Ultimos'
+import Ultimos, { FilaMovimiento } from './Ultimos'
+import Historial from '../historial/Historial'
 import Asistente from './Asistente'
 import Recibos from './Recibos'
 import { cincuentaTreintaVeinte, gastoInusual } from './aprende'
@@ -47,7 +48,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
   const idGastos = id('gasto')
   const [datos, setDatos] = useState<Datos | null>(null)
   const [error, setError] = useState('')
-  const [pestana, setPestana] = useState<'resumen' | 'recibos'>(abrir === 'factura' ? 'recibos' : 'resumen')
+  const [pestana, setPestana] = useState<'resumen' | 'recibos' | 'historial'>(abrir === 'factura' ? 'recibos' : 'resumen')
 
   const cargar = useCallback(async () => {
     if (!idGastos) return
@@ -95,12 +96,33 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
       </header>
       {error && <p role="alert" className="error">{error}</p>}
       <div className="chips pestanas" role="radiogroup" aria-label="Sección de Finanzas">
-        {(['resumen', 'recibos'] as const).map(p => (
+        {(['resumen', 'recibos', 'historial'] as const).map(p => (
           <button key={p} type="button" role="radio" aria-checked={pestana === p} className="chip" onClick={() => setPestana(p)}>
-            {p === 'resumen' ? 'Resumen' : 'Facturas'}
+            {p === 'resumen' ? 'Resumen' : p === 'recibos' ? 'Facturas' : 'Historial'}
           </button>
         ))}
       </div>
+      {datos && pestana === 'historial' && (
+        <Historial
+          ids={(['gasto', 'ingreso', 'ahorro'] as const).flatMap(t => id(t) ?? [])}
+          registros={registros}
+          filtros={[
+            { nombre: 'Tipo', inicial: idGastos, opciones: (['gasto', 'ingreso', 'ahorro'] as const).flatMap(t => id(t) ? [[id(t)!, NOMBRES[t]] as [string, string]] : []), de: r => r.id_seguimiento },
+            { nombre: 'Categoría', opciones: datos.categorias.map(c => [c.id_etiqueta, c.nombre] as [string, string]), de: r => r.id_etiqueta ?? '' },
+          ]}
+          buscar={r => r.nota ?? ''}
+          suma
+          formato={pesos}
+          total={lista => (['gasto', 'ingreso', 'ahorro'] as const)
+            .map(t => [NOMBRES[t], lista.filter(r => r.id_seguimiento === id(t)).reduce((s, r) => s + r.valor, 0)] as const)
+            .filter(([, v]) => v > 0).map(([n, v]) => `${n} ${pesos(v)}`).join(' · ') || 'Sin movimientos'}
+          fila={r => (
+            <FilaMovimiento key={r.id_registro} registro={r} idGastos={idGastos} categorias={datos.categorias}
+              tipo={r.id_seguimiento === idGastos ? undefined : TEXTO[r.id_seguimiento === id('ingreso') ? 'ingreso' : 'ahorro']}
+              alCambiar={async () => { await Promise.all([alCambiar(), cargar()]) }} />
+          )}
+        />
+      )}
       {datos && pestana === 'recibos' && (
         <Recibos idGastos={idGastos} categorias={datos.categorias} aprendido={datos.aprendido} abrirNueva={abrir === 'factura'}
           alCambiar={async () => { await Promise.all([alCambiar(), cargar()]) }} />

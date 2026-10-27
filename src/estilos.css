@@ -31,6 +31,7 @@ body {
   line-height: 1.45;
 }
 :focus-visible { outline: 3px solid var(--acento); outline-offset: 2px; }
+.franja-desarrollo { position: sticky; top: 0; z-index: 10; background: #B45309; color: #FFFFFF; text-align: center; font-size: 13px; font-weight: 700; padding: 4px; }
 
 .contenedor { max-width: 1100px; margin: 0 auto; padding: 16px 16px 48px; }
 h1 { font-size: clamp(34px, 8vw, 64px); font-weight: 800; letter-spacing: -1.5px; line-height: 1; margin: 16px 0 0; }

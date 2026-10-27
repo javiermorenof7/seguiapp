@@ -26,8 +26,9 @@ const ESTADO: Record<EstadoRecibo, { texto: string; clase: string }> = {
   pagado: { texto: '✓ Pagado', clase: 'en-meta' },
 }
 
-export default function Recibos({ idGastos, categorias, aprendido, alCambiar }: {
+export default function Recibos({ idGastos, categorias, aprendido, abrirNueva, alCambiar }: {
   idGastos: string
+  abrirNueva?: boolean
   categorias: Categoria[]
   aprendido: Map<string, string>
   alCambiar: () => Promise<void>
@@ -106,7 +107,7 @@ export default function Recibos({ idGastos, categorias, aprendido, alCambiar }: 
           ))}
         </ul>
       </section>
-      <NuevoRecibo categorias={categorias} alGuardar={async (nuevo, valor, categoria) => {
+      <NuevoRecibo inicial={abrirNueva} categorias={categorias} alGuardar={async (nuevo, valor, categoria) => {
         const id = await crearRecibo(nuevo)
         const nombre = nuevo.nombre_ubicacion ? `${nuevo.nombre_servicio} · ${nuevo.nombre_ubicacion}` : nuevo.nombre_servicio
         await pagar(id, nombre, nuevo.nombre_servicio, nuevo.tipo_recibo, valor, categoria)
@@ -230,11 +231,12 @@ function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alQuit
   )
 }
 
-function NuevoRecibo({ categorias, alGuardar }: {
+function NuevoRecibo({ inicial, categorias, alGuardar }: {
+  inicial?: boolean
   categorias: Categoria[]
   alGuardar: (nuevo: Parameters<typeof crearRecibo>[0], valor: number, categoria: Categoria | null) => Promise<void>
 }) {
-  const [abierto, setAbierto] = useState(false)
+  const [abierto, setAbierto] = useState(!!inicial)
   const [servicio, setServicio] = useState('')
   const [tipo, setTipo] = useState<'hogar' | 'personal'>('hogar')
   const [ubicacion, setUbicacion] = useState('')
@@ -279,7 +281,7 @@ function NuevoRecibo({ categorias, alGuardar }: {
               </button>
             ))}
           </div>
-          <label>Servicio<input required maxLength={60} value={servicio} onChange={ev => setServicio(ev.target.value)} placeholder="Luz" autoComplete="off" /></label>
+          <label>Servicio<input required maxLength={60} value={servicio} onChange={ev => setServicio(ev.target.value)} placeholder="Luz" autoComplete="off" autoFocus={inicial} /></label>
           {tipo === 'hogar' && (
             <label>Ubicación<input required maxLength={60} value={ubicacion} onChange={ev => setUbicacion(ev.target.value)} placeholder="La Mesa" autoComplete="off" /></label>
           )}

@@ -52,7 +52,7 @@ button:disabled { opacity: .6; cursor: default; }
 
 .cuadricula { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
 .tarjeta { display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 18px; border-radius: var(--radio); color: #FFFFFF; min-height: 190px; width: 100%; }
-.tarjeta .cifra { font-size: 52px; font-weight: 800; letter-spacing: -1.5px; line-height: 1; margin: 12px 0 4px; }
+.tarjeta .cifra { font-size: clamp(36px, 11vw, 52px); overflow-wrap: anywhere; font-weight: 800; letter-spacing: -1.5px; line-height: 1; margin: 12px 0 4px; }
 .tarjeta .sub, .tarjeta p { color: rgba(255, 255, 255, .9); }
 .tarjeta .estado { margin-top: 12px; background: rgba(255, 255, 255, .95); color: #13241B; }
 .cuadricula .tarjeta:first-child { grid-column: 1 / -1; }
@@ -131,3 +131,29 @@ button:disabled { opacity: .6; cursor: default; }
 .calendario span { aspect-ratio: 1; border-radius: 6px; background: var(--linea); }
 .calendario span.hecho { background: var(--acento); }
 .lista li .chips { grid-column: 1 / -1; }
+
+/* Inicio por módulos */
+.tarjeta .datos { display: grid; gap: 4px; margin-top: 10px; overflow-wrap: anywhere; }
+.tarjeta .datos:empty { display: none; }
+.tarjeta .montos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: 100%; margin-top: 14px; }
+.tarjeta .montos > span { display: grid; }
+.tarjeta .montos strong { font-size: clamp(15px, 4.2vw, 20px); overflow-wrap: anywhere; }
+/* en escritorio: Finanzas a lo ancho y los demás módulos en dos columnas */
+@media (min-width: 700px) { .cuadricula:has(> .tarjeta + .tarjeta) { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cuadricula .tarjeta:first-child { grid-column: 1 / -1; } }
+.tarjeta .datos > span { display: block; }
+.tarjeta.otros ul { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 6px; }
+.enlace-claro { background: none; padding: 4px 0; color: #FFFFFF; text-align: left; text-decoration: underline; text-underline-offset: 3px; }
+.esqueleto { background: var(--linea); animation: latir 1.2s ease-in-out infinite alternate; }
+@keyframes latir { to { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .esqueleto { animation: none; } }
+.apagados { display: grid; gap: 8px; margin-top: 16px; }
+.apagado { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 16px; border: 1px dashed var(--linea); border-radius: 16px; color: var(--tenue); }
+.opciones { display: grid; gap: 10px; max-width: 520px; }
+.opcion { display: grid; gap: 2px; text-align: left; padding: 16px 18px; border-radius: 16px; color: #FFFFFF; }
+.opcion strong { font-size: 20px; }
+.opcion span { color: rgba(255, 255, 255, .9); }
+/* en el celular, "+ Crear" queda al alcance del pulgar */
+@media (max-width: 699px) {
+  .crear { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 10; padding: 16px 22px; box-shadow: 0 6px 20px rgba(0, 0, 0, .25); }
+  .contenedor:has(.crear) { padding-bottom: 96px; }
+}

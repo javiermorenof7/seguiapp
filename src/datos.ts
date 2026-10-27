@@ -61,6 +61,15 @@ export async function obtenerSeguimientos(): Promise<Seguimiento[]> {
 }
 
 // shortcut: trae los registros del año de una vez; paginar si una persona pasa de miles por año.
+export async function obtenerPlantillasActivas(): Promise<string[]> {
+  return revisar(await supabase.from('plantilla_activa').select('codigo_plantilla').eq('estado', 'activo')).map(p => p.codigo_plantilla)
+}
+
+export async function activarPlantillas(codigos: string[]) {
+  revisar(await supabase.from('plantilla_activa')
+    .upsert(codigos.map(codigo_plantilla => ({ codigo_plantilla, estado: 'activo' })), { onConflict: 'id_usuario,codigo_plantilla' }))
+}
+
 export async function obtenerRegistros(desde: string, idSeguimiento?: string): Promise<RegistroGuardado[]> {
   let consulta = supabase
     .from('registro')

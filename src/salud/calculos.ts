@@ -1,6 +1,7 @@
 // Cuentas del módulo Salud (Gym y Cuerpo), tomadas del bot anterior. Fechas 'AAAA-MM-DD'; las sesiones
 // llegan de la más reciente a la más antigua, así el último registro del día es el primero.
 import { normalizar } from '../finanzas/parseo'
+import { formatoValor } from '../indicadores'
 
 export interface Sesion { fecha: string; ejercicio: string; series: number; repeticiones: number; peso: number | null }
 export interface Medicion { fecha: string; valor: number }
@@ -34,6 +35,8 @@ export function sugerencia(nuevo: Omit<Sesion, 'fecha'>, sesiones: Sesion[]): st
     : `Dos sesiones iguales con ${kg(nuevo.peso)}: prueba ${kg(nuevo.peso + 2.5)} la próxima.`
 }
 
+export const conSigno = (v: number, unidad: string | null) =>
+  `${v > 0 ? '+' : v < 0 ? '−' : ''}${formatoValor('numero', Math.abs(Math.round(v * 100) / 100), unidad)}`
 export const kg = (v: number) => `${v.toLocaleString('es-CO', { maximumFractionDigits: 2 })} kg`
 
 function distancia(a: string, b: string): number {

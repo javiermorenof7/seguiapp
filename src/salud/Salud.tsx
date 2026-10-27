@@ -8,7 +8,7 @@ import Grafico from '../Grafico'
 import Barras from '../finanzas/Barras'
 import { normalizar } from '../finanzas/parseo'
 import {
-  anteriorDe, comparar, diasEntrenados, diasPorSemana, kg, leerSerie, parecido, pesoPorDia, progreso, restarDias, sugerencia,
+  anteriorDe, comparar, conSigno, diasEntrenados, diasPorSemana, kg, leerSerie, parecido, pesoPorDia, progreso, restarDias, sugerencia,
   type Sesion,
 } from './calculos'
 
@@ -19,23 +19,22 @@ const cssVar = (nombre: string) => getComputedStyle(document.documentElement).ge
 const hoyIso = () => new Date().toLocaleDateString('en-CA')
 const diaMes = (fecha: string) => `${fecha.slice(8, 10)}/${fecha.slice(5, 7)}`
 const serie = (s: Omit<Sesion, 'fecha'>) => `${s.series}x${s.repeticiones}${s.peso === null ? '' : ` ${kg(s.peso)}`}`
-const conSigno = (v: number, unidad: string | null) =>
-  `${v > 0 ? '+' : v < 0 ? '−' : ''}${formatoValor('numero', Math.abs(Math.round(v * 100) / 100), unidad)}`
 const leerNumero = (texto: string) => Number(texto.replace(',', '.').trim())
-// Lo que crea el módulo la primera vez que se abre.
-const INICIALES = [
+// Lo que crea el módulo la primera vez que se abre (o al activarlo).
+export const INICIALES = [
   { nombre: 'Gym', unidad: 'kg', codigo_plantilla: 'gym' },
   { nombre: 'Peso', unidad: 'kg', codigo_plantilla: 'cuerpo' },
   { nombre: 'Cintura', unidad: 'cm', codigo_plantilla: 'cuerpo' },
 ]
 
-export default function Salud({ seguimientos, registros, alVolver, alCambiar }: {
+export default function Salud({ seguimientos, registros, abrir, alVolver, alCambiar }: {
   seguimientos: Seguimiento[]
+  abrir?: 'ejercicio' | 'medida'
   registros: RegistroGuardado[]
   alVolver: () => void
   alCambiar: () => Promise<void>
 }) {
-  const [pestana, setPestana] = useState<'gym' | 'cuerpo'>('gym')
+  const [pestana, setPestana] = useState<'gym' | 'cuerpo'>(abrir === 'medida' ? 'cuerpo' : 'gym')
   const [error, setError] = useState('')
   const creando = useRef(false)
   const gym = seguimientos.find(s => s.codigo_plantilla === 'gym')
@@ -63,14 +62,14 @@ export default function Salud({ seguimientos, registros, alVolver, alCambiar }: 
       </div>
       {!gym && <p className="tenue">Preparando…</p>}
       {gym && pestana === 'gym' && (
-        <Gym idGym={gym.id_seguimiento} registros={registros.filter(r => r.id_seguimiento === gym.id_seguimiento)} alCambiar={alCambiar} />
+        <Gym idGym={gym.id_seguimiento} registros={registros.filter(r => r.id_seguimiento === gym.id_seguimiento)} enfocar={abrir === 'ejercicio'} alCambiar={alCambiar} />
       )}
       {pestana === 'cuerpo' && (
         <>
           {medidas.map(m => (
             <Medida key={m.id_seguimiento} medida={m} registros={registros.filter(r => r.id_seguimiento === m.id_seguimiento)} alCambiar={alCambiar} />
           ))}
-          <NuevaMedida alCrear={async (nombre, unidad) => {
+          <NuevaMedida inicial={abrir === 'medida'} alCrear={async (nombre, unidad) => {
             await crearSeguimiento({ nombre, unidad, tipo_medida: 'numero', frecuencia: 'registro', codigo_plantilla: 'cuerpo' }, null)
             await alCambiar()
           }} />
@@ -80,7 +79,9 @@ export default function Salud({ seguimientos, registros, alVolver, alCambiar }: 
   )
 }
 
-function Gym({ idGym, registros, alCambiar }: { idGym: string; registros: RegistroGuardado[]; alCambiar: () => Promise<void> }) {
+function Gym({ idGym, registros, enfocar, alCambiar }: {
+  idGym: string; registros: RegistroGuardado[]; enfocar?: boolean; alCambiar: () => Promise<void>
+}) {
   const hoy = hoyIso()
   const [datos, setDatos] = useState<Datos | null>(null)
   const [texto, setTexto] = useState('')
@@ -166,7 +167,7 @@ function Gym({ idGym, registros, alCambiar }: { idGym: string; registros: Regist
         <h2>Registrar ejercicio</h2>
         <label>Ejercicio, series x repeticiones y kg
           <input required maxLength={80} value={texto} onChange={ev => { setTexto(ev.target.value); setPregunta(null) }}
-            placeholder="press banca 4x10 60" autoComplete="off" />
+            placeholder="press banca 4x10 60" autoComplete="off" autoFocus={enfocar} />
         </label>
         {leido && <p className="tenue" aria-live="polite">{leido.ejercicio} · <strong>{serie(leido)}</strong>{leido.peso === null ? ' · propio cuerpo' : ''}</p>}
         {pregunta ? (
@@ -325,8 +326,8 @@ function MetaMedida({ medida, alCambiar }: { medida: Seguimiento; alCambiar: () 
   )
 }
 
-function NuevaMedida({ alCrear }: { alCrear: (nombre: string, unidad: string) => Promise<void> }) {
-  const [abierto, setAbierto] = useState(false)
+function NuevaMedida({ inicial, alCrear }: { inicial?: boolean; alCrear: (nombre: string, unidad: string) => Promise<void> }) {
+  const [abierto, setAbierto] = useState(!!inicial)
   const [nombre, setNombre] = useState('')
   const [unidad, setUnidad] = useState('cm')
   const [error, setError] = useState('')
@@ -347,7 +348,7 @@ function NuevaMedida({ alCrear }: { alCrear: (nombre: string, unidad: string) =>
       <button className="secundario" aria-expanded={abierto} onClick={() => setAbierto(!abierto)}>{abierto ? 'Cerrar' : 'Agregar otra medida'}</button>
       {abierto && (
         <form className="formulario" onSubmit={guardar}>
-          <label>Nombre<input required maxLength={60} value={nombre} onChange={ev => setNombre(ev.target.value)} placeholder="Brazo" autoComplete="off" /></label>
+          <label>Nombre<input required maxLength={60} value={nombre} onChange={ev => setNombre(ev.target.value)} placeholder="Brazo" autoComplete="off" autoFocus={inicial} /></label>
           <label>Unidad<input required maxLength={20} value={unidad} onChange={ev => setUnidad(ev.target.value)} /></label>
           <button className="principal">Agregar</button>
           {error && <p role="alert" className="error">{error}</p>}

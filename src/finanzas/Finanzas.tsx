@@ -26,13 +26,17 @@ const TEXTO: Record<TipoMovimiento, string> = { gasto: 'Gasto', ingreso: 'Ingres
 const TEXTO_PRESUPUESTO: Record<NonNullable<EstadoPresupuesto>, string> = { cerca: '◐ Llegaste al 80 %', pasado: '✕ Te pasaste' }
 const MAX_DESCRIPCION = 120
 
+// Lo que se abre al llegar desde "+ Crear".
+export type AccionFinanzas = TipoMovimiento | 'presupuesto' | 'factura'
+
 const pesos = (v: number) => (v < 0 ? '−' : '') + formatoValor('dinero', Math.abs(v))
 const cssVar = (nombre: string) => getComputedStyle(document.documentElement).getPropertyValue(nombre).trim()
 const hoyIso = () => new Date().toLocaleDateString('en-CA')
 const nombreMes = (mes: string) => new Date(`${mes}-15T12:00`).toLocaleDateString('es-CO', { month: 'short' })
 
-export default function Finanzas({ seguimientos, registros, alVolver, alCambiar }: {
+export default function Finanzas({ seguimientos, registros, abrir, alVolver, alCambiar }: {
   seguimientos: Seguimiento[]
+  abrir?: AccionFinanzas
   registros: RegistroGuardado[]
   alVolver: () => void
   alCambiar: () => Promise<void>
@@ -43,7 +47,7 @@ export default function Finanzas({ seguimientos, registros, alVolver, alCambiar 
   const idGastos = id('gasto')
   const [datos, setDatos] = useState<Datos | null>(null)
   const [error, setError] = useState('')
-  const [pestana, setPestana] = useState<'resumen' | 'recibos'>('resumen')
+  const [pestana, setPestana] = useState<'resumen' | 'recibos'>(abrir === 'factura' ? 'recibos' : 'resumen')
 
   const cargar = useCallback(async () => {
     if (!idGastos) return
@@ -98,13 +102,14 @@ export default function Finanzas({ seguimientos, registros, alVolver, alCambiar 
         ))}
       </div>
       {datos && pestana === 'recibos' && (
-        <Recibos idGastos={idGastos} categorias={datos.categorias} aprendido={datos.aprendido}
+        <Recibos idGastos={idGastos} categorias={datos.categorias} aprendido={datos.aprendido} abrirNueva={abrir === 'factura'}
           alCambiar={async () => { await Promise.all([alCambiar(), cargar()]) }} />
       )}
       {datos && cuentas && pestana === 'resumen' && (
         <>
           <NuevoMovimiento
             datos={datos}
+            tipoInicial={abrir === 'gasto' || abrir === 'ingreso' || abrir === 'ahorro' ? abrir : undefined}
             ids={{ gasto: idGastos, ingreso: id('ingreso'), ahorro: id('ahorro') }}
             gastadoDe={idEtiqueta => cuentas.filas.find(f => f.id_etiqueta === idEtiqueta)?.gastado ?? 0}
             presupuestos={cuentas.presupuestos}
@@ -133,6 +138,7 @@ export default function Finanzas({ seguimientos, registros, alVolver, alCambiar 
             </section>
           )}
           <Presupuestos
+            inicial={abrir === 'presupuesto'}
             categorias={datos.categorias}
             presupuestos={datos.presupuestos}
             sugerido={idEtiqueta => promedioSeisMeses(movimientos, idEtiqueta, mes)}
@@ -147,15 +153,16 @@ export default function Finanzas({ seguimientos, registros, alVolver, alCambiar 
   )
 }
 
-function NuevoMovimiento({ datos, ids, gastadoDe, presupuestos, inusual, alGuardar }: {
+function NuevoMovimiento({ datos, tipoInicial, ids, gastadoDe, presupuestos, inusual, alGuardar }: {
   datos: Datos
+  tipoInicial?: TipoMovimiento
   ids: Record<TipoMovimiento, string | undefined>
   gastadoDe: (idEtiqueta: string) => number
   presupuestos: Map<string, number>
   inusual: (nuevo: { valor: number; descripcion: string; id_etiqueta: string | null }) => ReturnType<typeof gastoInusual>
   alGuardar: (aprendio: boolean) => Promise<void>
 }) {
-  const [tipo, setTipo] = useState<TipoMovimiento>('gasto')
+  const [tipo, setTipo] = useState<TipoMovimiento>(tipoInicial ?? 'gasto')
   const [texto, setTexto] = useState('')
   const [fecha, setFecha] = useState(hoyIso())
   const [elegida, setElegida] = useState<string | null>(null)
@@ -221,7 +228,7 @@ function NuevoMovimiento({ datos, ids, gastadoDe, presupuestos, inusual, alGuard
       </div>
       <label>Monto y en qué fue
         <input required maxLength={140} value={texto} onChange={ev => { setTexto(ev.target.value); setElegida(null) }}
-          placeholder="35 mil almuerzo" autoComplete="off" />
+          placeholder="35 mil almuerzo" autoComplete="off" autoFocus={!!tipoInicial} />
       </label>
       {leido && (
         <p className="tenue" aria-live="polite">
@@ -348,13 +355,14 @@ function MesAMes({ meses }: { meses: ReturnType<typeof mesAMes> }) {
   )
 }
 
-function Presupuestos({ categorias, presupuestos, sugerido, alGuardar }: {
+function Presupuestos({ inicial, categorias, presupuestos, sugerido, alGuardar }: {
+  inicial?: boolean
   categorias: Categoria[]
   presupuestos: Datos['presupuestos']
   sugerido: (idEtiqueta: string) => number
   alGuardar: (idEtiqueta: string, valor: number | null) => Promise<void>
 }) {
-  const [abierto, setAbierto] = useState(false)
+  const [abierto, setAbierto] = useState(!!inicial)
   return (
     <section>
       <h2>Presupuestos del mes</h2>
@@ -363,8 +371,8 @@ function Presupuestos({ categorias, presupuestos, sugerido, alGuardar }: {
       </button>
       {abierto && (
         <ul className="lista">
-          {categorias.map(c => (
-            <FilaPresupuesto key={c.id_etiqueta} nombre={c.nombre} sugerido={sugerido(c.id_etiqueta)}
+          {categorias.map((c, i) => (
+            <FilaPresupuesto key={c.id_etiqueta} nombre={c.nombre} sugerido={sugerido(c.id_etiqueta)} enfocar={inicial && i === 0}
               actual={presupuestos.find(p => p.id_etiqueta === c.id_etiqueta)?.valor}
               alGuardar={valor => alGuardar(c.id_etiqueta, valor)} />
           ))}
@@ -374,8 +382,8 @@ function Presupuestos({ categorias, presupuestos, sugerido, alGuardar }: {
   )
 }
 
-function FilaPresupuesto({ nombre, actual, sugerido, alGuardar }: {
-  nombre: string; actual?: number; sugerido: number; alGuardar: (valor: number | null) => Promise<void>
+function FilaPresupuesto({ nombre, actual, sugerido, enfocar, alGuardar }: {
+  nombre: string; actual?: number; enfocar?: boolean; sugerido: number; alGuardar: (valor: number | null) => Promise<void>
 }) {
   const [valor, setValor] = useState(actual ? Math.round(actual).toLocaleString('es-CO') : '')
   const [mensaje, setMensaje] = useState('')
@@ -398,7 +406,7 @@ function FilaPresupuesto({ nombre, actual, sugerido, alGuardar }: {
       <form className="fila-presupuesto" onSubmit={guardar}>
         <label htmlFor={`p-${nombre}`}>{nombre}{sugerido > 0 && <span className="tenue"> Sugerido {pesos(sugerido)}</span>}</label>
         <input id={`p-${nombre}`} inputMode="numeric" maxLength={16} value={valor} onChange={ev => setValor(ev.target.value)}
-          placeholder="Sin presupuesto" />
+          placeholder="Sin presupuesto" autoFocus={enfocar} />
         <button className="secundario" disabled={!valor && !actual}>{!valor && actual ? 'Quitar' : 'Guardar'}</button>
         {mensaje && <span role="status" className="tenue">{mensaje}</span>}
       </form>

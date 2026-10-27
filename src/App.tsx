@@ -2,24 +2,27 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 import {
-  asegurarPerfil, cerrarSesion, crearSeguimiento, eliminarRegistro, enviarCola, obtenerRegistros,
+  asegurarPerfil, cerrarSesion, eliminarRegistro, enviarCola, obtenerPlantillasActivas, obtenerRecibos, obtenerRegistros,
   obtenerSeguimientos, registrar, type RegistroGuardado, type Seguimiento,
 } from './datos'
 import {
   agregado, estado, formatoValor, inicioPeriodo, ordenEstado, periodoDe, seSuma, serie,
-  type Direccion, type Estado, type Frecuencia, type Periodo, type TipoMedida,
+  type Estado, type Periodo, type Registro, type TipoMedida,
 } from './indicadores'
 import Grafico from './Grafico'
 import Privacidad from './Privacidad'
 import Finanzas from './finanzas/Finanzas'
 import Salud from './salud/Salud'
 import Habitos from './habitos/Habitos'
-import { dias, racha, totalDelDia } from './habitos/calculos'
+import { dias } from './habitos/calculos'
+import { mesesAntes } from './finanzas/calculos'
+import { recibosDelMes } from './finanzas/estadoRecibos'
+import { conSigno } from './salud/calculos'
+import { activos, moduloDe, MODULOS, resumenFinanzas, resumenHabitos, resumenSalud, type Modulo } from './inicio/resumenes'
+import { activarModulos, Bienvenida, COLOR, Crear, NOMBRE, QUE_MIDE, type Destino } from './inicio/Crear'
 
 const TEXTO_ESTADO: Record<Estado, string> = { fuera: '✕ Fuera de la meta', cerca: '◐ Cerca de la meta', en_meta: '✓ Vas bien' }
 const TEXTO_PERIODO: Record<Periodo, string> = { dia: 'día', semana: 'semana', mes: 'mes', ano: 'año' }
-const TIPOS: Record<TipoMedida, string> = { dinero: 'Dinero', numero: 'Número', si_no: 'Sí o no', duracion: 'Duración (minutos)', escala: 'Escala del 1 al 10' }
-const FRECUENCIAS: Record<Frecuencia, string> = { registro: 'Cada vez que pasa', dia: 'Cada día', semana: 'Cada semana', mes: 'Cada mes' }
 
 const hoyIso = () => new Date().toLocaleDateString('en-CA')
 const haceUnAno = () => { const d = new Date(); d.setFullYear(d.getFullYear() - 1); return d.toLocaleDateString('en-CA') }
@@ -81,19 +84,22 @@ function Entrar({ alPrivacidad }: { alPrivacidad: () => void }) {
   )
 }
 
-type Vista = { tipo: 'inicio' } | { tipo: 'nuevo' } | { tipo: 'salud' } | { tipo: 'habitos' } | { tipo: 'detalle'; id: string }
+type Vista = { tipo: 'inicio' } | { tipo: 'crear'; modulo?: Modulo } | Destino | { tipo: 'detalle'; id: string }
 
 function Panel({ sesion, alPrivacidad }: { sesion: Session; alPrivacidad: () => void }) {
   const [vista, setVista] = useState<Vista>({ tipo: 'inicio' })
   const [seguimientos, setSeguimientos] = useState<Seguimiento[] | null>(null)
   const [registros, setRegistros] = useState<RegistroGuardado[]>([])
+  const [plantillas, setPlantillas] = useState<string[]>([])
   const [error, setError] = useState('')
+  const nombre = (sesion.user.user_metadata?.full_name as string | undefined)?.slice(0, 100) ?? null
 
   const cargar = useCallback(async () => {
     try {
-      const [s, r] = await Promise.all([obtenerSeguimientos(), obtenerRegistros(haceUnAno())])
+      const [s, r, p] = await Promise.all([obtenerSeguimientos(), obtenerRegistros(haceUnAno()), obtenerPlantillasActivas()])
       setSeguimientos(s)
       setRegistros(r)
+      setPlantillas(p)
       setError('')
     } catch (e) {
       setError((e as Error).message)
@@ -101,49 +107,60 @@ function Panel({ sesion, alPrivacidad }: { sesion: Session; alPrivacidad: () => 
   }, [])
 
   useEffect(() => {
-    const nombre = (sesion.user.user_metadata?.full_name as string | undefined)?.slice(0, 100) ?? null
     asegurarPerfil(nombre).catch(() => {}).then(() => enviarCola()).then(cargar)
     const alVolverConexion = () => { enviarCola().then(n => { if (n) cargar() }) }
     addEventListener('online', alVolverConexion)
     return () => removeEventListener('online', alVolverConexion)
-  }, [sesion, cargar])
+  }, [nombre, cargar])
 
   const actual = vista.tipo === 'detalle' ? seguimientos?.find(s => s.id_seguimiento === vista.id) : undefined
+  const enModulo = (codigos: string[]) => !!actual && codigos.includes(actual.codigo_plantilla ?? '')
+  const activosAhora = useMemo(() => MODULOS.filter(m => activos(seguimientos ?? [], plantillas).has(m)), [seguimientos, plantillas])
+  const alInicio = () => setVista({ tipo: 'inicio' })
+  const nuevo = seguimientos?.length === 0 && plantillas.length === 0
 
   return (
     <div className="contenedor">
       {error && <p role="alert" className="error">{error}</p>}
-      {vista.tipo === 'nuevo' && (
-        <Nuevo
-          alCancelar={() => setVista({ tipo: 'inicio' })}
-          alCrear={async id => { await cargar(); setVista({ tipo: 'detalle', id }) }}
-        />
+      {vista.tipo === 'crear' && (
+        <Crear activos={activosAhora} modulo={vista.modulo} alElegir={setVista} alVolver={alInicio} />
       )}
-      {vista.tipo === 'detalle' && actual?.codigo_plantilla === 'finanzas' && (
-        <Finanzas seguimientos={seguimientos!} registros={registros} alVolver={() => setVista({ tipo: 'inicio' })} alCambiar={cargar} />
+      {seguimientos && (vista.tipo === 'finanzas' || enModulo(['finanzas'])) && (
+        <Finanzas seguimientos={seguimientos} registros={registros} abrir={vista.tipo === 'finanzas' ? vista.abrir : undefined}
+          alVolver={alInicio} alCambiar={cargar} />
       )}
-      {seguimientos && (vista.tipo === 'salud' || (actual && ['gym', 'cuerpo'].includes(actual.codigo_plantilla ?? ''))) && (
-        <Salud seguimientos={seguimientos} registros={registros} alVolver={() => setVista({ tipo: 'inicio' })} alCambiar={cargar} />
+      {seguimientos && (vista.tipo === 'salud' || enModulo(['gym', 'cuerpo'])) && (
+        <Salud seguimientos={seguimientos} registros={registros} abrir={vista.tipo === 'salud' ? vista.abrir : undefined}
+          alVolver={alInicio} alCambiar={cargar} />
       )}
-      {seguimientos && (vista.tipo === 'habitos' || actual?.codigo_plantilla === 'habitos') && (
-        <Habitos seguimientos={seguimientos} registros={registros} alVolver={() => setVista({ tipo: 'inicio' })} alCambiar={cargar} />
+      {seguimientos && (vista.tipo === 'habitos' || enModulo(['habitos'])) && (
+        <Habitos seguimientos={seguimientos} registros={registros} enfocar={vista.tipo === 'habitos' && vista.enfocar}
+          alVolver={alInicio} alCambiar={cargar} />
       )}
-      {vista.tipo === 'detalle' && actual && !['finanzas', 'gym', 'cuerpo', 'habitos'].includes(actual.codigo_plantilla ?? '') && (
+      {vista.tipo === 'detalle' && actual && !moduloDe(actual.codigo_plantilla) && (
         <Detalle
           seguimiento={actual}
           indice={seguimientos!.indexOf(actual)}
           registros={registros.filter(r => r.id_seguimiento === actual.id_seguimiento)}
-          alVolver={() => setVista({ tipo: 'inicio' })}
+          alVolver={alInicio}
           alCambiar={cargar}
         />
       )}
-      {vista.tipo === 'inicio' && (
+      {vista.tipo === 'inicio' && nuevo && (
+        <Bienvenida nombre={nombre} alEmpezar={async modulos => {
+          await activarModulos(modulos, [])
+          await cargar()
+          setVista({ tipo: 'crear', modulo: modulos.length === 1 ? modulos[0] : undefined })
+        }} />
+      )}
+      {vista.tipo === 'inicio' && !nuevo && (
         <Inicio
           seguimientos={seguimientos}
           registros={registros}
-          alNuevo={() => setVista({ tipo: 'nuevo' })}
-          alSalud={() => setVista({ tipo: 'salud' })}
-          alHabitos={() => setVista({ tipo: 'habitos' })}
+          activos={activosAhora}
+          alCrear={modulo => setVista({ tipo: 'crear', modulo })}
+          alActivar={modulo => activarModulos([modulo], seguimientos ?? []).then(cargar).catch(e => setError((e as Error).message))}
+          alIr={setVista}
           alAbrir={id => setVista({ tipo: 'detalle', id })}
         />
       )}
@@ -152,32 +169,58 @@ function Panel({ sesion, alPrivacidad }: { sesion: Session; alPrivacidad: () => 
   )
 }
 
-function Inicio({ seguimientos, registros, alNuevo, alSalud, alHabitos, alAbrir }: {
+const ICONO: Record<Estado, string> = { en_meta: '✓', cerca: '◐', fuera: '✕' }
+const pesos = (v: number) => (v < 0 ? '-' : '') + formatoValor('dinero', Math.abs(v))
+interface Dato { texto: string; estado?: Estado | null }
+
+function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, alAbrir }: {
   seguimientos: Seguimiento[] | null
   registros: RegistroGuardado[]
-  alNuevo: () => void
-  alSalud: () => void
-  alHabitos: () => void
+  activos: Modulo[]
+  alCrear: (modulo?: Modulo) => void
+  alActivar: (modulo: Modulo) => void
+  alIr: (destino: Destino) => void
   alAbrir: (id: string) => void
 }) {
-  // los hábitos van juntos en una sola tarjeta
-  const tarjetas = useMemo(() => (seguimientos ?? [])
+  const hoy = hoyIso()
+  const finanzas = useMemo(() => seguimientos && resumenFinanzas(seguimientos, registros, hoy), [seguimientos, registros, hoy])
+  const salud = useMemo(() => seguimientos && resumenSalud(seguimientos, registros, hoy), [seguimientos, registros, hoy])
+  const habitos = useMemo(() => seguimientos && resumenHabitos(seguimientos, registros, hoy), [seguimientos, registros, hoy])
+  const otros = useMemo(() => (seguimientos ?? []).filter(s => !moduloDe(s.codigo_plantilla))
     .map((s, indice) => ({ s, indice, ...resumen(s, registros) }))
-    .filter(t => t.s.codigo_plantilla !== 'habitos')
     .sort((a, b) => ordenEstado(a.estado) - ordenEstado(b.estado)), [seguimientos, registros])
+  const [facturas, setFacturas] = useState<{ porPagar: number; vencidas: number; total: number } | null>(null)
+  const conFinanzas = !!finanzas
 
-  const habitos = useMemo(() => {
-    const lista = (seguimientos ?? []).filter(s => s.codigo_plantilla === 'habitos')
-    if (!lista.length) return null
-    const hoy = hoyIso()
-    const suyas = lista.map(h => ({ marcas: registros.filter(r => r.id_seguimiento === h.id_seguimiento), meta: h.meta?.valor ?? null }))
-    return {
-      indice: seguimientos!.indexOf(lista[0]),
-      total: lista.length,
-      hechos: suyas.filter(x => totalDelDia(x.marcas, hoy) >= (x.meta ?? Number.MIN_VALUE)).length,
-      mejorRacha: Math.max(...suyas.map(x => racha(x.marcas, hoy, x.meta))),
-    }
-  }, [seguimientos, registros])
+  // las facturas viven en sus tablas, no en los registros; se vuelven a pedir cuando cambia algo
+  useEffect(() => {
+    if (!conFinanzas) return
+    obtenerRecibos(`${mesesAntes(hoy.slice(0, 7), 12)}-01`).then(d => {
+      const filas = recibosDelMes(d.recibos, d.pagos, hoy)
+      setFacturas({ porPagar: filas.filter(f => f.estado === 'por_pagar').length, vencidas: filas.filter(f => f.estado === 'vencido').length, total: filas.length })
+    }).catch(() => setFacturas(null))
+  }, [conFinanzas, registros, hoy])
+
+  // el estado que más pide atención va en la chapa; lo demás, como dato
+  const saldo: Dato | null = finanzas && (finanzas.saldo >= 0
+    ? { texto: 'Saldo a favor este mes', estado: 'en_meta' } : { texto: 'Gastas más de lo que entra', estado: 'fuera' })
+  const factura: Dato | null = !facturas?.total ? null
+    : facturas.vencidas ? { texto: `${facturas.vencidas} ${facturas.vencidas === 1 ? 'factura vencida' : 'facturas vencidas'}`, estado: 'fuera' }
+      : facturas.porPagar ? { texto: `${facturas.porPagar} ${facturas.porPagar === 1 ? 'factura' : 'facturas'} por pagar`, estado: 'cerca' }
+        : { texto: 'Facturas al día', estado: 'en_meta' }
+  const chapaFinanzas = factura && factura.estado !== 'en_meta' ? factura : saldo
+  const datosFinanzas = [saldo, factura].filter((d): d is Dato => !!d && d !== chapaFinanzas)
+  const montos = finanzas ? [['Gastos', finanzas.gastos], ['Ingresos', finanzas.ingresos], ['Ahorro', finanzas.ahorro]] as [string, number][] : undefined
+  const datosSalud: Dato[] = salud ? [
+    { texto: salud.peso
+      ? `Peso ${formatoValor('numero', salud.peso.valor, salud.peso.unidad)}${salud.peso.cambio30 === null ? '' : ` · ${conSigno(salud.peso.cambio30, salud.peso.unidad)} en 30 días`}`
+      : 'Peso: sin registrar', estado: salud.peso?.estado },
+    { texto: salud.cintura ? `Cintura ${formatoValor('numero', salud.cintura.valor, salud.cintura.unidad)}` : 'Cintura: sin registrar', estado: salud.cintura?.estado },
+  ] : []
+  const chapaHabitos: Dato | null = habitos && (habitos.hechos === habitos.total ? { texto: 'Todo hecho hoy', estado: 'en_meta' }
+    : habitos.hechos ? { texto: `Te ${habitos.total - habitos.hechos === 1 ? 'falta 1' : `faltan ${habitos.total - habitos.hechos}`}`, estado: 'cerca' }
+      : { texto: 'Ninguno hecho hoy', estado: 'fuera' })
+  const inactivos = seguimientos ? MODULOS.filter(m => !activos.includes(m)) : []
 
   return (
     <>
@@ -187,48 +230,84 @@ function Inicio({ seguimientos, registros, alNuevo, alSalud, alHabitos, alAbrir 
           <p className="tenue">{new Date().toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })}</p>
         </div>
         <div className="acciones">
-          <button className="principal" onClick={alNuevo}>Nuevo seguimiento</button>
-          <button className="secundario" onClick={alSalud}>Salud</button>
-          <button className="secundario" onClick={alHabitos}>Hábitos</button>
+          {activos.length > 0 && <button className="principal crear" onClick={() => alCrear()}>+ Crear</button>}
           <button className="secundario" onClick={cerrarSesion}>Salir</button>
         </div>
       </header>
-      {seguimientos === null && <p className="tenue">Cargando…</p>}
-      {seguimientos?.length === 0 && (
-        <section className="tarjeta vacia t1">
-          <h2>Aún no tienes seguimientos</h2>
-          <p>Crea el primero: gastos, entreno, hábitos o lo que quieras medir.</p>
-          <button className="claro" onClick={alNuevo}>Crear el primero</button>
+      <main className="cuadricula" aria-label="Módulos" aria-busy={!seguimientos}>
+        {!seguimientos && [1, 2, 3].map(n => <div key={n} className="tarjeta esqueleto" />)}
+        {activos.includes('finanzas') && (
+          <Bloque modulo="finanzas" vacio={!finanzas?.hayDatos} cifra={finanzas ? pesos(finanzas.saldo) : ''} sub="saldo del mes" chapa={chapaFinanzas} montos={montos} datos={datosFinanzas}
+            puntos={finanzas?.puntos ?? []} formato={pesos} alAbrir={() => alIr({ tipo: 'finanzas' })} alCrear={() => alCrear('finanzas')} />
+        )}
+        {activos.includes('salud') && (
+          <Bloque modulo="salud" vacio={!salud?.hayDatos} cifra={dias(salud?.diasGym ?? 0)} sub="de gym esta semana" datos={datosSalud}
+            puntos={salud?.puntos ?? []} alAbrir={() => alIr({ tipo: 'salud' })} alCrear={() => alCrear('salud')} />
+        )}
+        {activos.includes('habitos') && (
+          <Bloque modulo="habitos" vacio={!habitos} cifra={habitos ? `${habitos.hechos} de ${habitos.total}` : ''} sub="hechos hoy" chapa={chapaHabitos}
+            datos={habitos ? [{ texto: `Mejor racha viva ${dias(habitos.mejorRacha)}` }] : []}
+            puntos={habitos?.puntos ?? []} meta={habitos?.total} alAbrir={() => alIr({ tipo: 'habitos' })} alCrear={() => alCrear('habitos')} />
+        )}
+        {otros.length > 0 && (
+          <section className="tarjeta t4 otros" aria-label="Otros">
+            <h2>Otros</h2>
+            <ul className="datos">
+              {otros.map(({ s, valor, estado }) => (
+                <li key={s.id_seguimiento}>
+                  <button className="enlace-claro" onClick={() => alAbrir(s.id_seguimiento)}>
+                    <strong>{s.nombre}</strong> {formatoValor(s.tipo_medida, valor, s.unidad)} · {estado ? TEXTO_ESTADO[estado] : textoMeta(s)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </main>
+      {inactivos.length > 0 && (
+        <section className="apagados" aria-label="Módulos sin activar">
+          {inactivos.map(m => (
+            <div key={m} className="apagado">
+              <span><strong>{NOMBRE[m]}</strong> · {QUE_MIDE[m]}</span>
+              <button className="secundario" onClick={() => alActivar(m)}>Activar</button>
+            </div>
+          ))}
         </section>
       )}
-      <main className="cuadricula" aria-label="Seguimientos activos">
-        {habitos && (
-          <button className={`tarjeta t${(habitos.indice % 7) + 1}`} onClick={alHabitos}>
-            <h2>Hábitos</h2>
-            <span className="cifra">{habitos.hechos} de {habitos.total}</span>
-            <span className="sub">hechos hoy · mejor racha viva {dias(habitos.mejorRacha)}</span>
-          </button>
-        )}
-        {tarjetas.map(({ s, indice, valor, puntos, estado }) => (
-          <button key={s.id_seguimiento} className={`tarjeta t${(indice % 7) + 1}`} onClick={() => alAbrir(s.id_seguimiento)}>
-            <h2>{s.nombre}</h2>
-            <span className="cifra">{formatoValor(s.tipo_medida, valor, s.unidad)}</span>
-            <span className="sub">{textoMeta(s)}</span>
-            {puntos.length > 1 && (
-              <Grafico
-                compacto
-                puntos={puntos}
-                meta={s.meta?.valor}
-                color="#FFFFFF"
-                colorMeta="#FFFFFFBF"
-                descripcion={`Tendencia de ${s.nombre}`}
-              />
-            )}
-            {estado && <span className="estado">{TEXTO_ESTADO[estado]}</span>}
-          </button>
-        ))}
-      </main>
     </>
+  )
+}
+
+function Bloque({ modulo, vacio, cifra, sub, chapa, montos, datos, puntos, meta, formato, alAbrir, alCrear }: {
+  modulo: Modulo; vacio: boolean; cifra: string; sub: string; chapa?: Dato | null; montos?: [string, number][]; datos: Dato[]
+  puntos: Registro[]; meta?: number
+  formato?: (valor: number) => string; alAbrir: () => void; alCrear: () => void
+}) {
+  if (vacio) return (
+    <button className={`tarjeta ${COLOR[modulo]}`} onClick={alCrear}>
+      <h2>{NOMBRE[modulo]}</h2>
+      <span className="sub">Aún no registras nada.</span>
+      <span className="estado">+ Registrar lo primero</span>
+    </button>
+  )
+  return (
+    <button className={`tarjeta ${COLOR[modulo]}`} onClick={alAbrir}>
+      <h2>{NOMBRE[modulo]} <span aria-hidden="true">→</span></h2>
+      <span className="cifra">{cifra}</span>
+      <span className="sub">{sub}</span>
+      {chapa?.estado && <span className="estado">{ICONO[chapa.estado]} {chapa.texto}</span>}
+      {montos && (
+        <span className="montos">
+          {montos.map(([nombre, valor]) => <span key={nombre}><span className="sub">{nombre}</span><strong>{pesos(valor)}</strong></span>)}
+        </span>
+      )}
+      <span className="datos">
+        {datos.map(d => <span key={d.texto}>{d.estado && `${ICONO[d.estado]} `}{d.texto}</span>)}
+      </span>
+      {puntos.length > 1 && (
+        <Grafico compacto puntos={puntos} meta={meta} formato={formato} color="#FFFFFF" colorMeta="#FFFFFFBF" descripcion={`Tendencia de ${NOMBRE[modulo]}`} />
+      )}
+    </button>
   )
 }
 
@@ -331,87 +410,6 @@ function Detalle({ seguimiento: s, indice, registros, alVolver, alCambiar }: {
           </ul>
         </section>
       )}
-    </>
-  )
-}
-
-function Nuevo({ alCrear, alCancelar }: { alCrear: (id: string) => Promise<void>; alCancelar: () => void }) {
-  const [nombre, setNombre] = useState('')
-  const [tipo, setTipo] = useState<TipoMedida>('numero')
-  const [unidad, setUnidad] = useState('')
-  const [frecuencia, setFrecuencia] = useState<Frecuencia>('dia')
-  const [conMeta, setConMeta] = useState(false)
-  const [valorMeta, setValorMeta] = useState('')
-  const [direccion, setDireccion] = useState<Direccion>('mas_es_mejor')
-  const [periodo, setPeriodo] = useState<Periodo>('semana')
-  const [error, setError] = useState('')
-  const [enviando, setEnviando] = useState(false)
-
-  async function crear(evento: FormEvent) {
-    evento.preventDefault()
-    const metaNumero = Number(valorMeta.replace(',', '.'))
-    if (!nombre.trim()) return setError('Ponle un nombre.')
-    if (conMeta && !Number.isFinite(metaNumero)) return setError('Escribe la meta como número.')
-    setEnviando(true)
-    try {
-      const id = await crearSeguimiento(
-        { nombre: nombre.trim(), tipo_medida: tipo, unidad: tipo === 'numero' && unidad.trim() ? unidad.trim() : null, frecuencia },
-        conMeta ? { valor: metaNumero, direccion, periodo } : null,
-      )
-      await alCrear(id)
-    } catch (err) {
-      setError((err as Error).message)
-      setEnviando(false)
-    }
-  }
-
-  return (
-    <>
-      <button className="volver" onClick={alCancelar}>← Mi seguimiento</button>
-      <form className="formulario" onSubmit={crear}>
-        <h1>Nuevo seguimiento</h1>
-        <label>Qué quieres medir
-          <input required maxLength={60} value={nombre} onChange={ev => setNombre(ev.target.value)} placeholder="Gastos, Peso, Lectura…" />
-        </label>
-        <label>Cómo se mide
-          <select value={tipo} onChange={ev => setTipo(ev.target.value as TipoMedida)}>
-            {Object.entries(TIPOS).map(([v, t]) => <option key={v} value={v}>{t}</option>)}
-          </select>
-        </label>
-        {tipo === 'numero' && (
-          <label>Unidad (opcional)
-            <input maxLength={20} value={unidad} onChange={ev => setUnidad(ev.target.value)} placeholder="kg, vasos, páginas…" />
-          </label>
-        )}
-        <label>Cada cuánto
-          <select value={frecuencia} onChange={ev => setFrecuencia(ev.target.value as Frecuencia)}>
-            {Object.entries(FRECUENCIAS).map(([v, t]) => <option key={v} value={v}>{t}</option>)}
-          </select>
-        </label>
-        <label className="casilla">
-          <input type="checkbox" checked={conMeta} onChange={ev => setConMeta(ev.target.checked)} /> Ponerle una meta
-        </label>
-        {conMeta && (
-          <fieldset>
-            <label>Hacia dónde
-              <select value={direccion} onChange={ev => setDireccion(ev.target.value as Direccion)}>
-                <option value="mas_es_mejor">Más es mejor (llegar a la meta)</option>
-                <option value="menos_es_mejor">Menos es mejor (no pasarse)</option>
-              </select>
-            </label>
-            <label>Meta
-              <input inputMode="decimal" required maxLength={16} value={valorMeta} onChange={ev => setValorMeta(ev.target.value)} />
-            </label>
-            <label>Por
-              <select value={periodo} onChange={ev => setPeriodo(ev.target.value as Periodo)}>
-                {Object.entries(TEXTO_PERIODO).map(([v, t]) => <option key={v} value={v}>{t}</option>)}
-              </select>
-            </label>
-          </fieldset>
-        )}
-        <button className="principal" disabled={enviando}>Crear seguimiento</button>
-        {error && <p role="alert" className="error">{error}</p>}
-      </form>
     </>
   )
 }

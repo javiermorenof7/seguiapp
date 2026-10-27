@@ -23,8 +23,9 @@ function delDia(h: Seguimiento, marcas: Marca[], fecha: string): string | null {
   return `${formatoValor('numero', total, h.unidad)}${meta ? ` de ${formatoValor('numero', meta, h.unidad)}` : ''}`
 }
 
-export default function Habitos({ seguimientos, registros, alVolver, alCambiar }: {
+export default function Habitos({ seguimientos, registros, enfocar, alVolver, alCambiar }: {
   seguimientos: Seguimiento[]
+  enfocar?: boolean
   registros: RegistroGuardado[]
   alVolver: () => void
   alCambiar: () => Promise<void>
@@ -141,7 +142,7 @@ export default function Habitos({ seguimientos, registros, alVolver, alCambiar }
         <h2>{habitos.length ? 'Escribir o crear un hábito' : 'Registrar hábito'}</h2>
         <label>Hábito, cuánto y qué día (opcionales)
           <input required maxLength={80} value={texto} onChange={ev => { setTexto(ev.target.value); setPregunta(null) }}
-            placeholder="agua 2 litros" autoComplete="off" />
+            placeholder="agua 2 litros" autoComplete="off" autoFocus={enfocar} />
         </label>
         {leido && (
           <p className="tenue" aria-live="polite">

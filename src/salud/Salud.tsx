@@ -180,23 +180,25 @@ function Gym({ idGym, registros, enfocar, alCambiar }: {
         <h2>Registrar ejercicio</h2>
         <label>Ejercicio
           <input required maxLength={60} value={ejercicio} list="ejercicios" onChange={ev => elegirEjercicio(ev.target.value)}
-            placeholder="press banca" autoComplete="off" autoFocus={enfocar} />
+            placeholder="Qué ejercicio hiciste" autoComplete="off" autoFocus={enfocar} />
+          <small className="ayuda">Ej.: press banca, sentadilla, dominadas</small>
           <datalist id="ejercicios">{conocidos.map(e => <option key={e} value={e} />)}</datalist>
         </label>
         <div className="campos">
           <label>Series
-            <input required inputMode="numeric" maxLength={3} value={campos.series} placeholder="4"
+            <input required inputMode="numeric" maxLength={3} value={campos.series} placeholder="Cuántas series" aria-describedby="ayuda-serie"
               onChange={ev => { setCampos({ ...campos, series: ev.target.value }); setPregunta(null) }} />
           </label>
           <label>Repeticiones
-            <input required inputMode="numeric" maxLength={4} value={campos.repeticiones} placeholder="10"
+            <input required inputMode="numeric" maxLength={4} value={campos.repeticiones} placeholder="Cuántas por serie" aria-describedby="ayuda-serie"
               onChange={ev => { setCampos({ ...campos, repeticiones: ev.target.value }); setPregunta(null) }} />
           </label>
           <label>Peso (kg)
-            <input inputMode="decimal" maxLength={8} value={campos.peso} placeholder="Tu cuerpo"
+            <input inputMode="decimal" maxLength={8} value={campos.peso} placeholder="Kilos (vacío = tu cuerpo)" aria-describedby="ayuda-serie"
               onChange={ev => { setCampos({ ...campos, peso: ev.target.value }); setPregunta(null) }} />
           </label>
         </div>
+        <small id="ayuda-serie" className="ayuda">Ej.: 4 series de 10 repeticiones con 60 kg (o 82,5). Peso vacío si es con tu cuerpo.</small>
         {pregunta ? (
           <div className="chips" role="group" aria-label="¿Quisiste decir…?">
             <span>¿Quisiste decir <strong>{pregunta.sugerido}</strong>?</span>
@@ -294,7 +296,7 @@ function Medida({ medida, registros, alCambiar }: { medida: Seguimiento; registr
       {ultimo && <p><strong>{formatoValor('numero', ultimo.valor, unidad)}</strong> <span className="tenue">el {diaMes(ultimo.fecha)}{meta ? ` · meta ${formatoValor('numero', meta.valor, unidad)}` : ''}</span></p>}
       <form className="fila-presupuesto" onSubmit={guardar}>
         <label htmlFor={`m-${medida.id_seguimiento}`}>Hoy</label>
-        <input id={`m-${medida.id_seguimiento}`} inputMode="decimal" maxLength={8} value={valor} onChange={ev => setValor(ev.target.value)} placeholder={unidad ?? ''} />
+        <input id={`m-${medida.id_seguimiento}`} inputMode="decimal" maxLength={8} value={valor} onChange={ev => setValor(ev.target.value)} placeholder={`Tu medida de hoy (ej. 78,5${unidad ? ` ${unidad}` : ''})`} />
         <button className="secundario" disabled={enviando}>Guardar</button>
       </form>
       {aviso && <p role="status" className="aviso">{aviso}</p>}
@@ -375,7 +377,7 @@ function NuevaMedida({ inicial, alCrear }: { inicial?: boolean; alCrear: (nombre
       <button className="secundario" aria-expanded={abierto} onClick={() => setAbierto(!abierto)}>{abierto ? 'Cerrar' : 'Agregar otra medida'}</button>
       {abierto && (
         <form className="formulario" onSubmit={guardar}>
-          <label>Nombre<input required maxLength={60} value={nombre} onChange={ev => setNombre(ev.target.value)} placeholder="Brazo" autoComplete="off" autoFocus={inicial} /></label>
+          <label>Nombre<input required maxLength={60} value={nombre} onChange={ev => setNombre(ev.target.value)} placeholder="Qué quieres medir" autoComplete="off" autoFocus={inicial} /><small className="ayuda">Ej.: Brazo, Cadera, Grasa corporal</small></label>
           <label>Unidad<input required maxLength={20} value={unidad} onChange={ev => setUnidad(ev.target.value)} /></label>
           <button className="principal">Agregar</button>
           {error && <p role="alert" className="error">{error}</p>}

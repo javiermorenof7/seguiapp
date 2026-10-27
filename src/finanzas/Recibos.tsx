@@ -215,7 +215,7 @@ function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alQuit
         : (
           <form className="fila-presupuesto" onSubmit={pagar}>
             <label htmlFor={`r-${recibo.id_recibo}`}>Valor real</label>
-            <input id={`r-${recibo.id_recibo}`} inputMode="numeric" maxLength={16} value={monto} onChange={ev => setMonto(ev.target.value)} placeholder="0" />
+            <input id={`r-${recibo.id_recibo}`} inputMode="numeric" maxLength={16} value={monto} onChange={ev => setMonto(ev.target.value)} placeholder="Valor pagado (ej. 85.000)" />
             <button className="secundario" disabled={enviando}>Pagar</button>
             {pideCategoria && (
               <select aria-label={`Categoría de ${nombre}`} value={elegida} onChange={ev => setElegida(ev.target.value)}>
@@ -281,9 +281,9 @@ function NuevoRecibo({ inicial, categorias, alGuardar }: {
               </button>
             ))}
           </div>
-          <label>Servicio<input required maxLength={60} value={servicio} onChange={ev => setServicio(ev.target.value)} placeholder="Luz" autoComplete="off" autoFocus={inicial} /></label>
+          <label>Servicio<input required maxLength={60} value={servicio} onChange={ev => setServicio(ev.target.value)} placeholder="Qué servicio pagas" autoComplete="off" autoFocus={inicial} /><small className="ayuda">Ej.: Luz, Agua, Internet</small></label>
           {tipo === 'hogar' && (
-            <label>Ubicación<input required maxLength={60} value={ubicacion} onChange={ev => setUbicacion(ev.target.value)} placeholder="La Mesa" autoComplete="off" /></label>
+            <label>Ubicación<input required maxLength={60} value={ubicacion} onChange={ev => setUbicacion(ev.target.value)} placeholder="Dónde llega la factura" autoComplete="off" /><small className="ayuda">Ej.: Casa, La Mesa</small></label>
           )}
           {tipo === 'personal' && (
             <label>Categoría
@@ -295,8 +295,9 @@ function NuevoRecibo({ inicial, categorias, alGuardar }: {
           )}
           <label>Número de cuenta (opcional)
             <input maxLength={40} value={numero} onChange={ev => setNumero(ev.target.value)} autoComplete="off" />
+            <small className="ayuda">El de la factura; se muestra oculto (****1234)</small>
           </label>
-          <label>Valor pagado<input required inputMode="numeric" maxLength={16} value={monto} onChange={ev => setMonto(ev.target.value)} placeholder="0" /></label>
+          <label>Valor pagado<input required inputMode="numeric" maxLength={16} value={monto} onChange={ev => setMonto(ev.target.value)} placeholder="Valor que pagaste" /><small className="ayuda">Ej.: 85.000, sin decimales</small></label>
           <button className="principal" disabled={enviando}>Guardar y pagar</button>
           {error && <p role="alert" className="error">{error}</p>}
         </form>

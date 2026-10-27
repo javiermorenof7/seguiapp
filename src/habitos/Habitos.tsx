@@ -250,13 +250,15 @@ function Formulario({ habitos, hoy, enviando, enfocar, alEnviar }: {
       <h2>Registrar hábito</h2>
       <label>Hábito
         <input required maxLength={60} value={nombre} list="habitos" onChange={ev => setNombre(ev.target.value)}
-          placeholder="agua" autoComplete="off" autoFocus={enfocar} />
+          placeholder="Qué hábito hiciste" autoComplete="off" autoFocus={enfocar} />
+        <small className="ayuda">Ej.: agua, leer, meditar</small>
         <datalist id="habitos">{habitos.map(h => <option key={h.id_seguimiento} value={h.nombre} />)}</datalist>
       </label>
       {conCantidad && (
         <label>{existente ? `Cuánto${existente.unidad ? ` (${existente.unidad})` : ''}` : 'Cuánto (opcional, si lo mides)'}
           <input required={!!existente} inputMode="decimal" maxLength={20} value={cantidad} onChange={ev => setCantidad(ev.target.value)}
-            placeholder={existente ? '2' : '2 litros'} autoComplete="off" />
+            placeholder={existente ? 'Cuánto hiciste' : 'Cuánto hiciste (opcional)'} autoComplete="off" />
+          <small className="ayuda">{existente ? `Ej.: 2${existente.unidad ? ` ${existente.unidad}` : ''}` : 'Ej.: 2 litros o 10 minutos. Vacío si solo es hecho o no hecho.'}</small>
         </label>
       )}
       <fieldset>

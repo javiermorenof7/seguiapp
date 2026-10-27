@@ -164,3 +164,4 @@ button:disabled { opacity: .6; cursor: default; }
 .filtros { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 8px 0 12px; max-width: 720px; }
 .filtros label { display: grid; gap: 6px; font-weight: 600; }
 .filtros select, .filtros input { font: inherit; color: var(--tinta); background: var(--fondo); border: 1px solid var(--linea); border-radius: 12px; padding: 10px 12px; min-width: 0; }
+.ayuda { color: var(--tenue); font-size: 14px; font-weight: 400; }

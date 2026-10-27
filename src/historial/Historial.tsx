@@ -80,7 +80,8 @@ export default function Historial({ ids, registros, filtros, buscar, suma, forma
         ))}
         {buscar && (
           <label>Buscar
-            <input value={texto} maxLength={60} onChange={ev => setTexto(ev.target.value)} placeholder="almuerzo" autoComplete="off" />
+            <input value={texto} maxLength={60} onChange={ev => setTexto(ev.target.value)} placeholder="Palabra a buscar" autoComplete="off" />
+            <small className="ayuda">Ej.: almuerzo, taxi</small>
           </label>
         )}
       </div>

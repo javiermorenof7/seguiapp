@@ -258,13 +258,15 @@ function NuevoMovimiento({ datos, anteriores, tipoInicial, ids, gastadoDe, presu
       </div>
       <label>Monto
         <input required inputMode="text" maxLength={30} value={monto} onChange={ev => setMonto(ev.target.value)}
-          placeholder="35 mil" autoComplete="off" autoFocus={!!tipoInicial} aria-describedby="monto-leido" />
+          placeholder="¿Cuánto fue?" autoComplete="off" autoFocus={!!tipoInicial} aria-describedby="monto-leido" />
+        <small className="ayuda">Ej.: 35 mil, 35.000 o 1,5 millones</small>
         <span id="monto-leido" className="tenue" aria-live="polite">{monto.trim() && (valor === null ? 'Escribe solo el monto' : pesos(valor))}</span>
       </label>
       <label>{tipo === 'ingreso' ? '¿De dónde vino?' : tipo === 'ahorro' ? '¿Para qué?' : '¿En qué fue?'}
         <input maxLength={MAX_DESCRIPCION} value={descripcion} list="descripciones" autoComplete="off"
           onChange={ev => { setDescripcion(ev.target.value); setElegida(null) }}
-          placeholder={tipo === 'ingreso' ? 'sueldo' : tipo === 'ahorro' ? 'viaje' : 'almuerzo'} />
+          placeholder={tipo === 'ingreso' ? 'Quién te pagó o por qué' : tipo === 'ahorro' ? 'Para qué estás ahorrando' : 'Qué compraste o pagaste'} />
+        <small className="ayuda">Ej.: {tipo === 'ingreso' ? 'sueldo, venta, arriendo' : tipo === 'ahorro' ? 'viaje, emergencias' : 'almuerzo, taxi, mercado'}</small>
         <datalist id="descripciones">{sugerencias.map(s => <option key={s} value={s} />)}</datalist>
       </label>
       {tipo === 'gasto' && (descripcion.trim() || leido) && (
@@ -437,7 +439,7 @@ function FilaPresupuesto({ nombre, actual, sugerido, enfocar, alGuardar }: {
       <form className="fila-presupuesto" onSubmit={guardar}>
         <label htmlFor={`p-${nombre}`}>{nombre}{sugerido > 0 && <span className="tenue"> Sugerido {pesos(sugerido)}</span>}</label>
         <input id={`p-${nombre}`} inputMode="numeric" maxLength={16} value={valor} onChange={ev => setValor(ev.target.value)}
-          placeholder="Sin presupuesto" autoFocus={enfocar} />
+          placeholder="Tope del mes (ej. 500.000)" autoFocus={enfocar} />
         <button className="secundario" disabled={!valor && !actual}>{!valor && actual ? 'Quitar' : 'Guardar'}</button>
         {mensaje && <span role="status" className="tenue">{mensaje}</span>}
       </form>

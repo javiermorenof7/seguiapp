@@ -130,3 +130,4 @@ button:disabled { opacity: .6; cursor: default; }
 .calendario { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; margin-top: 12px; max-width: 420px; }
 .calendario span { aspect-ratio: 1; border-radius: 6px; background: var(--linea); }
 .calendario span.hecho { background: var(--acento); }
+.lista li .chips { grid-column: 1 / -1; }

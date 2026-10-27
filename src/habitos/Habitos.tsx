@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
-  aprenderNombre, crearSeguimiento, guardarMeta, obtenerAlias, registrar, type RegistroGuardado, type Seguimiento,
+  aprenderNombre, crearHabito, guardarMeta, obtenerAlias, quitarSeguimiento, registrar, renombrarHabito, type RegistroGuardado, type Seguimiento,
 } from '../datos'
 import { formatoValor } from '../indicadores'
+import { normalizar } from '../finanzas/parseo'
 import Grafico from '../Grafico'
 import Barras from '../finanzas/Barras'
 import { parecido } from '../salud/calculos'
-import { dias, diasHechos, leerHabito, mejorRacha, racha, totalDelDia, ultimosDias, type Leido, type Marca } from './calculos'
+import { dias, diasHechos, leerHabito, mismoNombre, mejorRacha, racha, totalDelDia, ultimosDias, type Leido, type Marca } from './calculos'
 
 const cssVar = (nombre: string) => getComputedStyle(document.documentElement).getPropertyValue(nombre).trim()
 const hoyIso = () => new Date().toLocaleDateString('en-CA')
@@ -39,29 +40,32 @@ export default function Habitos({ seguimientos, registros, alVolver, alCambiar }
   const [aviso, setAviso] = useState('')
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
+  const [confirmar, setConfirmar] = useState<string | null>(null)
+  const [renombrando, setRenombrando] = useState<{ id: string; nombre: string } | null>(null)
 
   useEffect(() => { obtenerAlias('habito').then(setAlias).catch(e => setError((e as Error).message)) }, [])
 
   const leido = leerHabito(texto, hoy)
 
   async function guardar(l: Leido) {
-    const existente = habitos.find(h => h.nombre === l.habito)
+    const existente = habitos.find(h => mismoNombre(h.nombre, l.habito))
+    const nombre = existente?.nombre ?? l.habito
     if (existente?.tipo_medida === 'numero' && l.valor === null) {
-      return setError(`${l.habito} se mide en ${existente.unidad ?? 'cantidad'}: escribe cuánto, por ejemplo "${l.habito} 2".`)
+      return setError(`${nombre} se mide en ${existente.unidad ?? 'cantidad'}: escribe cuánto, por ejemplo "${nombre} 2".`)
     }
     setEnviando(true)
     try {
       const esSiNo = existente ? existente.tipo_medida === 'si_no' : l.valor === null
-      const id = existente?.id_seguimiento ?? await crearSeguimiento({
+      // shortcut: un hábito quitado que vuelve se guarda con el tipo de antes; si no coincide con lo escrito, la base lo rechaza.
+      const id = existente?.id_seguimiento ?? await crearHabito({
         nombre: l.habito, tipo_medida: esSiNo ? 'si_no' : 'numero', unidad: esSiNo ? null : l.unidad || null,
-        frecuencia: 'dia', codigo_plantilla: 'habitos',
-      }, null)
+      })
       const valor = esSiNo ? 1 : l.valor!
       const resultado = await registrar({ id_seguimiento: id, fecha_registro: l.fecha, valor, nota: null })
       const h = existente ?? { tipo_medida: esSiNo ? 'si_no' : 'numero', unidad: l.unidad || null, meta: null } as Seguimiento
       const nuevas = [...(marcas.get(id) ?? []), { fecha: l.fecha, valor }]
       setAviso(resultado === 'en_cola' ? 'Sin conexión: quedó guardado en este equipo y se enviará al volver la conexión.' : [
-        `${l.habito}${l.fecha === hoy ? ' hoy' : ` el ${diaMes(l.fecha)}`}: ${delDia(h, nuevas, l.fecha)}.`,
+        `${nombre}${l.fecha === hoy ? ' hoy' : ` el ${diaMes(l.fecha)}`}: ${delDia(h, nuevas, l.fecha)}.`,
         existente ? '' : 'Hábito nuevo.',
         `Racha: ${dias(racha(nuevas, hoy, metaDe(h)))} · mejor: ${dias(mejorRacha(nuevas, metaDe(h)))}.`,
       ].filter(Boolean).join(' '))
@@ -81,18 +85,50 @@ export default function Habitos({ seguimientos, registros, alVolver, alCambiar }
     evento.preventDefault()
     if (!leido) return setError('Escribe el hábito y, si quieres, cuánto y qué día: "leer", "agua 2 litros", "meditar 10 ayer".')
     if (!alias) return
-    const conocidos = habitos.map(h => h.nombre)
-    const aprendido = alias.get(leido.habito)
-    if (conocidos.includes(leido.habito)) return guardar(leido)
+    if (habitos.some(h => mismoNombre(h.nombre, leido.habito))) return guardar(leido)
+    const aprendido = alias.get(normalizar(leido.habito))
     if (aprendido) return guardar({ ...leido, habito: aprendido })
-    const sugerido = parecido(leido.habito, conocidos)
-    if (sugerido) return setPregunta({ leido, sugerido })
+    const sugerido = parecido(leido.habito, habitos.map(h => normalizar(h.nombre)))
+    const conocido = sugerido && habitos.find(h => normalizar(h.nombre) === sugerido)
+    if (conocido) return setPregunta({ leido, sugerido: conocido.nombre })
     guardar(leido)
+  }
+
+  async function quitar(h: Seguimiento) {
+    try {
+      await quitarSeguimiento(h.id_seguimiento)
+      setConfirmar(null)
+      setAviso(`${h.nombre} quitado.`)
+      await alCambiar()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  async function renombrar(evento: FormEvent, h: Seguimiento) {
+    evento.preventDefault()
+    const nuevo = (renombrando?.nombre ?? '').replace(/\s+/g, ' ').trim()
+    if (!nuevo || nuevo.length > 60) return setError('Escribe un nombre de 1 a 60 letras.')
+    if (nuevo === h.nombre) return setRenombrando(null)
+    const otro = habitos.find(o => o.id_seguimiento !== h.id_seguimiento && mismoNombre(o.nombre, nuevo))
+    if (otro) return setError(`Ya tienes un hábito llamado ${otro.nombre}.`)
+    try {
+      await renombrarHabito(h.id_seguimiento, h.nombre, nuevo)
+      // escribir el nombre viejo sigue llevando a este hábito
+      if (!mismoNombre(h.nombre, nuevo)) await aprenderNombre('habito', normalizar(h.nombre), nuevo).catch(() => {})
+      setAlias(await obtenerAlias('habito'))
+      setRenombrando(null)
+      setError('')
+      setAviso(`${h.nombre} ahora se llama ${nuevo}.`)
+      await alCambiar()
+    } catch (e) {
+      setError((e as Error).message)
+    }
   }
 
   async function responder(correcto: string) {
     if (!pregunta) return
-    await aprenderNombre('habito', pregunta.leido.habito, correcto).catch(() => {})
+    await aprenderNombre('habito', normalizar(pregunta.leido.habito), correcto).catch(() => {})
     await guardar({ ...pregunta.leido, habito: correcto })
   }
 
@@ -100,8 +136,9 @@ export default function Habitos({ seguimientos, registros, alVolver, alCambiar }
     <>
       <button className="volver" onClick={alVolver}>← Mi seguimiento</button>
       <header className="encabezado"><div><h1>Hábitos</h1></div></header>
+      {habitos.length > 0 && <DesdeLista habitos={habitos} hoy={hoy} enviando={enviando} alGuardar={guardar} />}
       <form className="formulario" onSubmit={enviar}>
-        <h2>Registrar hábito</h2>
+        <h2>{habitos.length ? 'Escribir o crear un hábito' : 'Registrar hábito'}</h2>
         <label>Hábito, cuánto y qué día (opcionales)
           <input required maxLength={80} value={texto} onChange={ev => { setTexto(ev.target.value); setPregunta(null) }}
             placeholder="agua 2 litros" autoComplete="off" />
@@ -133,7 +170,29 @@ export default function Habitos({ seguimientos, registros, alVolver, alCambiar }
                 return (
                   <li key={h.id_seguimiento} className="dos">
                     <span>{h.nombre} <span className="tenue">· {delDia(h, suyas, hoy) ?? 'pendiente'}</span></span>
-                    <span>racha <strong>{dias(racha(suyas, hoy, metaDe(h)))}</strong> <span className="tenue">· mejor {dias(mejorRacha(suyas, metaDe(h)))}</span></span>
+                    <span>racha <strong>{dias(racha(suyas, hoy, metaDe(h)))}</strong> <span className="tenue">· mejor {dias(mejorRacha(suyas, metaDe(h)))}</span>
+                      {' '}<button className="enlace" aria-expanded={renombrando?.id === h.id_seguimiento}
+                        onClick={() => { setRenombrando(renombrando?.id === h.id_seguimiento ? null : { id: h.id_seguimiento, nombre: h.nombre }); setConfirmar(null) }}>Renombrar</button>
+                      {' '}<button className="enlace" aria-expanded={confirmar === h.id_seguimiento}
+                        onClick={() => { setConfirmar(confirmar === h.id_seguimiento ? null : h.id_seguimiento); setRenombrando(null) }}>Quitar</button>
+                    </span>
+                    {renombrando?.id === h.id_seguimiento && (
+                      <form className="chips" onSubmit={ev => renombrar(ev, h)}>
+                        <label>Nuevo nombre
+                          <input required maxLength={60} value={renombrando.nombre} autoComplete="off"
+                            onChange={ev => setRenombrando({ id: h.id_seguimiento, nombre: ev.target.value })} />
+                        </label>
+                        <button className="chip">Guardar</button>
+                        <button type="button" className="chip" onClick={() => { setRenombrando(null); setError('') }}>Cancelar</button>
+                      </form>
+                    )}
+                    {confirmar === h.id_seguimiento && (
+                      <div className="chips" role="group" aria-label={`Quitar ${h.nombre}`}>
+                        <span>¿Quitar <strong>{h.nombre}</strong>? Sus registros se conservan.</span>
+                        <button type="button" className="chip" onClick={() => quitar(h)}>Sí</button>
+                        <button type="button" className="chip" onClick={() => setConfirmar(null)}>No</button>
+                      </div>
+                    )}
                   </li>
                 )
               })}
@@ -144,6 +203,48 @@ export default function Habitos({ seguimientos, registros, alVolver, alCambiar }
         </>
       )}
     </>
+  )
+}
+
+// Registrar uno de los hábitos que ya existen: elegirlo, la cantidad si es de cantidad y el día.
+function DesdeLista({ habitos, hoy, enviando, alGuardar }: {
+  habitos: Seguimiento[]; hoy: string; enviando: boolean; alGuardar: (l: Leido) => Promise<void>
+}) {
+  const [id, setId] = useState('')
+  const [cantidad, setCantidad] = useState('')
+  const [fecha, setFecha] = useState(hoy)
+  const [error, setError] = useState('')
+  const h = habitos.find(x => x.id_seguimiento === id) ?? habitos[0]
+
+  async function guardar(evento: FormEvent) {
+    evento.preventDefault()
+    if (!fecha || fecha > hoy) return setError('Elige hoy o un día anterior.')
+    const n = h.tipo_medida === 'numero' ? Number(cantidad.replace(',', '.').trim()) : null
+    if (n !== null && (!Number.isFinite(n) || n <= 0 || n >= 1e6)) return setError(`Escribe cuánto en ${h.unidad ?? 'números'}, por ejemplo 2.`)
+    setError('')
+    await alGuardar({ habito: h.nombre, valor: n, unidad: '', fecha })
+    setCantidad('')
+  }
+
+  return (
+    <form className="formulario" onSubmit={guardar}>
+      <h2>Registrar hábito</h2>
+      <label>Hábito
+        <select value={h.id_seguimiento} onChange={ev => { setId(ev.target.value); setError('') }}>
+          {habitos.map(x => <option key={x.id_seguimiento} value={x.id_seguimiento}>{x.nombre}</option>)}
+        </select>
+      </label>
+      {h.tipo_medida === 'numero' && (
+        <label>Cuánto{h.unidad ? ` (${h.unidad})` : ''}
+          <input required inputMode="decimal" maxLength={8} value={cantidad} onChange={ev => setCantidad(ev.target.value)} />
+        </label>
+      )}
+      <label>Día
+        <input type="date" required value={fecha} max={hoy} onChange={ev => setFecha(ev.target.value)} />
+      </label>
+      <button className="principal" disabled={enviando}>{h.tipo_medida === 'si_no' ? 'Hecho' : 'Guardar'}</button>
+      {error && <p role="alert" className="error">{error}</p>}
+    </form>
   )
 }
 

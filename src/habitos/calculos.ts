@@ -8,6 +8,8 @@ export interface Leido { habito: string; valor: number | null; unidad: string; f
 
 const NUMERO = String.raw`\d+(?:[.,]\d+)?`
 const DIA_MS = 864e5
+// Los nombres se comparan sin mayúsculas ni tildes: "Leer" y "leer" son el mismo hábito.
+export const mismoNombre = (a: string, b: string) => normalizar(a) === normalizar(b)
 export const dias = (n: number) => `${n} ${n === 1 ? 'día' : 'días'}`
 const dosCifras = (n: number) => String(n).padStart(2, '0')
 
@@ -19,9 +21,10 @@ function fechaDe(ano: number, mes: number, dia: number): string | null {
 
 // "hoy", "ayer", "anteayer", "el 24" (el último 24 que ya pasó) o "el 24/10" al final de la línea.
 function leerFecha(texto: string, hoy: string): { resto: string; fecha: string } | null {
-  const m = texto.match(/^(.*?)\s*\b(hoy|ayer|anteayer|el (\d{1,2})(?:\/(\d{1,2}))?)$/)
+  const m = texto.match(/^(.*?)\s*\b(hoy|ayer|anteayer|el (\d{1,2})(?:\/(\d{1,2}))?)$/i)
   if (!m) return { resto: texto, fecha: hoy }
-  const [, resto, palabra, dia, mes] = m
+  const [, resto, , dia, mes] = m
+  const palabra = m[2].toLowerCase()
   if (palabra === 'hoy') return { resto, fecha: hoy }
   if (palabra === 'ayer') return { resto, fecha: restarDias(hoy, 1) }
   if (palabra === 'anteayer') return { resto, fecha: restarDias(hoy, 2) }
@@ -38,16 +41,17 @@ function leerFecha(texto: string, hoy: string): { resto: string; fecha: string }
   return fecha ? { resto, fecha } : null
 }
 
-// "leer" (hecho), "agua 2 litros", "meditar 10 ayer"; null si no se entiende o la fecha es futura.
+// "Leer" (hecho), "agua 2 litros", "Meditación 10 ayer"; el nombre queda como se escribió.
+// null si no se entiende o la fecha es futura.
 export function leerHabito(texto: string, hoy: string): Leido | null {
-  const conFecha = leerFecha(normalizar(texto), hoy)
+  const conFecha = leerFecha(texto.replace(/\s+/g, ' ').trim(), hoy)
   if (!conFecha || conFecha.fecha > hoy) return null
   const { resto, fecha } = conFecha
-  const m = resto.match(new RegExp(String.raw`^(.+?)\s+(${NUMERO})\s*([a-z]*)$`))
+  const m = resto.match(new RegExp(String.raw`^(.+?)\s+(${NUMERO})\s*(\p{L}*)$`, 'u'))
   const habito = (m ? m[1] : resto).trim()
   const valor = m ? Number(m[2].replace(',', '.')) : null
   if (!habito || habito.length > 60 || (valor !== null && (valor <= 0 || valor >= 1e6))) return null
-  return { habito, valor, unidad: m?.[3] ?? '', fecha }
+  return { habito, valor, unidad: m?.[3].toLowerCase() ?? '', fecha }
 }
 
 const porDia = (marcas: Marca[]) => {

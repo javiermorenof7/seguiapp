@@ -81,6 +81,29 @@ export async function crearSeguimiento(
   return id_seguimiento as string
 }
 
+// El nombre es único por persona aunque el hábito se haya quitado: si ya existió, vuelve con sus registros.
+export async function crearHabito(datos: Pick<Seguimiento, 'nombre' | 'tipo_medida' | 'unidad'>) {
+  const { data, error } = await supabase.from('seguimiento')
+    .insert({ ...datos, frecuencia: 'dia', codigo_plantilla: 'habitos' }).select('id_seguimiento').single()
+  if (!error) return data.id_seguimiento as string
+  const vuelto = revisar(await supabase.from('seguimiento').update({ estado: 'activo' })
+    .eq('nombre', datos.nombre).eq('codigo_plantilla', 'habitos').eq('estado', 'eliminado').select('id_seguimiento'))
+  if (!vuelto.length) revisar({ data: null, error })
+  return vuelto[0].id_seguimiento as string
+}
+
+// Lo aprendido con el nombre viejo pasa al nuevo.
+export async function renombrarHabito(id: string, viejo: string, nuevo: string) {
+  const { error } = await supabase.from('seguimiento').update({ nombre: nuevo }).eq('id_seguimiento', id)
+  if ((error as { code?: string } | null)?.code === '23505') throw new ErrorDatos(`Ya existe un hábito llamado ${nuevo} (o lo tuviste antes).`)
+  revisar({ data: null, error })
+  revisar(await supabase.from('alias').update({ texto_correcto: nuevo }).eq('tipo', 'habito').eq('texto_correcto', viejo))
+}
+
+export async function quitarSeguimiento(id: string) {
+  revisar(await supabase.from('seguimiento').update({ estado: 'eliminado' }).eq('id_seguimiento', id))
+}
+
 async function enviar(registro: NuevoRegistro) {
   // reenviar el mismo id no duplica
   return supabase.from('registro').upsert(registro, { onConflict: 'id_registro', ignoreDuplicates: true })

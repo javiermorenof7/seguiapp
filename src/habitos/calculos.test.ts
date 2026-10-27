@@ -1,14 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { diasHechos, leerHabito, mejorRacha, racha, totalDelDia, ultimosDias, type Marca } from './calculos'
+import { diasHechos, leerHabito, mismoNombre, mejorRacha, racha, totalDelDia, ultimosDias, type Marca } from './calculos'
 
 const HOY = '2026-10-26'
 const m = (fecha: string, valor = 1): Marca => ({ fecha, valor })
 
 describe('leerHabito', () => {
   it('sin cantidad es hecho, con cantidad suma y la unidad es opcional', () => {
-    expect(leerHabito('Leer', HOY)).toEqual({ habito: 'leer', valor: null, unidad: '', fecha: HOY })
+    expect(leerHabito('Leer', HOY)).toEqual({ habito: 'Leer', valor: null, unidad: '', fecha: HOY })
     expect(leerHabito('agua 2,5 litros', HOY)).toEqual({ habito: 'agua', valor: 2.5, unidad: 'litros', fecha: HOY })
     expect(leerHabito('meditar 10', HOY)).toEqual({ habito: 'meditar', valor: 10, unidad: '', fecha: HOY })
+  })
+  it('el nombre queda con mayúsculas y tildes; la fecha y la unidad no distinguen', () => {
+    expect(leerHabito('  Meditación   10 Min  Ayer ', HOY)).toEqual({ habito: 'Meditación', valor: 10, unidad: 'min', fecha: '2026-10-25' })
+    expect(mismoNombre('Meditación', 'meditacion')).toBe(true)
+    expect(mismoNombre('Leer', 'Lectura')).toBe(false)
   })
   it('lee el día al final', () => {
     expect(leerHabito('leer ayer', HOY)?.fecha).toBe('2026-10-25')

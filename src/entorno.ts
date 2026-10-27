@@ -1,4 +1,2 @@
-// dev se publica en GitHub Pages bajo /seguiapp/; producción (Cloudflare) en la raíz.
+// Modo de la build de dev (`npm run build:dev`): muestra la franja "Desarrollo".
 export const DESARROLLO = 'desarrollo'
-
-export const baseDe = (modo: string) => (modo === DESARROLLO ? '/seguiapp/' : '/')

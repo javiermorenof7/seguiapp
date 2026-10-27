@@ -73,7 +73,9 @@ export async function obtenerRegistros(desde: string, idSeguimiento?: string): P
   return revisar(await consulta).map(({ fecha_registro, ...r }) => ({ ...r, fecha: fecha_registro }))
 }
 
-export async function crearSeguimiento(datos: Omit<Seguimiento, 'id_seguimiento' | 'meta' | 'codigo_plantilla'>, meta: Meta | null) {
+export async function crearSeguimiento(
+  datos: Omit<Seguimiento, 'id_seguimiento' | 'meta' | 'codigo_plantilla'> & { codigo_plantilla?: string }, meta: Meta | null,
+) {
   const { id_seguimiento } = revisar(await supabase.from('seguimiento').insert(datos).select('id_seguimiento').single())
   if (meta) revisar(await supabase.from('meta').insert({ ...meta, id_seguimiento }))
   return id_seguimiento as string
@@ -135,9 +137,12 @@ export async function obtenerFinanzas(idGastos: string, desdePagos: string) {
 }
 
 // La próxima vez que escriba lo mismo, sale esta categoría.
-export async function aprenderCategoria(textoEscrito: string, categoria: string) {
+export const aprenderCategoria = (textoEscrito: string, categoria: string) => aprenderNombre('categoria', textoEscrito, categoria)
+
+// Un "no" a "¿quisiste decir…?" se guarda con el mismo texto como correcto.
+export async function aprenderNombre(tipo: 'categoria' | 'ejercicio' | 'habito', textoEscrito: string, correcto: string) {
   revisar(await supabase.from('alias').upsert(
-    { tipo: 'categoria', texto_escrito: textoEscrito.slice(0, 100), texto_correcto: categoria, estado: 'activo' },
+    { tipo, texto_escrito: textoEscrito.slice(0, 100), texto_correcto: correcto.slice(0, 100), estado: 'activo' },
     { onConflict: 'id_usuario,tipo,texto_escrito' },
   ))
 }
@@ -219,6 +224,49 @@ export async function pagarRecibo(pago: {
 export async function deshacerPago(pago: { id_pago_recibo: string; id_registro: string | null }) {
   revisar(await supabase.from('pago_recibo').delete().eq('id_pago_recibo', pago.id_pago_recibo))
   if (pago.id_registro) await eliminarRegistro(pago.id_registro)
+}
+
+// Ejercicios (etiquetas de Gym), series del último año y nombres aprendidos; las fechas salen de los registros.
+export async function obtenerSalud(idGym: string, desde: string) {
+  const [ejercicios, series, alias] = await Promise.all([
+    supabase.from('etiqueta').select('id_etiqueta, nombre').eq('id_seguimiento', idGym).eq('estado', 'activo'),
+    supabase.from('serie_gym').select('id_registro, cantidad_series, cantidad_repeticiones, peso_kilogramos').gte('fecha_creacion', desde),
+    supabase.from('alias').select('texto_escrito, texto_correcto').eq('tipo', 'ejercicio').eq('estado', 'activo'),
+  ])
+  return {
+    ejercicios: revisar(ejercicios) as { id_etiqueta: string; nombre: string }[],
+    series: revisar(series) as { id_registro: string; cantidad_series: number; cantidad_repeticiones: number; peso_kilogramos: number | null }[],
+    alias: new Map(revisar(alias).map(a => [a.texto_escrito, a.texto_correcto] as [string, string])),
+  }
+}
+
+export async function crearEjercicio(idGym: string, nombre: string) {
+  return revisar(await supabase.from('etiqueta').insert({ id_seguimiento: idGym, nombre }).select('id_etiqueta').single()).id_etiqueta as string
+}
+
+// El registro guarda el peso (o las repeticiones si es sin peso) para la tendencia; la serie, el detalle.
+// shortcut: dos llamadas sin transacción y sin cola; pasar a una función SQL si un fallo entre las dos deja huérfanos.
+export async function registrarSerie(s: {
+  id_seguimiento: string; id_etiqueta: string; fecha: string; series: number; repeticiones: number; peso: number | null
+}) {
+  const id_registro = crypto.randomUUID()
+  revisar(await supabase.from('registro').insert({
+    id_registro, id_seguimiento: s.id_seguimiento, id_etiqueta: s.id_etiqueta, fecha_registro: s.fecha, valor: s.peso ?? s.repeticiones,
+  }))
+  const { error } = await supabase.from('serie_gym').insert({
+    id_registro, cantidad_series: s.series, cantidad_repeticiones: s.repeticiones, peso_kilogramos: s.peso,
+  })
+  if (error) {
+    await eliminarRegistro(id_registro).catch(() => {})
+    revisar({ data: null, error })
+  }
+}
+
+// Cambia o quita (valor null) la meta general de un seguimiento.
+export async function guardarMeta(idSeguimiento: string, meta: Meta | null) {
+  revisar(await supabase.from('meta').update({ estado: 'eliminado' })
+    .eq('id_seguimiento', idSeguimiento).is('id_etiqueta', null).eq('estado', 'activo'))
+  if (meta) revisar(await supabase.from('meta').insert({ ...meta, id_seguimiento: idSeguimiento }))
 }
 
 export async function cerrarSesion() {

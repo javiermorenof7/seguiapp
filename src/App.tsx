@@ -12,6 +12,7 @@ import {
 import Grafico from './Grafico'
 import Privacidad from './Privacidad'
 import Finanzas from './finanzas/Finanzas'
+import Salud from './salud/Salud'
 
 const TEXTO_ESTADO: Record<Estado, string> = { fuera: '✕ Fuera de la meta', cerca: '◐ Cerca de la meta', en_meta: '✓ Vas bien' }
 const TEXTO_PERIODO: Record<Periodo, string> = { dia: 'día', semana: 'semana', mes: 'mes', ano: 'año' }
@@ -78,7 +79,7 @@ function Entrar({ alPrivacidad }: { alPrivacidad: () => void }) {
   )
 }
 
-type Vista = { tipo: 'inicio' } | { tipo: 'nuevo' } | { tipo: 'detalle'; id: string }
+type Vista = { tipo: 'inicio' } | { tipo: 'nuevo' } | { tipo: 'salud' } | { tipo: 'detalle'; id: string }
 
 function Panel({ sesion, alPrivacidad }: { sesion: Session; alPrivacidad: () => void }) {
   const [vista, setVista] = useState<Vista>({ tipo: 'inicio' })
@@ -119,7 +120,10 @@ function Panel({ sesion, alPrivacidad }: { sesion: Session; alPrivacidad: () => 
       {vista.tipo === 'detalle' && actual?.codigo_plantilla === 'finanzas' && (
         <Finanzas seguimientos={seguimientos!} registros={registros} alVolver={() => setVista({ tipo: 'inicio' })} alCambiar={cargar} />
       )}
-      {vista.tipo === 'detalle' && actual && actual.codigo_plantilla !== 'finanzas' && (
+      {seguimientos && (vista.tipo === 'salud' || (actual && ['gym', 'cuerpo'].includes(actual.codigo_plantilla ?? ''))) && (
+        <Salud seguimientos={seguimientos} registros={registros} alVolver={() => setVista({ tipo: 'inicio' })} alCambiar={cargar} />
+      )}
+      {vista.tipo === 'detalle' && actual && !['finanzas', 'gym', 'cuerpo'].includes(actual.codigo_plantilla ?? '') && (
         <Detalle
           seguimiento={actual}
           indice={seguimientos!.indexOf(actual)}
@@ -133,6 +137,7 @@ function Panel({ sesion, alPrivacidad }: { sesion: Session; alPrivacidad: () => 
           seguimientos={seguimientos}
           registros={registros}
           alNuevo={() => setVista({ tipo: 'nuevo' })}
+          alSalud={() => setVista({ tipo: 'salud' })}
           alAbrir={id => setVista({ tipo: 'detalle', id })}
         />
       )}
@@ -141,10 +146,11 @@ function Panel({ sesion, alPrivacidad }: { sesion: Session; alPrivacidad: () => 
   )
 }
 
-function Inicio({ seguimientos, registros, alNuevo, alAbrir }: {
+function Inicio({ seguimientos, registros, alNuevo, alSalud, alAbrir }: {
   seguimientos: Seguimiento[] | null
   registros: RegistroGuardado[]
   alNuevo: () => void
+  alSalud: () => void
   alAbrir: (id: string) => void
 }) {
   const tarjetas = useMemo(() => (seguimientos ?? [])
@@ -160,6 +166,7 @@ function Inicio({ seguimientos, registros, alNuevo, alAbrir }: {
         </div>
         <div className="acciones">
           <button className="principal" onClick={alNuevo}>Nuevo seguimiento</button>
+          <button className="secundario" onClick={alSalud}>Salud</button>
           <button className="secundario" onClick={cerrarSesion}>Salir</button>
         </div>
       </header>

@@ -1,8 +1,9 @@
 name: Publicar
 
+# dev → GitHub Pages (desarrollo). main → Cloudflare Pages (producción). Los pull requests solo construyen.
 on:
   push:
-    branches: [main]
+    branches: [dev, main]
   pull_request:
   workflow_dispatch:
 
@@ -10,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: pages
+  group: publicar-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -27,16 +28,24 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=moderate
       - run: npm test
-      - run: npm run build
+      - if: github.event_name == 'pull_request'
+        run: npm run build:dev
+      - run: npm run ${{ github.ref_name == 'dev' && 'build:dev' || 'build' }}
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.ref_name == 'dev'
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && github.ref_name == 'dev'
         with:
           path: dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: github.event_name != 'pull_request' && github.ref_name == 'main'
+        with:
+          name: produccion
+          path: dist
+          retention-days: 1
 
-  publicar:
-    if: github.event_name != 'pull_request'
+  publicar-dev:
+    if: github.event_name != 'pull_request' && github.ref_name == 'dev'
     needs: construir
     runs-on: ubuntu-latest
     permissions:
@@ -48,3 +57,24 @@ jobs:
     steps:
       - id: despliegue
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  # El token solo existe en el environment production, que acepta únicamente main. Este job no instala dependencias del proyecto.
+  publicar-produccion:
+    if: github.event_name != 'pull_request' && github.ref_name == 'main'
+    needs: construir
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://seguiapp.pages.dev
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: produccion
+          path: dist
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: npx --yes wrangler@4.154.0 pages deploy dist --project-name seguiapp --branch main --commit-dirty=true
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}

@@ -93,7 +93,7 @@ export default function Finanzas({ seguimientos, registros, alVolver, alCambiar 
       <div className="chips pestanas" role="radiogroup" aria-label="Sección de Finanzas">
         {(['resumen', 'recibos'] as const).map(p => (
           <button key={p} type="button" role="radio" aria-checked={pestana === p} className="chip" onClick={() => setPestana(p)}>
-            {p === 'resumen' ? 'Resumen' : 'Recibos'}
+            {p === 'resumen' ? 'Resumen' : 'Facturas'}
           </button>
         ))}
       </div>
@@ -123,13 +123,13 @@ export default function Finanzas({ seguimientos, registros, alVolver, alCambiar 
           <MesAMes meses={mesAMes(movimientos, mes)} />
           {cuentas.pendientes.length > 0 && (
             <section>
-              <h2>Recibos pendientes del mes</h2>
+              <h2>Facturas pendientes del mes</h2>
               <ul className="lista">
                 {cuentas.pendientes.map(p => (
                   <li key={p.id_recibo} className="dos"><span>{p.nombre}</span><strong>{pesos(p.valor)}</strong></li>
                 ))}
               </ul>
-              <button className="secundario" onClick={() => setPestana('recibos')}>Pagar en Recibos</button>
+              <button className="secundario" onClick={() => setPestana('recibos')}>Pagar en Facturas</button>
             </section>
           )}
           <Presupuestos
@@ -294,7 +294,7 @@ function Resumen({ cuentas, acumulado, alVerRecibos }: { cuentas: Cuentas; acumu
         <p className="tenue">Ingresos {pesos(delMes.ingresos)} · Gastos {pesos(delMes.gastos)} · Ahorro {pesos(delMes.ahorro)}</p>
       </div>
       <div className="cifras">
-        <p><span className="tenue">Después de <button className="enlace" onClick={alVerRecibos}>recibos pendientes</button> y presupuestos</span><strong>{pesos(despues)}</strong></p>
+        <p><span className="tenue">Después de <button className="enlace" onClick={alVerRecibos}>facturas pendientes</button> y presupuestos</span><strong>{pesos(despues)}</strong></p>
         <p><span className="tenue">Acumulado del año</span><strong>{pesos(acumulado)}</strong></p>
       </div>
     </section>

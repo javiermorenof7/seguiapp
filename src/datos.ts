@@ -221,8 +221,15 @@ export async function verNumeroCuenta(idRecibo: string): Promise<string | null> 
 
 export async function crearRecibo(datos: { nombre_servicio: string; tipo_recibo: 'hogar' | 'personal'; nombre_ubicacion: string | null; numero_cuenta: string | null }) {
   const { error, data } = await supabase.from('recibo').insert(datos).select('id_recibo').single()
-  if (error?.code === '23505') throw new ErrorDatos('Ya tienes un recibo con ese servicio y ubicación.')
+  if (error?.code === '23505') throw new ErrorDatos('Ya tienes una factura con ese servicio y ubicación.')
   return revisar({ data, error }).id_recibo as string
+}
+
+// Los gastos ya pagados conservan el nombre con el que se registraron.
+export async function renombrarRecibo(idRecibo: string, nombres: { nombre_servicio: string; nombre_ubicacion: string | null }) {
+  const { error } = await supabase.from('recibo').update(nombres).eq('id_recibo', idRecibo)
+  if (error?.code === '23505') throw new ErrorDatos('Ya tienes una factura con ese servicio y ubicación.')
+  revisar({ data: null, error })
 }
 
 // Borrado lógico: conserva su historial de pagos.

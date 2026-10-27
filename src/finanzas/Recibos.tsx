@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
-  aprenderCategoria, crearRecibo, deshacerPago, obtenerRecibos, pagarRecibo, quitarRecibo, verNumeroCuenta,
+  aprenderCategoria, crearRecibo, deshacerPago, obtenerRecibos, pagarRecibo, quitarRecibo, renombrarRecibo, verNumeroCuenta,
 } from '../datos'
 import { formatoValor } from '../indicadores'
 import Grafico from '../Grafico'
 import Barras from './Barras'
 import { mesesAntes } from './calculos'
 import { categoriaDe, normalizar, type Categoria } from './parseo'
-import { diaAprendido, recibosDelMes, totalesDelMes, valoresEnElTiempo, type EstadoRecibo, type FilaRecibo } from './estadoRecibos'
+import { diaAprendido, nombreRecibo, recibosDelMes, totalesDelMes, valoresEnElTiempo, type EstadoRecibo, type FilaRecibo } from './estadoRecibos'
 
 type Datos = Awaited<ReturnType<typeof obtenerRecibos>>
 
@@ -57,7 +57,7 @@ export default function Recibos({ idGastos, categorias, aprendido, alCambiar }: 
       dia_pago: diaAprendido([...(datos?.pagos.filter(p => p.id_recibo === idRecibo) ?? []),
         { id_pago_recibo: '', id_recibo: idRecibo, id_registro: null, fecha_periodo: '', valor, fecha_pago: hoy, estado: 'pagado' }]),
       gasto: {
-        id_seguimiento: idGastos, nota: `Recibo ${nombre}`,
+        id_seguimiento: idGastos, nota: `Factura ${nombre}`,
         id_etiqueta: tipo === 'hogar' ? idHogar : categoria?.id_etiqueta ?? null,
         grupo: tipo === 'hogar' ? 'basico' : 'personal',
       },
@@ -86,8 +86,8 @@ export default function Recibos({ idGastos, categorias, aprendido, alCambiar }: 
       {error && <p role="alert" className="error">{error}</p>}
       <DelMes filas={filas} />
       <section>
-        <h2>Recibos del mes</h2>
-        {!filas.length && <p className="tenue">Aún no tienes recibos. Agrega uno abajo al pagarlo.</p>}
+        <h2>Facturas del mes</h2>
+        {!filas.length && <p className="tenue">Aún no tienes facturas. Agrega una abajo al pagarla.</p>}
         <ul className="lista">
           {filas.map(f => (
             <FilaDeRecibo key={f.recibo.id_recibo} fila={f} categorias={categorias}
@@ -96,7 +96,13 @@ export default function Recibos({ idGastos, categorias, aprendido, alCambiar }: 
                 .then(() => setError(''))}
               alDeshacer={() => accion(() => deshacerPago(f.pago!), `Deshecho el pago de ${f.nombre}.`)}
               alQuitar={() => confirm(`¿Quitar ${f.nombre}? Su historial de pagos se conserva.`) &&
-                accion(() => quitarRecibo(f.recibo.id_recibo), `${f.nombre} quitado.`)} />
+                accion(() => quitarRecibo(f.recibo.id_recibo), `${f.nombre} quitada.`)}
+              alRenombrar={async nombres => {
+                await renombrarRecibo(f.recibo.id_recibo, nombres)
+                setAviso(`${f.nombre} ahora se llama ${nombreRecibo({ ...f.recibo, ...nombres })}.`)
+                setError('')
+                await Promise.all([cargar(), alCambiar()])
+              }} />
           ))}
         </ul>
       </section>
@@ -110,13 +116,14 @@ export default function Recibos({ idGastos, categorias, aprendido, alCambiar }: 
   )
 }
 
-function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alQuitar }: {
+function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alQuitar, alRenombrar }: {
   fila: FilaRecibo
   categorias: Categoria[]
   propuesta: Categoria | null
   alPagar: (valor: number, categoria: Categoria | null) => Promise<void>
   alDeshacer: () => void
   alQuitar: () => void
+  alRenombrar: (nombres: { nombre_servicio: string; nombre_ubicacion: string | null }) => Promise<void>
 }) {
   const { recibo, nombre, estado, valor, dia } = fila
   const [monto, setMonto] = useState(valor ? Math.round(valor).toLocaleString('es-CO') : '')
@@ -124,6 +131,7 @@ function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alQuit
   const [numero, setNumero] = useState<string | null>(null)
   const [mensaje, setMensaje] = useState('')
   const [enviando, setEnviando] = useState(false)
+  const [renombrando, setRenombrando] = useState<{ servicio: string; ubicacion: string } | null>(null)
   const pideCategoria = recibo.tipo_recibo === 'personal'
 
   async function pagar(evento: FormEvent) {
@@ -134,6 +142,26 @@ function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alQuit
     setEnviando(true)
     try {
       await alPagar(n, categorias.find(c => c.id_etiqueta === elegida) ?? null)
+      setMensaje('')
+    } catch (e) {
+      setMensaje((e as Error).message)
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  async function renombrar(evento: FormEvent) {
+    evento.preventDefault()
+    const limpio = (t: string) => t.replace(/\s+/g, ' ').trim()
+    const servicio = limpio(renombrando?.servicio ?? '')
+    const ubicacion = recibo.tipo_recibo === 'hogar' ? limpio(renombrando?.ubicacion ?? '') : ''
+    if (!servicio || servicio.length > 60) return setMensaje('Escribe el servicio, de 1 a 60 letras.')
+    if (recibo.tipo_recibo === 'hogar' && (!ubicacion || ubicacion.length > 60)) return setMensaje('Escribe la ubicación, de 1 a 60 letras.')
+    if (servicio === recibo.nombre_servicio && (ubicacion || null) === recibo.nombre_ubicacion) return setRenombrando(null)
+    setEnviando(true)
+    try {
+      await alRenombrar({ nombre_servicio: servicio, nombre_ubicacion: ubicacion || null })
+      setRenombrando(null)
       setMensaje('')
     } catch (e) {
       setMensaje((e as Error).message)
@@ -158,10 +186,29 @@ function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alQuit
           {dia ? ` · día ${dia}` : ''}
           {recibo.numero_cuenta_enmascarado && <> · {numero ?? recibo.numero_cuenta_enmascarado}{' '}
             <button type="button" className="enlace" onClick={alternarNumero}>{numero ? 'ocultar' : 'ver'}</button></>}
+          {' · '}<button type="button" className="enlace" aria-expanded={!!renombrando} onClick={() => {
+            setRenombrando(renombrando ? null : { servicio: recibo.nombre_servicio, ubicacion: recibo.nombre_ubicacion ?? '' }); setMensaje('')
+          }}>Renombrar</button>
         </span>
       </span>
       <strong>{valor !== null ? pesos(valor) : ''}</strong>
       <span className={`estado ${ESTADO[estado].clase}`}>{ESTADO[estado].texto}</span>
+      {renombrando && (
+        <form className="chips" onSubmit={renombrar}>
+          <label>Servicio
+            <input required maxLength={60} value={renombrando.servicio} autoComplete="off"
+              onChange={ev => setRenombrando({ ...renombrando, servicio: ev.target.value })} />
+          </label>
+          {recibo.tipo_recibo === 'hogar' && (
+            <label>Ubicación
+              <input required maxLength={60} value={renombrando.ubicacion} autoComplete="off"
+                onChange={ev => setRenombrando({ ...renombrando, ubicacion: ev.target.value })} />
+            </label>
+          )}
+          <button className="chip" disabled={enviando}>Guardar</button>
+          <button type="button" className="chip" onClick={() => { setRenombrando(null); setMensaje('') }}>Cancelar</button>
+        </form>
+      )}
       {estado === 'pagado'
         ? <div className="acciones"><button className="secundario" onClick={alDeshacer}>Deshacer</button></div>
         : (
@@ -175,7 +222,7 @@ function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alQuit
                 {categorias.map(c => <option key={c.id_etiqueta} value={c.id_etiqueta}>{c.nombre}</option>)}
               </select>
             )}
-            <button type="button" className="enlace" onClick={alQuitar}>Quitar recibo</button>
+            <button type="button" className="enlace" onClick={alQuitar}>Quitar factura</button>
           </form>
         )}
       {mensaje && <p role="alert" className="error">{mensaje}</p>}
@@ -221,11 +268,11 @@ function NuevoRecibo({ categorias, alGuardar }: {
   return (
     <section>
       <button className="secundario" aria-expanded={abierto} onClick={() => setAbierto(!abierto)}>
-        {abierto ? 'Cerrar' : 'Pagar un recibo nuevo'}
+        {abierto ? 'Cerrar' : 'Pagar una factura nueva'}
       </button>
       {abierto && (
         <form className="formulario" onSubmit={guardar}>
-          <div className="chips" role="radiogroup" aria-label="Tipo de recibo">
+          <div className="chips" role="radiogroup" aria-label="Tipo de factura">
             {(['hogar', 'personal'] as const).map(t => (
               <button key={t} type="button" role="radio" aria-checked={tipo === t} className="chip" onClick={() => setTipo(t)}>
                 {t === 'hogar' ? 'Hogar' : 'Personal'}
@@ -264,10 +311,10 @@ function DelMes({ filas }: { filas: FilaRecibo[] }) {
   if (!t.pagado && !t.porPagar && !t.vencido) return null
   return (
     <section>
-      <h2>¿Cómo voy con los recibos del mes?</h2>
+      <h2>¿Cómo voy con las facturas del mes?</h2>
       <Barras horizontal etiquetas={['Pagado', 'Por pagar', 'Vencido']} series={series} formato={pesos}
         colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
-        descripcion={`Recibos del mes: pagado ${pesos(t.pagado)}, por pagar ${pesos(t.porPagar)}, vencido ${pesos(t.vencido)}`} />
+        descripcion={`Facturas del mes: pagado ${pesos(t.pagado)}, por pagar ${pesos(t.porPagar)}, vencido ${pesos(t.vencido)}`} />
     </section>
   )
 }
@@ -280,9 +327,9 @@ function EnElTiempo({ filas, datos }: { filas: FilaRecibo[]; datos: Datos }) {
   if (!actual) return null
   return (
     <section>
-      <h2>¿Cómo ha cambiado el valor de cada recibo?</h2>
+      <h2>¿Cómo ha cambiado el valor de cada factura?</h2>
       <div className="formulario">
-        <label>Recibo
+        <label>Factura
           <select value={actual.recibo.id_recibo} onChange={ev => setElegido(ev.target.value)}>
             {conPagos.map(f => <option key={f.recibo.id_recibo} value={f.recibo.id_recibo}>{f.nombre}</option>)}
           </select>

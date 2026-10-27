@@ -1,35 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { diasHechos, leerHabito, mismoNombre, mejorRacha, racha, totalDelDia, ultimosDias, type Marca } from './calculos'
+import { diasHechos, leerCantidad, mismoNombre, mejorRacha, racha, totalDelDia, ultimosDias, type Marca } from './calculos'
 
 const HOY = '2026-10-26'
 const m = (fecha: string, valor = 1): Marca => ({ fecha, valor })
 
-describe('leerHabito', () => {
-  it('sin cantidad es hecho, con cantidad suma y la unidad es opcional', () => {
-    expect(leerHabito('Leer', HOY)).toEqual({ habito: 'Leer', valor: null, unidad: '', fecha: HOY })
-    expect(leerHabito('agua 2,5 litros', HOY)).toEqual({ habito: 'agua', valor: 2.5, unidad: 'litros', fecha: HOY })
-    expect(leerHabito('meditar 10', HOY)).toEqual({ habito: 'meditar', valor: 10, unidad: '', fecha: HOY })
+describe('leerCantidad', () => {
+  it('acepta la cantidad como se escriba', () => {
+    expect(leerCantidad('2')).toEqual({ valor: 2, unidad: '' })
+    expect(leerCantidad(' 2,5 Litros ')).toEqual({ valor: 2.5, unidad: 'litros' })
   })
-  it('el nombre queda con mayúsculas y tildes; la fecha y la unidad no distinguen', () => {
-    expect(leerHabito('  Meditación   10 Min  Ayer ', HOY)).toEqual({ habito: 'Meditación', valor: 10, unidad: 'min', fecha: '2026-10-25' })
-    expect(mismoNombre('Meditación', 'meditacion')).toBe(true)
-    expect(mismoNombre('Leer', 'Lectura')).toBe(false)
-  })
-  it('lee el día al final', () => {
-    expect(leerHabito('leer ayer', HOY)?.fecha).toBe('2026-10-25')
-    expect(leerHabito('agua 2 litros anteayer', HOY)).toMatchObject({ habito: 'agua', valor: 2, fecha: '2026-10-24' })
-    expect(leerHabito('leer el 3', HOY)?.fecha).toBe('2026-10-03')
-    expect(leerHabito('leer el 28', HOY)?.fecha).toBe('2026-09-28')
-    expect(leerHabito('leer el 31/12', HOY)?.fecha).toBe('2025-12-31')
-    expect(leerHabito('leer el 30', '2026-03-05')).toBeNull()
-  })
-  it('rechaza lo vacío, fechas que no existen y cantidades fuera de rango', () => {
-    expect(leerHabito('', HOY)).toBeNull()
-    expect(leerHabito('ayer', HOY)).toBeNull()
-    expect(leerHabito('leer el 31/02', HOY)).toBeNull()
-    expect(leerHabito('agua 0', HOY)).toBeNull()
-    expect(leerHabito('x'.repeat(61), HOY)).toBeNull()
-  })
+  it('los nombres no distinguen mayúsculas ni tildes', () => expect(mismoNombre('Meditación', 'meditacion')).toBe(true))
+  it('rechaza lo que no es cantidad', () => expect(['', '0', 'mucho', '2 3', '1000000'].map(leerCantidad)).toEqual([null, null, null, null, null]))
 })
 
 describe('rachas', () => {

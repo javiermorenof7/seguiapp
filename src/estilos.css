@@ -157,3 +157,4 @@ button:disabled { opacity: .6; cursor: default; }
   .crear { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 10; padding: 16px 22px; box-shadow: 0 6px 20px rgba(0, 0, 0, .25); }
   .contenedor:has(.crear) { padding-bottom: 96px; }
 }
+.formulario .campos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }

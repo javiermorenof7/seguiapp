@@ -3,7 +3,7 @@ import {
   aprenderCategoria, guardarPresupuesto, obtenerFinanzas, registrar, type RegistroGuardado, type Seguimiento,
 } from '../datos'
 import { formatoValor } from '../indicadores'
-import { categoriaDe, leerMovimiento, normalizar, type Categoria } from './parseo'
+import { categoriaDe, leerMonto, normalizar, type Categoria } from './parseo'
 import {
   acumuladoAno, estadoPresupuesto, mesAMes, mesesAntes, porCategoria, promedioSeisMeses, recibosPendientes, resumenMes,
   saldoDespues, type EstadoPresupuesto, type Movimiento, type TipoMovimiento,
@@ -109,6 +109,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
         <>
           <NuevoMovimiento
             datos={datos}
+            anteriores={movimientos}
             tipoInicial={abrir === 'gasto' || abrir === 'ingreso' || abrir === 'ahorro' ? abrir : undefined}
             ids={{ gasto: idGastos, ingreso: id('ingreso'), ahorro: id('ahorro') }}
             gastadoDe={idEtiqueta => cuentas.filas.find(f => f.id_etiqueta === idEtiqueta)?.gastado ?? 0}
@@ -153,8 +154,9 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
   )
 }
 
-function NuevoMovimiento({ datos, tipoInicial, ids, gastadoDe, presupuestos, inusual, alGuardar }: {
+function NuevoMovimiento({ datos, anteriores, tipoInicial, ids, gastadoDe, presupuestos, inusual, alGuardar }: {
   datos: Datos
+  anteriores: Movimiento[]
   tipoInicial?: TipoMovimiento
   ids: Record<TipoMovimiento, string | undefined>
   gastadoDe: (idEtiqueta: string) => number
@@ -163,7 +165,8 @@ function NuevoMovimiento({ datos, tipoInicial, ids, gastadoDe, presupuestos, inu
   alGuardar: (aprendio: boolean) => Promise<void>
 }) {
   const [tipo, setTipo] = useState<TipoMovimiento>(tipoInicial ?? 'gasto')
-  const [texto, setTexto] = useState('')
+  const [monto, setMonto] = useState('')
+  const [descripcion, setDescripcion] = useState('')
   const [fecha, setFecha] = useState(hoyIso())
   const [elegida, setElegida] = useState<string | null>(null)
   const [grupo, setGrupo] = useState<Grupo>('auto')
@@ -171,14 +174,18 @@ function NuevoMovimiento({ datos, tipoInicial, ids, gastadoDe, presupuestos, inu
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
 
-  const leido = leerMovimiento(texto)
-  const propuesta = tipo === 'gasto' && leido ? categoriaDe(leido.descripcion, datos.aprendido, datos.categorias) : null
+  const valor = leerMonto(monto)
+  const leido = valor === null ? null : { valor, descripcion: descripcion.replace(/\s+/g, ' ').trim() }
+  const propuesta = tipo === 'gasto' ? categoriaDe(descripcion, datos.aprendido, datos.categorias) : null
+  // lo que ya escribió antes en este tipo, del más reciente al más antiguo
+  const sugerencias = useMemo(() => [...new Set(anteriores.filter(m => m.tipo === tipo && m.nota)
+    .sort((a, b) => b.fecha.localeCompare(a.fecha)).map(m => m.nota!))].slice(0, 30), [anteriores, tipo])
   const categoria: Categoria | null = datos.categorias.find(c => c.id_etiqueta === elegida) ?? propuesta
 
   async function guardar(evento: FormEvent) {
     evento.preventDefault()
     const idSeguimiento = ids[tipo]
-    if (!leido) return setError('Escribe el monto y en qué fue, por ejemplo "35 mil almuerzo".')
+    if (!leido) return setError('Escribe solo el monto, como quieras: "35 mil", "35.000" o "1,5 millones".')
     if (leido.valor >= 1e12) return setError('El monto es demasiado grande.')
     if (leido.descripcion.length > MAX_DESCRIPCION) return setError(`La descripción admite hasta ${MAX_DESCRIPCION} letras.`)
     if (!fecha || fecha > hoyIso()) return setError('Elige una fecha de hoy o anterior.')
@@ -206,7 +213,8 @@ function NuevoMovimiento({ datos, tipoInicial, ids, gastadoDe, presupuestos, inu
         if (e) mensaje += ` ${TEXTO_PRESUPUESTO[e]} del presupuesto de ${categoria!.nombre}: ${pesos(total)} de ${pesos(presupuesto!)}.`
       }
       setAviso(mensaje)
-      setTexto('')
+      setMonto('')
+      setDescripcion('')
       setElegida(null)
       setGrupo('auto')
       setError('')
@@ -226,17 +234,18 @@ function NuevoMovimiento({ datos, tipoInicial, ids, gastadoDe, presupuestos, inu
           <button key={t} type="button" role="radio" aria-checked={tipo === t} className="chip" onClick={() => setTipo(t)}>{TEXTO[t]}</button>
         ))}
       </div>
-      <label>Monto y en qué fue
-        <input required maxLength={140} value={texto} onChange={ev => { setTexto(ev.target.value); setElegida(null) }}
-          placeholder="35 mil almuerzo" autoComplete="off" autoFocus={!!tipoInicial} />
+      <label>Monto
+        <input required inputMode="text" maxLength={30} value={monto} onChange={ev => setMonto(ev.target.value)}
+          placeholder="35 mil" autoComplete="off" autoFocus={!!tipoInicial} aria-describedby="monto-leido" />
+        <span id="monto-leido" className="tenue" aria-live="polite">{monto.trim() && (valor === null ? 'Escribe solo el monto' : pesos(valor))}</span>
       </label>
-      {leido && (
-        <p className="tenue" aria-live="polite">
-          {TEXTO[tipo]} · <strong>{pesos(leido.valor)}</strong>{leido.descripcion && ` · ${leido.descripcion}`}
-          {tipo === 'gasto' && (categoria ? ` · ${categoria.nombre}` : ' · ¿En qué categoría va?')}
-        </p>
-      )}
-      {tipo === 'gasto' && leido && (
+      <label>{tipo === 'ingreso' ? '¿De dónde vino?' : tipo === 'ahorro' ? '¿Para qué?' : '¿En qué fue?'}
+        <input maxLength={MAX_DESCRIPCION} value={descripcion} list="descripciones" autoComplete="off"
+          onChange={ev => { setDescripcion(ev.target.value); setElegida(null) }}
+          placeholder={tipo === 'ingreso' ? 'sueldo' : tipo === 'ahorro' ? 'viaje' : 'almuerzo'} />
+        <datalist id="descripciones">{sugerencias.map(s => <option key={s} value={s} />)}</datalist>
+      </label>
+      {tipo === 'gasto' && (descripcion.trim() || leido) && (
         <>
           <fieldset>
             <legend>Categoría{propuesta ? '' : ' (la aprendo para la próxima vez)'}</legend>

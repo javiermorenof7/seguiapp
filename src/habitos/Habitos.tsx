@@ -6,8 +6,8 @@ import { formatoValor } from '../indicadores'
 import { normalizar } from '../finanzas/parseo'
 import Grafico from '../Grafico'
 import Barras from '../finanzas/Barras'
-import { parecido } from '../salud/calculos'
-import { dias, diasHechos, leerHabito, mismoNombre, mejorRacha, racha, totalDelDia, ultimosDias, type Leido, type Marca } from './calculos'
+import { parecido, restarDias } from '../salud/calculos'
+import { dias, diasHechos, leerCantidad, mismoNombre, mejorRacha, racha, totalDelDia, ultimosDias, type Leido, type Marca } from './calculos'
 
 const cssVar = (nombre: string) => getComputedStyle(document.documentElement).getPropertyValue(nombre).trim()
 const hoyIso = () => new Date().toLocaleDateString('en-CA')
@@ -36,7 +36,6 @@ export default function Habitos({ seguimientos, registros, enfocar, alVolver, al
   const marcas = useMemo(() => new Map(habitos.map(h => [h.id_seguimiento, registros.filter(r => r.id_seguimiento === h.id_seguimiento)])),
     [habitos, registros])
   const [alias, setAlias] = useState<Map<string, string> | null>(null)
-  const [texto, setTexto] = useState('')
   const [pregunta, setPregunta] = useState<{ leido: Leido; sugerido: string } | null>(null)
   const [aviso, setAviso] = useState('')
   const [error, setError] = useState('')
@@ -45,8 +44,6 @@ export default function Habitos({ seguimientos, registros, enfocar, alVolver, al
   const [renombrando, setRenombrando] = useState<{ id: string; nombre: string } | null>(null)
 
   useEffect(() => { obtenerAlias('habito').then(setAlias).catch(e => setError((e as Error).message)) }, [])
-
-  const leido = leerHabito(texto, hoy)
 
   async function guardar(l: Leido) {
     const existente = habitos.find(h => mismoNombre(h.nombre, l.habito))
@@ -70,7 +67,6 @@ export default function Habitos({ seguimientos, registros, enfocar, alVolver, al
         existente ? '' : 'Hábito nuevo.',
         `Racha: ${dias(racha(nuevas, hoy, metaDe(h)))} · mejor: ${dias(mejorRacha(nuevas, metaDe(h)))}.`,
       ].filter(Boolean).join(' '))
-      setTexto('')
       setPregunta(null)
       setError('')
       await alCambiar()
@@ -82,9 +78,8 @@ export default function Habitos({ seguimientos, registros, enfocar, alVolver, al
   }
 
   // Nombre conocido → lo aprendido → "¿Quisiste decir…?" si se parece a uno conocido → nuevo.
-  function enviar(evento: FormEvent) {
-    evento.preventDefault()
-    if (!leido) return setError('Escribe el hábito y, si quieres, cuánto y qué día: "leer", "agua 2 litros", "meditar 10 ayer".')
+  function enviar(leido: Leido) {
+    setPregunta(null)
     if (!alias) return
     if (habitos.some(h => mismoNombre(h.nombre, leido.habito))) return guardar(leido)
     const aprendido = alias.get(normalizar(leido.habito))
@@ -137,30 +132,17 @@ export default function Habitos({ seguimientos, registros, enfocar, alVolver, al
     <>
       <button className="volver" onClick={alVolver}>← Mi seguimiento</button>
       <header className="encabezado"><div><h1>Hábitos</h1></div></header>
-      {habitos.length > 0 && <DesdeLista habitos={habitos} hoy={hoy} enviando={enviando} alGuardar={guardar} />}
-      <form className="formulario" onSubmit={enviar}>
-        <h2>{habitos.length ? 'Escribir o crear un hábito' : 'Registrar hábito'}</h2>
-        <label>Hábito, cuánto y qué día (opcionales)
-          <input required maxLength={80} value={texto} onChange={ev => { setTexto(ev.target.value); setPregunta(null) }}
-            placeholder="agua 2 litros" autoComplete="off" autoFocus={enfocar} />
-        </label>
-        {leido && (
-          <p className="tenue" aria-live="polite">
-            {leido.habito} · <strong>{leido.valor === null ? 'hecho' : `${leido.valor} ${leido.unidad}`.trim()}</strong>
-            {leido.fecha !== hoy && ` · ${diaMes(leido.fecha)}`}
-          </p>
-        )}
-        {pregunta ? (
-          <div className="chips" role="group" aria-label="¿Quisiste decir…?">
-            <span>¿Quisiste decir <strong>{pregunta.sugerido}</strong>?</span>
-            <button type="button" className="chip" disabled={enviando} onClick={() => responder(pregunta.sugerido)}>Sí</button>
-            <button type="button" className="chip" disabled={enviando} onClick={() => responder(pregunta.leido.habito)}>No, es nuevo</button>
-          </div>
-        ) : <button className="principal" disabled={enviando || !alias}>Guardar</button>}
-        {aviso && <p role="status" className="aviso">{aviso}</p>}
-        {error && <p role="alert" className="error">{error}</p>}
-      </form>
-      {habitos.length === 0 && <p className="tenue">Aún no hay hábitos. Escribe el primero, por ejemplo "leer" o "agua 2 litros".</p>}
+      <Formulario habitos={habitos} hoy={hoy} enviando={enviando || !alias} enfocar={enfocar} alEnviar={enviar} />
+      {pregunta && (
+        <div className="chips" role="group" aria-label="¿Quisiste decir…?">
+          <span>¿Quisiste decir <strong>{pregunta.sugerido}</strong>?</span>
+          <button type="button" className="chip" disabled={enviando} onClick={() => responder(pregunta.sugerido)}>Sí</button>
+          <button type="button" className="chip" disabled={enviando} onClick={() => responder(pregunta.leido.habito)}>No, es nuevo</button>
+        </div>
+      )}
+      {aviso && <p role="status" className="aviso">{aviso}</p>}
+      {error && <p role="alert" className="error">{error}</p>}
+      {habitos.length === 0 && <p className="tenue">Aún no hay hábitos. Escribe el primero, por ejemplo "leer" o "agua".</p>}
       {habitos.length > 0 && (
         <>
           <section>
@@ -208,22 +190,30 @@ export default function Habitos({ seguimientos, registros, enfocar, alVolver, al
 }
 
 // Registrar uno de los hábitos que ya existen: elegirlo, la cantidad si es de cantidad y el día.
-function DesdeLista({ habitos, hoy, enviando, alGuardar }: {
-  habitos: Seguimiento[]; hoy: string; enviando: boolean; alGuardar: (l: Leido) => Promise<void>
+// Un campo por dato: hábito (de la lista o nuevo), cantidad si se mide así y el día.
+function Formulario({ habitos, hoy, enviando, enfocar, alEnviar }: {
+  habitos: Seguimiento[]; hoy: string; enviando: boolean; enfocar?: boolean; alEnviar: (l: Leido) => void
 }) {
-  const [id, setId] = useState('')
+  const [nombre, setNombre] = useState('')
   const [cantidad, setCantidad] = useState('')
+  const [dia, setDia] = useState<'hoy' | 'ayer' | 'otro'>('hoy')
   const [fecha, setFecha] = useState(hoy)
   const [error, setError] = useState('')
-  const h = habitos.find(x => x.id_seguimiento === id) ?? habitos[0]
+  const existente = habitos.find(h => mismoNombre(h.nombre, nombre))
+  const conCantidad = !existente || existente.tipo_medida === 'numero'
 
-  async function guardar(evento: FormEvent) {
+  function guardar(evento: FormEvent) {
     evento.preventDefault()
-    if (!fecha || fecha > hoy) return setError('Elige hoy o un día anterior.')
-    const n = h.tipo_medida === 'numero' ? Number(cantidad.replace(',', '.').trim()) : null
-    if (n !== null && (!Number.isFinite(n) || n <= 0 || n >= 1e6)) return setError(`Escribe cuánto en ${h.unidad ?? 'números'}, por ejemplo 2.`)
+    const habito = nombre.replace(/\s+/g, ' ').trim()
+    const elegida = dia === 'hoy' ? hoy : dia === 'ayer' ? restarDias(hoy, 1) : fecha
+    if (!habito || habito.length > 60) return setError('Escribe el hábito, de 1 a 60 letras.')
+    if (!elegida || elegida > hoy) return setError('Elige hoy o un día anterior.')
+    const leida = cantidad.trim() ? leerCantidad(cantidad) : null
+    if (cantidad.trim() && !leida) return setError('Escribe la cantidad con números, por ejemplo 2 o "2 litros".')
+    if (existente?.tipo_medida === 'numero' && !leida) return setError(`${existente.nombre} se mide en ${existente.unidad ?? 'cantidad'}: escribe cuánto.`)
     setError('')
-    await alGuardar({ habito: h.nombre, valor: n, unidad: '', fecha })
+    alEnviar({ habito, valor: conCantidad ? leida?.valor ?? null : null, unidad: leida?.unidad ?? '', fecha: elegida })
+    setNombre('')
     setCantidad('')
   }
 
@@ -231,19 +221,28 @@ function DesdeLista({ habitos, hoy, enviando, alGuardar }: {
     <form className="formulario" onSubmit={guardar}>
       <h2>Registrar hábito</h2>
       <label>Hábito
-        <select value={h.id_seguimiento} onChange={ev => { setId(ev.target.value); setError('') }}>
-          {habitos.map(x => <option key={x.id_seguimiento} value={x.id_seguimiento}>{x.nombre}</option>)}
-        </select>
+        <input required maxLength={60} value={nombre} list="habitos" onChange={ev => setNombre(ev.target.value)}
+          placeholder="agua" autoComplete="off" autoFocus={enfocar} />
+        <datalist id="habitos">{habitos.map(h => <option key={h.id_seguimiento} value={h.nombre} />)}</datalist>
       </label>
-      {h.tipo_medida === 'numero' && (
-        <label>Cuánto{h.unidad ? ` (${h.unidad})` : ''}
-          <input required inputMode="decimal" maxLength={8} value={cantidad} onChange={ev => setCantidad(ev.target.value)} />
+      {conCantidad && (
+        <label>{existente ? `Cuánto${existente.unidad ? ` (${existente.unidad})` : ''}` : 'Cuánto (opcional, si lo mides)'}
+          <input required={!!existente} inputMode="decimal" maxLength={20} value={cantidad} onChange={ev => setCantidad(ev.target.value)}
+            placeholder={existente ? '2' : '2 litros'} autoComplete="off" />
         </label>
       )}
-      <label>Día
-        <input type="date" required value={fecha} max={hoy} onChange={ev => setFecha(ev.target.value)} />
-      </label>
-      <button className="principal" disabled={enviando}>{h.tipo_medida === 'si_no' ? 'Hecho' : 'Guardar'}</button>
+      <fieldset>
+        <legend>Día</legend>
+        <div className="chips" role="radiogroup" aria-label="Día">
+          {(['hoy', 'ayer', 'otro'] as const).map(d => (
+            <button key={d} type="button" role="radio" aria-checked={dia === d} className="chip" onClick={() => setDia(d)}>
+              {d === 'hoy' ? 'Hoy' : d === 'ayer' ? 'Ayer' : 'Otro día'}
+            </button>
+          ))}
+        </div>
+        {dia === 'otro' && <input type="date" aria-label="Fecha" required value={fecha} max={hoy} onChange={ev => setFecha(ev.target.value)} />}
+      </fieldset>
+      <button className="principal" disabled={enviando}>{existente?.tipo_medida === 'si_no' ? 'Hecho' : 'Guardar'}</button>
       {error && <p role="alert" className="error">{error}</p>}
     </form>
   )

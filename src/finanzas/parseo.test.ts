@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { categoriaDe, leerMovimiento, type Categoria } from './parseo'
+import { categoriaDe, leerMonto, leerMovimiento, type Categoria } from './parseo'
+
+describe('leerMonto', () => {
+  it('acepta el monto como se escriba', () => {
+    expect(['35 mil', '35.000', '$35,000', '35k', '1,5 millones', '2 palos', ' 35000 '].map(leerMonto))
+      .toEqual([35000, 35000, 35000, 35000, 1500000, 2000000, 35000])
+  })
+  it('null si no es solo un monto', () => {
+    expect(['', 'almuerzo', '35 mil almuerzo', '0'].map(leerMonto)).toEqual([null, null, null, null])
+  })
+})
 
 describe('leerMovimiento', () => {
   it.each([

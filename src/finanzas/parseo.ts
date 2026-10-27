@@ -27,6 +27,12 @@ export function leerMovimiento(texto: string): { valor: number; descripcion: str
   return { valor, descripcion }
 }
 
+// Solo el monto, escrito como la persona quiera ("35 mil", "35.000", "1,5 millones"); null si trae algo más.
+export function leerMonto(texto: string): number | null {
+  const leido = leerMovimiento(texto)
+  return leido && !leido.descripcion ? leido.valor : null
+}
+
 // Lo aprendido → palabra clave → nombre de la categoría; igual que en la hoja de antes.
 export function categoriaDe(descripcion: string, aprendido: Map<string, string>, categorias: Categoria[]): Categoria | null {
   const d = normalizar(descripcion)

@@ -84,7 +84,8 @@ function Gym({ idGym, registros, enfocar, alCambiar }: {
 }) {
   const hoy = hoyIso()
   const [datos, setDatos] = useState<Datos | null>(null)
-  const [texto, setTexto] = useState('')
+  const [ejercicio, setEjercicio] = useState('')
+  const [campos, setCampos] = useState({ series: '', repeticiones: '', peso: '' })
   const [pregunta, setPregunta] = useState<{ leido: Leido; sugerido: string } | null>(null)
   const [aviso, setAviso] = useState('')
   const [error, setError] = useState('')
@@ -113,7 +114,17 @@ function Gym({ idGym, registros, enfocar, alCambiar }: {
     })
   }, [datos, registros])
 
-  const leido = leerSerie(texto)
+  const leido = leerSerie(ejercicio, campos.series, campos.repeticiones, campos.peso)
+  const conocidos = useMemo(() => datos?.ejercicios.map(e => e.nombre).sort() ?? [], [datos])
+
+  // al elegir un ejercicio que ya hizo, trae lo de la vez anterior para cambiar solo lo que subió
+  function elegirEjercicio(texto: string) {
+    setEjercicio(texto)
+    setPregunta(null)
+    const nombre = normalizar(texto)
+    const anterior = anteriorDe(sesiones, datos?.alias.get(nombre) ?? nombre)
+    if (anterior) setCampos({ series: String(anterior.series), repeticiones: String(anterior.repeticiones), peso: anterior.peso === null ? '' : String(anterior.peso).replace('.', ',') })
+  }
 
   async function guardar(s: Leido) {
     if (!datos) return
@@ -129,7 +140,8 @@ function Gym({ idGym, registros, enfocar, alCambiar }: {
         anterior ? `La vez anterior (${diaMes(anterior.fecha)}): ${serie(anterior)}${cambio}.` : 'Primera vez que lo registras.',
         sugerencia(s, sesiones),
       ].filter(Boolean).join(' '))
-      setTexto('')
+      setEjercicio('')
+      setCampos({ series: '', repeticiones: '', peso: '' })
       setPregunta(null)
       setError('')
       await Promise.all([cargar(), alCambiar()])
@@ -143,9 +155,8 @@ function Gym({ idGym, registros, enfocar, alCambiar }: {
   // Nombre conocido → lo aprendido → "¿Quisiste decir…?" si se parece a uno conocido → nuevo.
   function enviar(evento: FormEvent) {
     evento.preventDefault()
-    if (!leido) return setError('Escribe ejercicio, series x repeticiones y kg, por ejemplo "press banca 4x10 60".')
+    if (!leido) return setError('Revisa los campos: series de 1 a 100, repeticiones de 1 a 1.000 y el peso en kg (vacío si es con tu cuerpo).')
     if (!datos) return
-    const conocidos = datos.ejercicios.map(e => e.nombre)
     const aprendido = datos.alias.get(leido.ejercicio)
     if (conocidos.includes(leido.ejercicio)) return guardar(leido)
     if (aprendido) return guardar({ ...leido, ejercicio: aprendido })
@@ -165,11 +176,25 @@ function Gym({ idGym, registros, enfocar, alCambiar }: {
     <>
       <form className="formulario" onSubmit={enviar}>
         <h2>Registrar ejercicio</h2>
-        <label>Ejercicio, series x repeticiones y kg
-          <input required maxLength={80} value={texto} onChange={ev => { setTexto(ev.target.value); setPregunta(null) }}
-            placeholder="press banca 4x10 60" autoComplete="off" autoFocus={enfocar} />
+        <label>Ejercicio
+          <input required maxLength={60} value={ejercicio} list="ejercicios" onChange={ev => elegirEjercicio(ev.target.value)}
+            placeholder="press banca" autoComplete="off" autoFocus={enfocar} />
+          <datalist id="ejercicios">{conocidos.map(e => <option key={e} value={e} />)}</datalist>
         </label>
-        {leido && <p className="tenue" aria-live="polite">{leido.ejercicio} · <strong>{serie(leido)}</strong>{leido.peso === null ? ' · propio cuerpo' : ''}</p>}
+        <div className="campos">
+          <label>Series
+            <input required inputMode="numeric" maxLength={3} value={campos.series} placeholder="4"
+              onChange={ev => { setCampos({ ...campos, series: ev.target.value }); setPregunta(null) }} />
+          </label>
+          <label>Repeticiones
+            <input required inputMode="numeric" maxLength={4} value={campos.repeticiones} placeholder="10"
+              onChange={ev => { setCampos({ ...campos, repeticiones: ev.target.value }); setPregunta(null) }} />
+          </label>
+          <label>Peso (kg)
+            <input inputMode="decimal" maxLength={8} value={campos.peso} placeholder="Tu cuerpo"
+              onChange={ev => { setCampos({ ...campos, peso: ev.target.value }); setPregunta(null) }} />
+          </label>
+        </div>
         {pregunta ? (
           <div className="chips" role="group" aria-label="¿Quisiste decir…?">
             <span>¿Quisiste decir <strong>{pregunta.sugerido}</strong>?</span>

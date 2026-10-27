@@ -11,47 +11,11 @@ const DIA_MS = 864e5
 // Los nombres se comparan sin mayúsculas ni tildes: "Leer" y "leer" son el mismo hábito.
 export const mismoNombre = (a: string, b: string) => normalizar(a) === normalizar(b)
 export const dias = (n: number) => `${n} ${n === 1 ? 'día' : 'días'}`
-const dosCifras = (n: number) => String(n).padStart(2, '0')
-
-// Fecha real (no 31/02) o null.
-function fechaDe(ano: number, mes: number, dia: number): string | null {
-  const iso = `${ano}-${dosCifras(mes)}-${dosCifras(dia)}`
-  return new Date(`${iso}T00:00:00Z`).toISOString().slice(0, 10) === iso ? iso : null
-}
-
-// "hoy", "ayer", "anteayer", "el 24" (el último 24 que ya pasó) o "el 24/10" al final de la línea.
-function leerFecha(texto: string, hoy: string): { resto: string; fecha: string } | null {
-  const m = texto.match(/^(.*?)\s*\b(hoy|ayer|anteayer|el (\d{1,2})(?:\/(\d{1,2}))?)$/i)
-  if (!m) return { resto: texto, fecha: hoy }
-  const [, resto, , dia, mes] = m
-  const palabra = m[2].toLowerCase()
-  if (palabra === 'hoy') return { resto, fecha: hoy }
-  if (palabra === 'ayer') return { resto, fecha: restarDias(hoy, 1) }
-  if (palabra === 'anteayer') return { resto, fecha: restarDias(hoy, 2) }
-  const [ano, mesHoy] = [Number(hoy.slice(0, 4)), Number(hoy.slice(5, 7))]
-  if (mes) {
-    const fecha = fechaDe(ano, Number(mes), Number(dia))
-    if (!fecha) return null
-    return { resto, fecha: fecha <= hoy ? fecha : fechaDe(ano - 1, Number(mes), Number(dia)) ?? fecha }
-  }
-  const esteMes = fechaDe(ano, mesHoy, Number(dia))
-  if (esteMes && esteMes <= hoy) return { resto, fecha: esteMes }
-  const [anoAntes, mesAntes] = mesHoy === 1 ? [ano - 1, 12] : [ano, mesHoy - 1]
-  const fecha = fechaDe(anoAntes, mesAntes, Number(dia))
-  return fecha ? { resto, fecha } : null
-}
-
-// "Leer" (hecho), "agua 2 litros", "Meditación 10 ayer"; el nombre queda como se escribió.
-// null si no se entiende o la fecha es futura.
-export function leerHabito(texto: string, hoy: string): Leido | null {
-  const conFecha = leerFecha(texto.replace(/\s+/g, ' ').trim(), hoy)
-  if (!conFecha || conFecha.fecha > hoy) return null
-  const { resto, fecha } = conFecha
-  const m = resto.match(new RegExp(String.raw`^(.+?)\s+(${NUMERO})\s*(\p{L}*)$`, 'u'))
-  const habito = (m ? m[1] : resto).trim()
-  const valor = m ? Number(m[2].replace(',', '.')) : null
-  if (!habito || habito.length > 60 || (valor !== null && (valor <= 0 || valor >= 1e6))) return null
-  return { habito, valor, unidad: m?.[3].toLowerCase() ?? '', fecha }
+// La cantidad como se escriba ("2", "2,5", "2 litros"); null si no se entiende o se sale de rango.
+export function leerCantidad(texto: string): { valor: number; unidad: string } | null {
+  const m = texto.trim().match(new RegExp(String.raw`^(${NUMERO})\s*(\p{L}*)$`, 'u'))
+  const valor = m ? Number(m[1].replace(',', '.')) : NaN
+  return valor > 0 && valor < 1e6 ? { valor, unidad: m![2].toLowerCase() } : null
 }
 
 const porDia = (marcas: Marca[]) => {

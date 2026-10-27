@@ -13,14 +13,15 @@ const diasEntre = (desde: string, hasta: string) => Math.round((Date.parse(hasta
 export const restarDias = (fecha: string, dias: number) => new Date(Date.parse(fecha) - dias * DIA_MS).toISOString().slice(0, 10)
 const masReciente = <T extends { fecha: string }>(a: T, b: T) => b.fecha.localeCompare(a.fecha)
 
-// "press banca 4x10 60", "dominadas 3x8" (sin kg = propio cuerpo); null si no se entiende o se sale de rango.
-export function leerSerie(texto: string): Omit<Sesion, 'fecha'> | null {
-  const m = texto.trim().match(new RegExp(String.raw`^(.*?\D)\s*(\d+)\s*x\s*(\d+)(?:\s+(${NUMERO})\s*(?:kg)?)?$`, 'i'))
-  const ejercicio = m ? normalizar(m[1]) : ''
-  if (!m || !ejercicio || ejercicio.length > 60) return null
-  const [series, repeticiones, peso] = [Number(m[2]), Number(m[3]), m[4] ? aNumero(m[4]) : null]
-  if (series < 1 || series > 100 || repeticiones < 1 || repeticiones > 1000 || (peso !== null && (peso <= 0 || peso >= 1e4))) return null
-  return { ejercicio, series, repeticiones, peso }
+// Cada campo del formulario por separado; peso vacío = propio cuerpo ("60", "82,5 kg"). null si algo no se entiende o se sale de rango.
+export function leerSerie(ejercicio: string, series: string, repeticiones: string, peso: string): Omit<Sesion, 'fecha'> | null {
+  const nombre = normalizar(ejercicio)
+  const entero = (texto: string) => /^\d+$/.test(texto.trim()) ? Number(texto) : NaN
+  const kilos = peso.trim().match(new RegExp(String.raw`^(${NUMERO})\s*(?:kg)?$`, 'i'))
+  const s = { ejercicio: nombre, series: entero(series), repeticiones: entero(repeticiones), peso: peso.trim() ? (kilos ? aNumero(kilos[1]) : NaN) : null }
+  if (!nombre || nombre.length > 60 || !(s.series >= 1 && s.series <= 100) || !(s.repeticiones >= 1 && s.repeticiones <= 1000)) return null
+  if (s.peso !== null && !(s.peso > 0 && s.peso < 1e4)) return null
+  return s
 }
 
 export const anteriorDe = (sesiones: Sesion[], ejercicio: string) =>

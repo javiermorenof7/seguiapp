@@ -13,15 +13,16 @@ const sesiones = [
 ]
 
 describe('leerSerie', () => {
-  it('lee ejercicio, series x repeticiones y kg', () => {
-    expect(leerSerie('Press Banca 4x10 60')).toEqual({ ejercicio: 'press banca', series: 4, repeticiones: 10, peso: 60 })
-    expect(leerSerie('sentadilla 5 x 5 82,5 kg')).toEqual({ ejercicio: 'sentadilla', series: 5, repeticiones: 5, peso: 82.5 })
+  it('lee cada campo; el peso con coma, punto o kg', () => {
+    expect(leerSerie('Press Banca ', '4', '10', '60')).toEqual({ ejercicio: 'press banca', series: 4, repeticiones: 10, peso: 60 })
+    expect(leerSerie('sentadilla', '5', '5', '82,5 kg')).toEqual({ ejercicio: 'sentadilla', series: 5, repeticiones: 5, peso: 82.5 })
   })
-  it('sin kg es con el propio cuerpo', () => expect(leerSerie('dominadas 3x8')?.peso).toBeNull())
+  it('sin kg es con el propio cuerpo', () => expect(leerSerie('dominadas', '3', '8', ' ')?.peso).toBeNull())
   it('rechaza lo que no entiende o se sale de rango', () => {
-    expect(leerSerie('4x10 60')).toBeNull()
-    expect(leerSerie('press banca 60')).toBeNull()
-    expect(leerSerie('press 0x10')).toBeNull()
+    expect(leerSerie('', '4', '10', '60')).toBeNull()
+    expect(leerSerie('press', '0', '10', '')).toBeNull()
+    expect(leerSerie('press', '4', 'diez', '')).toBeNull()
+    expect(leerSerie('press', '4', '10', 'mucho')).toBeNull()
   })
 })
 

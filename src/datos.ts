@@ -3,6 +3,7 @@ import { encolar, pendientes, quitar, vaciar } from './cola'
 import type { Frecuencia, Meta, Registro, TipoMedida } from './indicadores'
 import type { Categoria } from './finanzas/parseo'
 import type { PagoRecibo, Recibo } from './finanzas/calculos'
+import type { PagoGuardado, ReciboVisible } from './finanzas/estadoRecibos'
 
 export interface Seguimiento {
   id_seguimiento: string
@@ -167,6 +168,57 @@ export async function obtenerSinCategoria(idGastos: string) {
 export async function categorizar(ids: string[], idEtiqueta: string) {
   for (let i = 0; i < ids.length; i += 100)
     revisar(await supabase.from('registro').update({ id_etiqueta: idEtiqueta }).in('id_registro', ids.slice(i, i + 100)).is('id_etiqueta', null))
+}
+
+// Recibos activos (número siempre enmascarado) y sus pagos del último año, para el día aprendido y el gráfico.
+export async function obtenerRecibos(desde: string) {
+  const [recibos, pagos] = await Promise.all([
+    supabase.from('recibo_visible').select('id_recibo, nombre_servicio, nombre_ubicacion, tipo_recibo, dia_pago, numero_cuenta_enmascarado')
+      .eq('estado', 'activo').order('nombre_servicio'),
+    supabase.from('pago_recibo').select('id_pago_recibo, id_recibo, id_registro, fecha_periodo, valor, fecha_pago, estado')
+      .gte('fecha_periodo', desde),
+  ])
+  return { recibos: revisar(recibos) as ReciboVisible[], pagos: revisar(pagos) as PagoGuardado[] }
+}
+
+// El número completo solo se pide al tocar "ver" y queda en memoria de la pantalla, nunca en el navegador.
+export async function verNumeroCuenta(idRecibo: string): Promise<string | null> {
+  return revisar(await supabase.from('recibo').select('numero_cuenta').eq('id_recibo', idRecibo).single()).numero_cuenta
+}
+
+export async function crearRecibo(datos: { nombre_servicio: string; tipo_recibo: 'hogar' | 'personal'; nombre_ubicacion: string | null; numero_cuenta: string | null }) {
+  const { error, data } = await supabase.from('recibo').insert(datos).select('id_recibo').single()
+  if (error?.code === '23505') throw new ErrorDatos('Ya tienes un recibo con ese servicio y ubicación.')
+  return revisar({ data, error }).id_recibo as string
+}
+
+// Borrado lógico: conserva su historial de pagos.
+export async function quitarRecibo(idRecibo: string) {
+  revisar(await supabase.from('recibo').update({ estado: 'eliminado' }).eq('id_recibo', idRecibo))
+}
+
+// Crea el gasto y marca el período pagado; si el pago falla, quita el gasto para no contarlo sin recibo.
+// shortcut: dos llamadas sin transacción y sin cola; pasar a una función SQL si un fallo entre las dos llega a dejar huérfanos.
+export async function pagarRecibo(pago: {
+  id_recibo: string; fecha_periodo: string; valor: number; fecha_pago: string; dia_pago: number | null
+  gasto: { id_seguimiento: string; id_etiqueta: string | null; grupo: 'basico' | 'personal'; nota: string }
+}) {
+  const id_registro = crypto.randomUUID()
+  revisar(await supabase.from('registro').insert({ ...pago.gasto, id_registro, fecha_registro: pago.fecha_pago, valor: pago.valor }))
+  const { error } = await supabase.from('pago_recibo').upsert({
+    id_recibo: pago.id_recibo, fecha_periodo: pago.fecha_periodo, valor: pago.valor, fecha_pago: pago.fecha_pago, estado: 'pagado', id_registro,
+  }, { onConflict: 'id_usuario,id_recibo,fecha_periodo' })
+  if (error) {
+    await eliminarRegistro(id_registro).catch(() => {})
+    revisar({ data: null, error })
+  }
+  if (pago.dia_pago) await supabase.from('recibo').update({ dia_pago: pago.dia_pago }).eq('id_recibo', pago.id_recibo)
+}
+
+// Deshacer: borra el pago del período y su gasto.
+export async function deshacerPago(pago: { id_pago_recibo: string; id_registro: string | null }) {
+  revisar(await supabase.from('pago_recibo').delete().eq('id_pago_recibo', pago.id_pago_recibo))
+  if (pago.id_registro) await eliminarRegistro(pago.id_registro)
 }
 
 export async function cerrarSesion() {

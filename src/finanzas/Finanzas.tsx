@@ -11,6 +11,7 @@ import {
 import Barras from './Barras'
 import Ultimos from './Ultimos'
 import Asistente from './Asistente'
+import Recibos from './Recibos'
 import { cincuentaTreintaVeinte, gastoInusual } from './aprende'
 
 type Datos = Awaited<ReturnType<typeof obtenerFinanzas>>
@@ -42,6 +43,7 @@ export default function Finanzas({ seguimientos, registros, alVolver, alCambiar 
   const idGastos = id('gasto')
   const [datos, setDatos] = useState<Datos | null>(null)
   const [error, setError] = useState('')
+  const [pestana, setPestana] = useState<'resumen' | 'recibos'>('resumen')
 
   const cargar = useCallback(async () => {
     if (!idGastos) return
@@ -88,7 +90,18 @@ export default function Finanzas({ seguimientos, registros, alVolver, alCambiar 
         </div>
       </header>
       {error && <p role="alert" className="error">{error}</p>}
-      {datos && cuentas && (
+      <div className="chips pestanas" role="radiogroup" aria-label="Sección de Finanzas">
+        {(['resumen', 'recibos'] as const).map(p => (
+          <button key={p} type="button" role="radio" aria-checked={pestana === p} className="chip" onClick={() => setPestana(p)}>
+            {p === 'resumen' ? 'Resumen' : 'Recibos'}
+          </button>
+        ))}
+      </div>
+      {datos && pestana === 'recibos' && (
+        <Recibos idGastos={idGastos} categorias={datos.categorias} aprendido={datos.aprendido}
+          alCambiar={async () => { await Promise.all([alCambiar(), cargar()]) }} />
+      )}
+      {datos && cuentas && pestana === 'resumen' && (
         <>
           <NuevoMovimiento
             datos={datos}
@@ -104,7 +117,7 @@ export default function Finanzas({ seguimientos, registros, alVolver, alCambiar 
             categorias={datos.categorias}
             alCambiar={async () => { await Promise.all([alCambiar(), cargar()]) }}
           />
-          <Resumen cuentas={cuentas} acumulado={acumuladoAno(movimientos, mes)} />
+          <Resumen cuentas={cuentas} acumulado={acumuladoAno(movimientos, mes)} alVerRecibos={() => setPestana('recibos')} />
           <Reparto movimientos={movimientos} mes={mes} categorias={datos.categorias} />
           <PorCategoria filas={cuentas.filas} />
           <MesAMes meses={mesAMes(movimientos, mes)} />
@@ -116,6 +129,7 @@ export default function Finanzas({ seguimientos, registros, alVolver, alCambiar 
                   <li key={p.id_recibo} className="dos"><span>{p.nombre}</span><strong>{pesos(p.valor)}</strong></li>
                 ))}
               </ul>
+              <button className="secundario" onClick={() => setPestana('recibos')}>Pagar en Recibos</button>
             </section>
           )}
           <Presupuestos
@@ -269,7 +283,7 @@ function Reparto({ movimientos, mes, categorias }: { movimientos: Movimiento[]; 
 
 const ETIQUETAS_REPARTO = ['Básicos (≤ 50 %)', 'Personales (≤ 30 %)', 'Ahorro (≥ 20 %)']
 
-function Resumen({ cuentas, acumulado }: { cuentas: Cuentas; acumulado: number }) {
+function Resumen({ cuentas, acumulado, alVerRecibos }: { cuentas: Cuentas; acumulado: number; alVerRecibos: () => void }) {
   const { delMes, despues } = cuentas
   return (
     <section className="resumen-finanzas" aria-label="Saldo">
@@ -280,7 +294,7 @@ function Resumen({ cuentas, acumulado }: { cuentas: Cuentas; acumulado: number }
         <p className="tenue">Ingresos {pesos(delMes.ingresos)} · Gastos {pesos(delMes.gastos)} · Ahorro {pesos(delMes.ahorro)}</p>
       </div>
       <div className="cifras">
-        <p><span className="tenue">Después de recibos pendientes y presupuestos</span><strong>{pesos(despues)}</strong></p>
+        <p><span className="tenue">Después de <button className="enlace" onClick={alVerRecibos}>recibos pendientes</button> y presupuestos</span><strong>{pesos(despues)}</strong></p>
         <p><span className="tenue">Acumulado del año</span><strong>{pesos(acumulado)}</strong></p>
       </div>
     </section>

@@ -121,3 +121,9 @@ button:disabled { opacity: .6; cursor: default; }
 .asistente p { margin: 0; }
 .chip:disabled { opacity: .5; }
 @media (max-width: 420px) { .lista li.ultimo { grid-template-columns: auto 1fr auto; } .lista li.ultimo .tenue { grid-column: 1 / -1; grid-row: 2; } }
+.pestanas { margin: 0 0 20px; }
+.lista li.recibo { grid-template-columns: 1fr auto auto; }
+.lista li.recibo > form, .lista li.recibo > .acciones, .lista li.recibo > [role="alert"] { grid-column: 1 / -1; margin: 0; }
+.lista li.recibo > span:first-child .tenue { display: block; font-size: 14px; white-space: normal; }
+.lista .estado.en-meta { background: var(--en-meta); color: var(--fondo); }
+.fila-presupuesto select { font: inherit; color: var(--tinta); background: var(--fondo); border: 1px solid var(--linea); border-radius: 12px; padding: 10px 12px; min-width: 0; }

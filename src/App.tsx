@@ -13,6 +13,8 @@ import Grafico from './Grafico'
 import Privacidad from './Privacidad'
 import Finanzas from './finanzas/Finanzas'
 import Salud from './salud/Salud'
+import Habitos from './habitos/Habitos'
+import { dias, racha, totalDelDia } from './habitos/calculos'
 
 const TEXTO_ESTADO: Record<Estado, string> = { fuera: '✕ Fuera de la meta', cerca: '◐ Cerca de la meta', en_meta: '✓ Vas bien' }
 const TEXTO_PERIODO: Record<Periodo, string> = { dia: 'día', semana: 'semana', mes: 'mes', ano: 'año' }
@@ -79,7 +81,7 @@ function Entrar({ alPrivacidad }: { alPrivacidad: () => void }) {
   )
 }
 
-type Vista = { tipo: 'inicio' } | { tipo: 'nuevo' } | { tipo: 'salud' } | { tipo: 'detalle'; id: string }
+type Vista = { tipo: 'inicio' } | { tipo: 'nuevo' } | { tipo: 'salud' } | { tipo: 'habitos' } | { tipo: 'detalle'; id: string }
 
 function Panel({ sesion, alPrivacidad }: { sesion: Session; alPrivacidad: () => void }) {
   const [vista, setVista] = useState<Vista>({ tipo: 'inicio' })
@@ -123,7 +125,10 @@ function Panel({ sesion, alPrivacidad }: { sesion: Session; alPrivacidad: () => 
       {seguimientos && (vista.tipo === 'salud' || (actual && ['gym', 'cuerpo'].includes(actual.codigo_plantilla ?? ''))) && (
         <Salud seguimientos={seguimientos} registros={registros} alVolver={() => setVista({ tipo: 'inicio' })} alCambiar={cargar} />
       )}
-      {vista.tipo === 'detalle' && actual && !['finanzas', 'gym', 'cuerpo'].includes(actual.codigo_plantilla ?? '') && (
+      {seguimientos && (vista.tipo === 'habitos' || actual?.codigo_plantilla === 'habitos') && (
+        <Habitos seguimientos={seguimientos} registros={registros} alVolver={() => setVista({ tipo: 'inicio' })} alCambiar={cargar} />
+      )}
+      {vista.tipo === 'detalle' && actual && !['finanzas', 'gym', 'cuerpo', 'habitos'].includes(actual.codigo_plantilla ?? '') && (
         <Detalle
           seguimiento={actual}
           indice={seguimientos!.indexOf(actual)}
@@ -138,6 +143,7 @@ function Panel({ sesion, alPrivacidad }: { sesion: Session; alPrivacidad: () => 
           registros={registros}
           alNuevo={() => setVista({ tipo: 'nuevo' })}
           alSalud={() => setVista({ tipo: 'salud' })}
+          alHabitos={() => setVista({ tipo: 'habitos' })}
           alAbrir={id => setVista({ tipo: 'detalle', id })}
         />
       )}
@@ -146,16 +152,32 @@ function Panel({ sesion, alPrivacidad }: { sesion: Session; alPrivacidad: () => 
   )
 }
 
-function Inicio({ seguimientos, registros, alNuevo, alSalud, alAbrir }: {
+function Inicio({ seguimientos, registros, alNuevo, alSalud, alHabitos, alAbrir }: {
   seguimientos: Seguimiento[] | null
   registros: RegistroGuardado[]
   alNuevo: () => void
   alSalud: () => void
+  alHabitos: () => void
   alAbrir: (id: string) => void
 }) {
+  // los hábitos van juntos en una sola tarjeta
   const tarjetas = useMemo(() => (seguimientos ?? [])
     .map((s, indice) => ({ s, indice, ...resumen(s, registros) }))
+    .filter(t => t.s.codigo_plantilla !== 'habitos')
     .sort((a, b) => ordenEstado(a.estado) - ordenEstado(b.estado)), [seguimientos, registros])
+
+  const habitos = useMemo(() => {
+    const lista = (seguimientos ?? []).filter(s => s.codigo_plantilla === 'habitos')
+    if (!lista.length) return null
+    const hoy = hoyIso()
+    const suyas = lista.map(h => ({ marcas: registros.filter(r => r.id_seguimiento === h.id_seguimiento), meta: h.meta?.valor ?? null }))
+    return {
+      indice: seguimientos!.indexOf(lista[0]),
+      total: lista.length,
+      hechos: suyas.filter(x => totalDelDia(x.marcas, hoy) >= (x.meta ?? Number.MIN_VALUE)).length,
+      mejorRacha: Math.max(...suyas.map(x => racha(x.marcas, hoy, x.meta))),
+    }
+  }, [seguimientos, registros])
 
   return (
     <>
@@ -167,6 +189,7 @@ function Inicio({ seguimientos, registros, alNuevo, alSalud, alAbrir }: {
         <div className="acciones">
           <button className="principal" onClick={alNuevo}>Nuevo seguimiento</button>
           <button className="secundario" onClick={alSalud}>Salud</button>
+          <button className="secundario" onClick={alHabitos}>Hábitos</button>
           <button className="secundario" onClick={cerrarSesion}>Salir</button>
         </div>
       </header>
@@ -179,6 +202,13 @@ function Inicio({ seguimientos, registros, alNuevo, alSalud, alAbrir }: {
         </section>
       )}
       <main className="cuadricula" aria-label="Seguimientos activos">
+        {habitos && (
+          <button className={`tarjeta t${(habitos.indice % 7) + 1}`} onClick={alHabitos}>
+            <h2>Hábitos</h2>
+            <span className="cifra">{habitos.hechos} de {habitos.total}</span>
+            <span className="sub">hechos hoy · mejor racha viva {dias(habitos.mejorRacha)}</span>
+          </button>
+        )}
         {tarjetas.map(({ s, indice, valor, puntos, estado }) => (
           <button key={s.id_seguimiento} className={`tarjeta t${(indice % 7) + 1}`} onClick={() => alAbrir(s.id_seguimiento)}>
             <h2>{s.nombre}</h2>

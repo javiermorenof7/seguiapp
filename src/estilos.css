@@ -127,3 +127,6 @@ button:disabled { opacity: .6; cursor: default; }
 .lista li.recibo > span:first-child .tenue { display: block; font-size: 14px; white-space: normal; }
 .lista .estado.en-meta { background: var(--en-meta); color: var(--fondo); }
 .fila-presupuesto select { font: inherit; color: var(--tinta); background: var(--fondo); border: 1px solid var(--linea); border-radius: 12px; padding: 10px 12px; min-width: 0; }
+.calendario { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; margin-top: 12px; max-width: 420px; }
+.calendario span { aspect-ratio: 1; border-radius: 6px; background: var(--linea); }
+.calendario span.hecho { background: var(--acento); }

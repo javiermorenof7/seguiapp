@@ -147,6 +147,11 @@ export async function aprenderNombre(tipo: 'categoria' | 'ejercicio' | 'habito',
   ))
 }
 
+export async function obtenerAlias(tipo: 'categoria' | 'ejercicio' | 'habito') {
+  const filas = revisar(await supabase.from('alias').select('texto_escrito, texto_correcto').eq('tipo', tipo).eq('estado', 'activo'))
+  return new Map(filas.map(a => [a.texto_escrito, a.texto_correcto] as [string, string]))
+}
+
 // valor null quita el presupuesto (borrado lógico).
 export async function guardarPresupuesto(idGastos: string, idEtiqueta: string, actual: Presupuesto | undefined, valor: number | null) {
   if (actual) {

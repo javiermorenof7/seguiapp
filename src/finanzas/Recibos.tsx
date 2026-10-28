@@ -6,7 +6,7 @@ import { formatoValor } from '../indicadores'
 import Grafico from '../Grafico'
 import Barras from './Barras'
 import { mesesAntes } from './calculos'
-import { categoriaDe, normalizar, type Categoria } from './parseo'
+import { categoriaDe, leerMonto, leidoDe, MONTO_INVALIDO, normalizar, type Categoria } from './parseo'
 import { diaAprendido, nombreRecibo, recibosDelMes, totalesDelMes, valoresEnElTiempo, type EstadoRecibo, type FilaRecibo } from './estadoRecibos'
 
 type Datos = Awaited<ReturnType<typeof obtenerRecibos>>
@@ -14,11 +14,6 @@ type Datos = Awaited<ReturnType<typeof obtenerRecibos>>
 const pesos = (v: number) => formatoValor('dinero', v)
 const cssVar = (nombre: string) => getComputedStyle(document.documentElement).getPropertyValue(nombre).trim()
 const hoyIso = () => new Date().toLocaleDateString('en-CA')
-const leerPesos = (texto: string) => {
-  const limpio = texto.replace(/[.\s$]/g, '')
-  const n = Number(limpio)
-  return limpio && Number.isInteger(n) && n >= 0 && n < 1e12 ? n : null
-}
 const ESTADO: Record<EstadoRecibo, { texto: string; clase: string }> = {
   vencido: { texto: '✕ Vencido', clase: 'fuera' },
   por_pagar: { texto: '◐ Por pagar', clase: 'cerca' },
@@ -137,8 +132,8 @@ function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alQuit
 
   async function pagar(evento: FormEvent) {
     evento.preventDefault()
-    const n = leerPesos(monto)
-    if (n === null) return setMensaje('Escribe el valor pagado en pesos sin decimales.')
+    const n = leerMonto(monto)
+    if (n === null) return setMensaje(MONTO_INVALIDO)
     if (pideCategoria && !elegida) return setMensaje('Elige en qué categoría va.')
     setEnviando(true)
     try {
@@ -215,8 +210,9 @@ function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alQuit
         : (
           <form className="fila-presupuesto" onSubmit={pagar}>
             <label htmlFor={`r-${recibo.id_recibo}`}>Valor real</label>
-            <input id={`r-${recibo.id_recibo}`} inputMode="numeric" maxLength={16} value={monto} onChange={ev => setMonto(ev.target.value)} placeholder="Valor pagado (ej. 85.000)" />
+            <input id={`r-${recibo.id_recibo}`} maxLength={16} value={monto} onChange={ev => setMonto(ev.target.value)} placeholder="Valor pagado (ej. 85 mil)" />
             <button className="secundario" disabled={enviando}>Pagar</button>
+            {monto && <small className="ayuda" aria-live="polite">{leidoDe(monto)}</small>}
             {pideCategoria && (
               <select aria-label={`Categoría de ${nombre}`} value={elegida} onChange={ev => setElegida(ev.target.value)}>
                 <option value="">Categoría…</option>
@@ -248,10 +244,10 @@ function NuevoRecibo({ inicial, categorias, alGuardar }: {
 
   async function guardar(evento: FormEvent) {
     evento.preventDefault()
-    const valor = leerPesos(monto)
+    const valor = leerMonto(monto)
     if (!servicio.trim()) return setError('Escribe el servicio, por ejemplo "Luz".')
     if (tipo === 'hogar' && !ubicacion.trim()) return setError('Escribe la ubicación del hogar.')
-    if (valor === null) return setError('Escribe el valor pagado en pesos sin decimales.')
+    if (valor === null) return setError(MONTO_INVALIDO)
     if (tipo === 'personal' && !elegida) return setError('Elige en qué categoría va.')
     setEnviando(true)
     try {
@@ -297,7 +293,7 @@ function NuevoRecibo({ inicial, categorias, alGuardar }: {
             <input maxLength={40} value={numero} onChange={ev => setNumero(ev.target.value)} autoComplete="off" />
             <small className="ayuda">El de la factura; se muestra oculto (****1234)</small>
           </label>
-          <label>Valor pagado<input required inputMode="numeric" maxLength={16} value={monto} onChange={ev => setMonto(ev.target.value)} placeholder="Valor que pagaste" /><small className="ayuda">Ej.: 85.000, sin decimales</small></label>
+          <label>Valor pagado<input required maxLength={16} value={monto} onChange={ev => setMonto(ev.target.value)} placeholder="Valor que pagaste" /><small className="ayuda" aria-live="polite">{leidoDe(monto) || 'Ej.: 85 mil o 85.000'}</small></label>
           <button className="principal" disabled={enviando}>Guardar y pagar</button>
           {error && <p role="alert" className="error">{error}</p>}
         </form>

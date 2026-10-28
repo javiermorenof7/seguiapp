@@ -1,4 +1,5 @@
 // Lee lo que la persona escribe ("35 mil almuerzo") y propone la categoría con lo que ya aprendió.
+import { formatoValor } from '../indicadores'
 
 export interface Categoria { id_etiqueta: string; nombre: string; grupo: 'basico' | 'personal' | null; palabras_clave: string[] }
 
@@ -21,7 +22,7 @@ export function leerMovimiento(texto: string): { valor: number; descripcion: str
   const [todo, cifra, sufijo] = coincidencia
   const factor = sufijo ? MULTIPLICADOR[normalizar(sufijo)] : 1
   const valor = Math.round(numero(cifra, !!sufijo) * factor)
-  if (!Number.isFinite(valor) || valor <= 0) return null
+  if (!Number.isFinite(valor) || valor <= 0 || valor >= 1e12) return null
   const descripcion = (texto.slice(0, coincidencia.index) + ' ' + texto.slice(coincidencia.index + todo.length))
     .replace(/\s+/g, ' ').replace(/^\s*(de|en)\s+/i, '').trim()
   return { valor, descripcion }
@@ -31,6 +32,15 @@ export function leerMovimiento(texto: string): { valor: number; descripcion: str
 export function leerMonto(texto: string): number | null {
   const leido = leerMovimiento(texto)
   return leido && !leido.descripcion ? leido.valor : null
+}
+
+export const MONTO_INVALIDO = 'Escribe el valor, por ejemplo 85 mil o 85.000.'
+
+// Lo que se leyó, para mostrarlo bajo el campo mientras se escribe.
+export function leidoDe(texto: string): string {
+  if (!texto.trim()) return ''
+  const valor = leerMonto(texto)
+  return valor === null ? 'No entiendo el valor' : `= ${formatoValor('dinero', valor)}`
 }
 
 // Lo aprendido → palabra clave → nombre de la categoría; igual que en la hoja de antes.

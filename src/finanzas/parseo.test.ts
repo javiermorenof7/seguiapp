@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { categoriaDe, leerMonto, leerMovimiento, type Categoria } from './parseo'
+import { categoriaDe, leerMonto, leerMovimiento, leidoDe, type Categoria } from './parseo'
 
 describe('leerMonto', () => {
   it('acepta el monto como se escriba', () => {
@@ -55,5 +55,12 @@ describe('categoriaDe', () => {
   })
   it('lo aprendido hacia una categoría que ya no existe no rompe', () => {
     expect(categoriaDe('cine', new Map([['cine', 'Borrada']]), categorias)).toBe(ocio)
+  })
+})
+
+describe('leidoDe', () => {
+  it('muestra lo que entendió o avisa', () => {
+    expect(['', '85 mil', '$85.000', '1,5 millones', 'ochenta', '0', '2000000000000'].map(leidoDe))
+      .toEqual(['', '= $85.000', '= $85.000', '= $1.500.000', 'No entiendo el valor', 'No entiendo el valor', 'No entiendo el valor'])
   })
 })

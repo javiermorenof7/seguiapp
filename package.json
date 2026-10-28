@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "build:dev": "tsc -b && vite build --mode desarrollo",
+    "funcion:avisos": "rolldown supabase/functions/avisos/index.ts -f esm -p neutral -e npm:@supabase/supabase-js@2 -e npm:web-push@3 -o dist/funcion-avisos.js",
     "preview": "vite preview",
     "test": "vitest run"
   },

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
-  aprenderCategoria, guardarPresupuesto, obtenerFinanzas, registrar, type RegistroGuardado, type Seguimiento,
+  aprenderCategoria, crearEtiqueta, guardarPresupuesto, obtenerFinanzas, obtenerMetasAhorro, registrar, type RegistroGuardado, type Seguimiento,
 } from '../datos'
 import { formatoValor } from '../indicadores'
-import { categoriaDe, leerMonto, normalizar, type Categoria } from './parseo'
+import { categoriaDe, leerMonto, leidoDe, MONTO_INVALIDO, normalizar, type Categoria } from './parseo'
 import {
   acumuladoAno, estadoPresupuesto, mesAMes, mesesAntes, porCategoria, promedioSeisMeses, recibosPendientes, resumenMes,
   saldoDespues, type EstadoPresupuesto, type Movimiento, type TipoMovimiento,
@@ -13,7 +13,11 @@ import Ultimos, { FilaMovimiento } from './Ultimos'
 import Historial from '../historial/Historial'
 import Asistente from './Asistente'
 import Recibos from './Recibos'
+import Deudas from './Deudas'
+import Ahorro from './Ahorro'
+import type { MetaAhorro } from './metas'
 import { cincuentaTreintaVeinte, gastoInusual } from './aprende'
+import { esperadoVsRecibido, estadoFijo, fijos, porFuente, type EstadoFijo } from './ingresos'
 
 type Datos = Awaited<ReturnType<typeof obtenerFinanzas>>
 type Grupo = 'auto' | 'basico' | 'personal'
@@ -34,6 +38,10 @@ const pesos = (v: number) => (v < 0 ? '−' : '') + formatoValor('dinero', Math.
 const cssVar = (nombre: string) => getComputedStyle(document.documentElement).getPropertyValue(nombre).trim()
 const hoyIso = () => new Date().toLocaleDateString('en-CA')
 const nombreMes = (mes: string) => new Date(`${mes}-15T12:00`).toLocaleDateString('es-CO', { month: 'short' })
+const ESTADO_FIJO: Record<EstadoFijo, { texto: string; clase: string }> = {
+  recibido: { texto: '✓ Recibido', clase: 'en-meta' }, pendiente: { texto: '◐ Pendiente', clase: 'cerca' }, atrasado: { texto: '✕ Atrasado', clase: 'fuera' },
+}
+const PESTANAS = { resumen: 'Resumen', recibos: 'Facturas', ingresos: 'Ingresos', ahorro: 'Ahorro', deudas: 'Deudas', historial: 'Historial' }
 
 export default function Finanzas({ seguimientos, registros, abrir, alVolver, alCambiar }: {
   seguimientos: Seguimiento[]
@@ -48,17 +56,25 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
   const idGastos = id('gasto')
   const [datos, setDatos] = useState<Datos | null>(null)
   const [error, setError] = useState('')
-  const [pestana, setPestana] = useState<'resumen' | 'recibos' | 'historial'>(abrir === 'factura' ? 'recibos' : 'resumen')
+  const idIngresos = id('ingreso')
+  const [pestana, setPestana] = useState<keyof typeof PESTANAS>(abrir === 'factura' ? 'recibos' : 'resumen')
 
   const cargar = useCallback(async () => {
     if (!idGastos) return
     try {
-      setDatos(await obtenerFinanzas(idGastos, `${mesesAntes(mes, 4)}-01`))
+      setDatos(await obtenerFinanzas(idGastos, `${mesesAntes(mes, 4)}-01`, idIngresos))
     } catch (e) {
       setError((e as Error).message)
     }
-  }, [idGastos, mes])
+  }, [idGastos, idIngresos, mes])
   useEffect(() => { cargar() }, [cargar])
+
+  // metas y todos los ahorros; los registros cambian tras cada guardado, así que se vuelven a pedir con ellos
+  const idAhorro = id('ahorro')
+  const [metasAhorro, setMetasAhorro] = useState<Awaited<ReturnType<typeof obtenerMetasAhorro>> | null>(null)
+  useEffect(() => {
+    if (idAhorro) obtenerMetasAhorro(idAhorro).then(setMetasAhorro, e => setError((e as Error).message))
+  }, [idAhorro, registros])
 
   const movimientos = useMemo<Movimiento[]>(() => {
     const tipoDe = new Map((['gasto', 'ingreso', 'ahorro'] as const).map(t => [id(t), t]))
@@ -96,10 +112,8 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
       </header>
       {error && <p role="alert" className="error">{error}</p>}
       <div className="chips pestanas" role="radiogroup" aria-label="Sección de Finanzas">
-        {(['resumen', 'recibos', 'historial'] as const).map(p => (
-          <button key={p} type="button" role="radio" aria-checked={pestana === p} className="chip" onClick={() => setPestana(p)}>
-            {p === 'resumen' ? 'Resumen' : p === 'recibos' ? 'Facturas' : 'Historial'}
-          </button>
+        {(Object.keys(PESTANAS) as (keyof typeof PESTANAS)[]).filter(p => (p !== 'ingresos' || idIngresos) && (p !== 'ahorro' || idAhorro)).map(p => (
+          <button key={p} type="button" role="radio" aria-checked={pestana === p} className="chip" onClick={() => setPestana(p)}>{PESTANAS[p]}</button>
         ))}
       </div>
       {datos && pestana === 'historial' && (
@@ -108,7 +122,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
           registros={registros}
           filtros={[
             { nombre: 'Tipo', inicial: idGastos, opciones: (['gasto', 'ingreso', 'ahorro'] as const).flatMap(t => id(t) ? [[id(t)!, NOMBRES[t]] as [string, string]] : []), de: r => r.id_seguimiento },
-            { nombre: 'Categoría', opciones: datos.categorias.map(c => [c.id_etiqueta, c.nombre] as [string, string]), de: r => r.id_etiqueta ?? '' },
+            { nombre: 'Categoría o fuente', opciones: [...datos.categorias, ...datos.fuentes].map(c => [c.id_etiqueta, c.nombre] as [string, string]), de: r => r.id_etiqueta ?? '' },
           ]}
           buscar={r => r.nota ?? ''}
           suma
@@ -127,10 +141,21 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
         <Recibos idGastos={idGastos} categorias={datos.categorias} aprendido={datos.aprendido} abrirNueva={abrir === 'factura'}
           alCambiar={async () => { await Promise.all([alCambiar(), cargar()]) }} />
       )}
+      {idAhorro && metasAhorro && pestana === 'ahorro' && (
+        <Ahorro idAhorro={idAhorro} metas={metasAhorro.metas} ahorros={metasAhorro.ahorros} alCambiar={alCambiar} />
+      )}
+      {datos && pestana === 'deudas' && (
+        <Deudas idGastos={idGastos} categorias={datos.categorias} alCambiar={alCambiar} />
+      )}
+      {datos && idIngresos && pestana === 'ingresos' && (
+        <Ingresos movimientos={movimientos} mes={mes} fuentes={datos.fuentes} idIngresos={idIngresos}
+          alCambiar={async () => { await Promise.all([alCambiar(), cargar()]) }} />
+      )}
       {datos && cuentas && pestana === 'resumen' && (
         <>
           <NuevoMovimiento
             datos={datos}
+            metas={metasAhorro?.metas ?? []}
             anteriores={movimientos}
             tipoInicial={abrir === 'gasto' || abrir === 'ingreso' || abrir === 'ahorro' ? abrir : undefined}
             ids={{ gasto: idGastos, ingreso: id('ingreso'), ahorro: id('ahorro') }}
@@ -168,7 +193,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
             alGuardar={(idEtiqueta, valor) => guardarPresupuesto(idGastos, idEtiqueta,
               datos.presupuestos.find(p => p.id_etiqueta === idEtiqueta), valor).then(cargar)}
           />
-          <Asistente idGastos={idGastos} categorias={datos.categorias} alCambiar={async () => { await Promise.all([alCambiar(), cargar()]) }} />
+          <Asistente idSeguimiento={idGastos} categorias={datos.categorias} alCambiar={async () => { await Promise.all([alCambiar(), cargar()]) }} />
         </>
       )}
       {!datos && !error && <p className="tenue">Cargando…</p>}
@@ -176,8 +201,9 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
   )
 }
 
-function NuevoMovimiento({ datos, anteriores, tipoInicial, ids, gastadoDe, presupuestos, inusual, alGuardar }: {
+function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe, presupuestos, inusual, alGuardar }: {
   datos: Datos
+  metas: MetaAhorro[]
   anteriores: Movimiento[]
   tipoInicial?: TipoMovimiento
   ids: Record<TipoMovimiento, string | undefined>
@@ -191,6 +217,7 @@ function NuevoMovimiento({ datos, anteriores, tipoInicial, ids, gastadoDe, presu
   const [descripcion, setDescripcion] = useState('')
   const [fecha, setFecha] = useState(hoyIso())
   const [elegida, setElegida] = useState<string | null>(null)
+  const [idMeta, setIdMeta] = useState<string | null>(null)
   const [grupo, setGrupo] = useState<Grupo>('auto')
   const [aviso, setAviso] = useState('')
   const [error, setError] = useState('')
@@ -198,33 +225,38 @@ function NuevoMovimiento({ datos, anteriores, tipoInicial, ids, gastadoDe, presu
 
   const valor = leerMonto(monto)
   const leido = valor === null ? null : { valor, descripcion: descripcion.replace(/\s+/g, ' ').trim() }
-  const propuesta = tipo === 'gasto' ? categoriaDe(descripcion, datos.aprendido, datos.categorias) : null
+  // en Gastos es la categoría; en Ingresos, la fuente
+  const lista = tipo === 'ingreso' ? datos.fuentes : datos.categorias
+  const propuesta = tipo === 'ahorro' ? null : categoriaDe(descripcion, datos.aprendido, lista)
   // lo que ya escribió antes en este tipo, del más reciente al más antiguo
   const sugerencias = useMemo(() => [...new Set(anteriores.filter(m => m.tipo === tipo && m.nota)
     .sort((a, b) => b.fecha.localeCompare(a.fecha)).map(m => m.nota!))].slice(0, 30), [anteriores, tipo])
-  const categoria: Categoria | null = datos.categorias.find(c => c.id_etiqueta === elegida) ?? propuesta
+  const categoria: Categoria | null = lista.find(c => c.id_etiqueta === elegida) ?? propuesta
+  const fuenteNueva = tipo === 'ingreso' && !categoria ? descripcion.replace(/\s+/g, ' ').trim().slice(0, 60) : ''
 
   async function guardar(evento: FormEvent) {
     evento.preventDefault()
     const idSeguimiento = ids[tipo]
     if (!leido) return setError('Escribe solo el monto, como quieras: "35 mil", "35.000" o "1,5 millones".')
-    if (leido.valor >= 1e12) return setError('El monto es demasiado grande.')
     if (leido.descripcion.length > MAX_DESCRIPCION) return setError(`La descripción admite hasta ${MAX_DESCRIPCION} letras.`)
     if (!fecha || fecha > hoyIso()) return setError('Elige una fecha de hoy o anterior.')
     if (!idSeguimiento) return setError(`No encuentro tu seguimiento de ${NOMBRES[tipo]}.`)
     if (tipo === 'gasto' && !categoria) return setError('Elige en qué categoría va.')
     setEnviando(true)
     try {
+      // sin conexión no se puede crear la fuente: el ingreso queda sin fuente y se le pone después
+      const idFuenteNueva = fuenteNueva ? await crearEtiqueta(idSeguimiento, fuenteNueva).catch(() => null) : null
+      const fuente = categoria ?? (idFuenteNueva ? { nombre: fuenteNueva } : null)
       const resultado = await registrar({
         id_seguimiento: idSeguimiento, fecha_registro: fecha, valor: leido.valor, nota: leido.descripcion || null,
-        id_etiqueta: tipo === 'gasto' ? categoria!.id_etiqueta : null,
+        id_etiqueta: tipo === 'ahorro' ? idMeta : categoria?.id_etiqueta ?? idFuenteNueva,
         grupo: tipo === 'gasto' && grupo !== 'auto' ? grupo : null,
       })
       // aprende solo cuando la persona eligió algo distinto de lo propuesto
-      const aprende = tipo === 'gasto' && !!leido.descripcion && categoria!.id_etiqueta !== propuesta?.id_etiqueta
-      if (aprende) await aprenderCategoria(normalizar(leido.descripcion), categoria!.nombre).catch(() => {})
+      const aprende = !!categoria && !!leido.descripcion && categoria.id_etiqueta !== propuesta?.id_etiqueta
+      if (aprende) await aprenderCategoria(normalizar(leido.descripcion), categoria.nombre).catch(() => {})
       let mensaje = resultado === 'guardado'
-        ? `${TEXTO[tipo]} registrado: ${pesos(leido.valor)}${categoria && tipo === 'gasto' ? ` en ${categoria.nombre}` : ''}.`
+        ? `${TEXTO[tipo]} registrado: ${pesos(leido.valor)}${fuente ? ` ${tipo === 'gasto' ? 'en' : 'de'} ${fuente.nombre}` : ''}.`
         : 'Sin conexión: quedó guardado en este equipo y se enviará al volver la conexión.'
       if (tipo === 'gasto') {
         const presupuesto = presupuestos.get(categoria!.id_etiqueta) ?? null
@@ -234,13 +266,15 @@ function NuevoMovimiento({ datos, anteriores, tipoInicial, ids, gastadoDe, presu
         if (raro) mensaje += ` Ojo: es más del doble de lo normal (${pesos(raro.promedio)} en promedio ${raro.base === 'descripcion' ? `en "${leido.descripcion}"` : `en ${categoria!.nombre}`}).`
         if (e) mensaje += ` ${TEXTO_PRESUPUESTO[e]} del presupuesto de ${categoria!.nombre}: ${pesos(total)} de ${pesos(presupuesto!)}.`
       }
-      setAviso(mensaje)
+      const meta = tipo === 'ahorro' ? metas.find(m => m.id_etiqueta === idMeta) : undefined
+      setAviso(meta ? `${mensaje} Va a la meta ${meta.nombre}.` : mensaje)
       setMonto('')
       setDescripcion('')
       setElegida(null)
+      setIdMeta(null)
       setGrupo('auto')
       setError('')
-      await alGuardar(aprende)
+      await alGuardar(aprende || !!idFuenteNueva)
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -288,6 +322,29 @@ function NuevoMovimiento({ datos, anteriores, tipoInicial, ids, gastadoDe, presu
             ))}
           </div>
         </>
+      )}
+      {tipo === 'ingreso' && descripcion.trim() && (
+        <fieldset>
+          <legend>Fuente</legend>
+          <div className="chips">
+            {datos.fuentes.map(c => (
+              <button key={c.id_etiqueta} type="button" role="radio" aria-checked={categoria?.id_etiqueta === c.id_etiqueta}
+                className="chip" onClick={() => setElegida(c.id_etiqueta)}>{c.nombre}</button>
+            ))}
+          </div>
+          {fuenteNueva && <small className="ayuda">Fuente nueva: «{fuenteNueva}». Se crea al guardar, o elige una de arriba.</small>}
+        </fieldset>
+      )}
+      {tipo === 'ahorro' && metas.length > 0 && (
+        <fieldset>
+          <legend>Meta (opcional)</legend>
+          <div className="chips">
+            {[{ id_etiqueta: null, nombre: 'Ninguna' }, ...metas].map(m => (
+              <button key={m.id_etiqueta ?? ''} type="button" role="radio" aria-checked={idMeta === m.id_etiqueta}
+                className="chip" onClick={() => setIdMeta(m.id_etiqueta)}>{m.nombre}</button>
+            ))}
+          </div>
+        </fieldset>
       )}
       <label>Fecha
         <input type="date" required value={fecha} max={hoyIso()} onChange={ev => setFecha(ev.target.value)} />
@@ -423,9 +480,8 @@ function FilaPresupuesto({ nombre, actual, sugerido, enfocar, alGuardar }: {
 
   async function guardar(evento: FormEvent) {
     evento.preventDefault()
-    const limpio = valor.replace(/[.\s$]/g, '')
-    const numero = limpio ? Number(limpio) : null
-    if (numero !== null && (!Number.isInteger(numero) || numero <= 0 || numero >= 1e12)) return setMensaje('Escribe pesos sin decimales.')
+    const numero = valor.trim() ? leerMonto(valor) : null
+    if (valor.trim() && numero === null) return setMensaje(MONTO_INVALIDO)
     try {
       await alGuardar(numero)
       setMensaje(numero === null ? 'Quitado.' : 'Guardado.')
@@ -438,11 +494,66 @@ function FilaPresupuesto({ nombre, actual, sugerido, enfocar, alGuardar }: {
     <li>
       <form className="fila-presupuesto" onSubmit={guardar}>
         <label htmlFor={`p-${nombre}`}>{nombre}{sugerido > 0 && <span className="tenue"> Sugerido {pesos(sugerido)}</span>}</label>
-        <input id={`p-${nombre}`} inputMode="numeric" maxLength={16} value={valor} onChange={ev => setValor(ev.target.value)}
-          placeholder="Tope del mes (ej. 500.000)" autoFocus={enfocar} />
+        <input id={`p-${nombre}`} maxLength={16} value={valor} onChange={ev => setValor(ev.target.value)}
+          placeholder="Tope del mes (ej. 500 mil)" autoFocus={enfocar} />
         <button className="secundario" disabled={!valor && !actual}>{!valor && actual ? 'Quitar' : 'Guardar'}</button>
+        {valor && <small className="ayuda" aria-live="polite">{leidoDe(valor)}</small>}
         {mensaje && <span role="status" className="tenue">{mensaje}</span>}
       </form>
     </li>
+  )
+}
+
+function Ingresos({ movimientos, mes, fuentes, idIngresos, alCambiar }: {
+  movimientos: Movimiento[]; mes: string; fuentes: Categoria[]; idIngresos: string; alCambiar: () => Promise<void>
+}) {
+  const nombre = (id: string | null) => fuentes.find(f => f.id_etiqueta === id)?.nombre ?? 'Sin fuente'
+  const hoy = hoyIso()
+  const delMes = useMemo(() => fijos(movimientos, mes).map(f => ({ ...f, estado: estadoFijo(f, movimientos, hoy) })), [movimientos, mes, hoy])
+  const recibido = useMemo(() => esperadoVsRecibido(movimientos, mes), [movimientos, mes])
+  const fuente = useMemo(() => {
+    const r = porFuente(movimientos, mes)
+    const colores = ['--t4', '--t1', '--t7', '--t5', '--t3', '--t6', '--t2']
+    return { etiquetas: r.meses.map(nombreMes), series: r.series.map((x, i) => ({ nombre: nombre(x.id_etiqueta), datos: x.datos, color: cssVar(colores[i % colores.length]) })) }
+  }, [movimientos, mes, fuentes])
+
+  return (
+    <>
+      <section>
+        <h2>Ingresos fijos del mes</h2>
+        {delMes.length ? (
+          <ul className="lista">
+            {delMes.map(f => (
+              <li key={f.id_etiqueta} className="recibo">
+                <span>{nombre(f.id_etiqueta)}<span className="tenue"> · día {f.dia}</span></span>
+                <strong>{pesos(f.monto)}</strong>
+                <span className={`estado ${ESTADO_FIJO[f.estado].clase}`}>{ESTADO_FIJO[f.estado].texto}</span>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="tenue">Un ingreso es fijo cuando llega de la misma fuente los últimos 3 meses con un monto parecido. Ponle fuente a tus ingresos para verlos aquí.</p>}
+      </section>
+      {fuente.series.length > 0 && (
+        <section>
+          <h2>¿De dónde vienen mis ingresos?</h2>
+          <Barras etiquetas={fuente.etiquetas} series={fuente.series} formato={pesos} colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
+            descripcion="Ingresos de cada fuente en los últimos 6 meses" />
+        </section>
+      )}
+      {recibido.some(m => m.esperado > 0) && (
+        <section>
+          <h2>¿Llegó lo esperado?</h2>
+          <Barras etiquetas={recibido.map(m => nombreMes(m.mes))} colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')} formato={pesos}
+            series={[
+              { nombre: 'Esperado', datos: recibido.map(m => m.esperado), color: cssVar('--linea'), borde: cssVar('--tenue') },
+              { nombre: 'Recibido', datos: recibido.map(m => m.recibido), color: cssVar('--t4') },
+            ]}
+            descripcion="Ingresos fijos esperados frente a lo recibido de esas fuentes en los últimos 6 meses" />
+        </section>
+      )}
+      <Asistente idSeguimiento={idIngresos} tipo="ingreso" categorias={fuentes}
+        alCrear={async nombre => ({ id_etiqueta: await crearEtiqueta(idIngresos, nombre), nombre, grupo: null, palabras_clave: [] })}
+        alCambiar={alCambiar} />
+    </>
   )
 }

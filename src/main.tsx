@@ -3,11 +3,10 @@ import { createRoot } from 'react-dom/client'
 import '@fontsource-variable/bricolage-grotesque'
 import './estilos.css'
 import App from './App'
-import { DESARROLLO } from './entorno'
 
 createRoot(document.getElementById('raiz')!).render(
   <StrictMode>
-    {import.meta.env.MODE === DESARROLLO && <div className="franja-desarrollo" role="note">Desarrollo</div>}
+    {import.meta.env.DEV && <div className="franja-desarrollo" role="note">Desarrollo</div>}
     <App />
   </StrictMode>,
 )

@@ -4,8 +4,6 @@ Seguimiento personal: lo que no se mide no se controla. Una web para medir finan
 
 Web: https://seguiapp.pages.dev/ (acceso solo por invitación).
 
-Versión de desarrollo: https://dev.seguiapp.pages.dev/ (franja "Desarrollo" arriba; usa la misma base).
-
 ## Tecnología
 
 - React + Vite + TypeScript, instalable en el celular (PWA).
@@ -22,18 +20,18 @@ Versión de desarrollo: https://dev.seguiapp.pages.dev/ (franja "Desarrollo" arr
   - `datos.ts`: única capa de acceso a Supabase.
   - `cola.ts`: registros hechos sin conexión, guardados en el navegador (IndexedDB) hasta poder enviarlos; se borran al cerrar sesión.
   - `Privacidad.tsx`: política de tratamiento de datos personales (Ley 1581 de 2012).
+  - `misdatos/`: pantalla "Mis datos" (descargar los datos de cada módulo en CSV, contacto con el administrador y borrar la cuenta) y pantalla "Mensajes", donde el administrador lee y responde.
   - `Grafico.tsx`: gráfico de línea (Chart.js) con la meta punteada.
   - `csp.ts`: política de seguridad de contenido (se agrega a la página publicada) y cabeceras de seguridad (`_headers`).
-  - `entorno.ts`: modo de la build de desarrollo, que muestra la franja "Desarrollo".
 - `supabase/migrations/`: esquema de la base (PostgreSQL en Supabase): tablas del motor de seguimiento y de las plantillas, con seguridad por fila (cada persona ve solo sus datos y solo mientras esté invitada).
 - `public/`: manifiesto, ícono y service worker (guarda solo los archivos de la web, nunca datos).
-- `.github/workflows/publicar.yml`: instala, revisa vulnerabilidades (`npm audit`), corre las pruebas y construye; un push a `dev` publica la versión de desarrollo y uno a `main` la de producción, las dos en Cloudflare Pages. Los pull requests solo construyen.
+- `.github/workflows/publicar.yml`: instala, revisa vulnerabilidades (`npm audit`), corre las pruebas y construye; un push a `main` publica la web en Cloudflare Pages. Los pull requests solo construyen.
 - `.github/workflows/latido.yml`: cada lunes hace una consulta mínima (`latido()`, no lee datos) para que el proyecto gratuito de Supabase no se pause por inactividad.
 - `.github/dependabot.yml`: actualizaciones semanales de dependencias y de Actions, hacia `dev`.
 
 ## Ramas
 
-- `dev`: desarrollo, publicado en https://dev.seguiapp.pages.dev/.
+- `dev`: desarrollo; se prueba en local (`npm run dev`, http://localhost:5173), con la franja "Desarrollo" arriba; la web publicada no la muestra.
 - `main`: producción, publicada en https://seguiapp.pages.dev/. Solo recibe cambios por pull request desde `dev`.
 - Ninguna de las dos se puede borrar ni recibir push forzado.
 
@@ -41,9 +39,10 @@ Versión de desarrollo: https://dev.seguiapp.pages.dev/ (franja "Desarrollo" arr
 
 - La página publicada lleva una política de contenido que solo permite la propia web, el proyecto de Supabase y las fotos de perfil de Google; sin código en línea ni scripts de terceros.
 - Además, cabeceras que impiden mostrarla dentro de otra página, fuerzan HTTPS y no envían la dirección de origen.
-- El token de Cloudflare solo existe para las ramas `dev` y `main` y el job que publica no instala dependencias.
-- Acceso solo por invitación: inicio de sesión con Google y una lista de correos permitidos que la base revisa antes de crear cada cuenta.
+- El token de Cloudflare solo existe para la rama `main` y el job que publica no instala dependencias.
+- Acceso solo por invitación: inicio de sesión con Google y una lista de correos permitidos que la base revisa antes de crear cada cuenta. El administrador invita, ve la lista y quita el acceso desde su pantalla; quitar a alguien borra al instante su cuenta y todos sus datos y deja su correo inactivo.
 - No se indexa en buscadores.
+- Borrar la cuenta elimina en la base al usuario, todos sus datos y su invitación; solo lo puede hacer cada persona con su propia cuenta. Los mensajes de contacto solo los ve quien los envía y el administrador, marcado en la lista de invitados.
 - Las dependencias y las Actions van con versión exacta.
 
 ## Desarrollo
@@ -52,6 +51,5 @@ Versión de desarrollo: https://dev.seguiapp.pages.dev/ (franja "Desarrollo" arr
 npm ci
 npm run dev
 npm test
-npm run build       # producción
-npm run build:dev   # desarrollo
+npm run build
 ```

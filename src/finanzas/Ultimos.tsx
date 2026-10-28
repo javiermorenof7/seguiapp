@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { aprenderCategoria, corregirRegistro, type RegistroGuardado } from '../datos'
 import { formatoValor } from '../indicadores'
-import { normalizar, type Categoria } from './parseo'
+import { leerMonto, leidoDe, MONTO_INVALIDO, normalizar, type Categoria } from './parseo'
 
 const MAX_DESCRIPCION = 120
 const pesos = (v: number) => formatoValor('dinero', v)
@@ -59,8 +59,8 @@ function Corregir({ registro: r, esGasto, categorias, alTerminar }: {
 
   async function guardar(evento: FormEvent) {
     evento.preventDefault()
-    const numero = Number(valor.replace(/[.\s$]/g, ''))
-    if (!Number.isInteger(numero) || numero <= 0 || numero >= 1e12) return setError('Escribe pesos sin decimales.')
+    const numero = leerMonto(valor)
+    if (numero === null) return setError(MONTO_INVALIDO)
     if (nota.trim().length > MAX_DESCRIPCION) return setError(`La descripción admite hasta ${MAX_DESCRIPCION} letras.`)
     if (esGasto && !idEtiqueta) return setError('Elige la categoría.')
     setEnviando(true)
@@ -82,7 +82,8 @@ function Corregir({ registro: r, esGasto, categorias, alTerminar }: {
     <li>
       <form className="formulario corregir" onSubmit={guardar}>
         <label>Monto
-          <input inputMode="numeric" required maxLength={16} value={valor} onChange={ev => setValor(ev.target.value)} />
+          <input required maxLength={16} value={valor} onChange={ev => setValor(ev.target.value)} />
+          <small className="ayuda" aria-live="polite">{leidoDe(valor)}</small>
         </label>
         <label>Descripción
           <input maxLength={MAX_DESCRIPCION} value={nota} onChange={ev => setNota(ev.target.value)} />

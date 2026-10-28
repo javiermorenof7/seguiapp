@@ -24,6 +24,12 @@ describe('resumenFinanzas', () => {
     expect(f).toMatchObject({ idGastos: 'g', ingresos: 1000, gastos: 200, ahorro: 300, saldo: 500, hayDatos: true })
     expect(f.puntos).toEqual([{ fecha: '2026-10-01', valor: 800 }, { fecha: '2026-10-05', valor: 500 }])
   })
+  it('cuenta los ingresos fijos pendientes y atrasados del mes', () => {
+    const fuente = (fecha: string, id_etiqueta: string) => ({ ...r('i', fecha, 1000), id_etiqueta })
+    const sueldo = ['07', '08', '09'].map(m => fuente(`2026-${m}-05`, 'sueldo'))
+    const arriendo = ['07', '08', '09'].map(m => fuente(`2026-${m}-25`, 'arriendo'))
+    expect(resumenFinanzas(lista, [...sueldo, ...arriendo], HOY)!.ingresosFijos).toEqual({ total: 2, pendientes: 1, atrasados: 1 })
+  })
   it('null sin Finanzas', () => expect(resumenFinanzas([s('l', 'Lectura', null)], [], HOY)).toBeNull())
 })
 

@@ -71,7 +71,7 @@ button:disabled { opacity: .6; cursor: default; }
 
 .formulario { display: grid; gap: 14px; max-width: 520px; margin: 8px 0 32px; }
 .formulario label { display: grid; gap: 6px; font-weight: 600; }
-.formulario input, .formulario select {
+.formulario input, .formulario select, .formulario textarea {
   font: inherit; color: var(--tinta); background: var(--fondo); border: 1px solid var(--linea);
   border-radius: 12px; padding: 12px 14px; width: 100%;
 }
@@ -112,7 +112,7 @@ button:disabled { opacity: .6; cursor: default; }
 .fila-presupuesto input { font: inherit; color: var(--tinta); background: var(--fondo); border: 1px solid var(--linea); border-radius: 12px; padding: 10px 12px; min-width: 0; }
 .fila-presupuesto label .tenue { display: block; font-size: 14px; margin: 2px 0 0; }
 .fila-presupuesto button:disabled { opacity: .4; }
-.fila-presupuesto [role="status"] { grid-column: 1 / -1; margin: 0; }
+.fila-presupuesto [role="status"], .fila-presupuesto .ayuda { grid-column: 1 / -1; margin: 0; }
 .lista li:has(> .fila-presupuesto) { display: block; }
 @media (max-width: 420px) { .fila-presupuesto { grid-template-columns: 1fr auto; } .fila-presupuesto label { grid-column: 1 / -1; } }
 .lista li.ultimo { grid-template-columns: auto auto 1fr auto; }
@@ -166,3 +166,30 @@ button:disabled { opacity: .6; cursor: default; }
 .filtros label { display: grid; gap: 6px; font-weight: 600; }
 .filtros select, .filtros input { font: inherit; color: var(--tinta); background: var(--fondo); border: 1px solid var(--linea); border-radius: 12px; padding: 10px 12px; min-width: 0; }
 .ayuda { color: var(--tenue); font-size: 14px; font-weight: 400; }
+.tarjeta-prestamo { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 18px 0; border-bottom: 1px solid var(--linea); }
+.tarjeta-prestamo .encabezado { margin: 0; }
+.tarjeta-prestamo h3 { font-size: 18px; margin: 0; }
+.tarjeta-prestamo .tenue, .tarjeta-prestamo .cifra .tenue { margin: 0; font-size: 14px; font-weight: 400; letter-spacing: 0; }
+.tarjeta-prestamo .cifra { font-size: clamp(28px, 8vw, 40px); font-weight: 800; letter-spacing: -1px; line-height: 1; margin: 0; overflow-wrap: anywhere; }
+.tarjeta-prestamo .formulario { margin: 0; }
+.tarjeta-prestamo .lista li { grid-template-columns: minmax(0, 1fr) auto auto; }
+.tarjeta-prestamo .lista .tenue { white-space: normal; }
+.tabla-desliza { overflow-x: auto; }
+.amortizacion { border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.amortizacion caption { text-align: left; padding-bottom: 6px; }
+.amortizacion th, .amortizacion td { padding: 6px 10px; border-bottom: 1px solid var(--linea); text-align: right; }
+.amortizacion th:nth-child(2), .amortizacion td:nth-child(2) { text-align: left; }
+.lista li.meta-ahorro { grid-template-columns: minmax(0, 1fr) auto; }
+.lista li.meta-ahorro > .barra, .lista li.meta-ahorro > p, .lista li.meta-ahorro > .acciones, .lista li.meta-ahorro > section { grid-column: 1 / -1; margin: 0; }
+.lista li.meta-ahorro .tenue { white-space: normal; }
+.barra { height: 10px; border-radius: 999px; background: var(--linea); overflow: hidden; }
+.barra > span { display: block; height: 100%; border-radius: inherit; background: var(--en-meta); }
+.lista.tareas li.tres { grid-template-columns: minmax(0, 1fr) auto auto; }
+.lista.tareas .tenue { white-space: normal; }
+.lista .hecha { text-decoration: line-through; color: var(--tenue); }
+
+/* Mis datos: mensajes de contacto y borrar la cuenta */
+.formulario textarea { resize: vertical; min-height: 96px; }
+.mensaje { display: grid; gap: 4px; padding: 12px 0; border-bottom: 1px solid var(--linea); }
+.mensaje p { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.peligro { border-color: var(--fuera); color: var(--fuera); }

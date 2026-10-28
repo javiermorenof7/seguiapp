@@ -1,9 +1,9 @@
 name: Publicar
 
-# Cloudflare Pages: dev → vista previa (dev.seguiapp.pages.dev), main → producción. Los pull requests solo construyen.
+# Cloudflare Pages: main → producción. Los pull requests solo construyen.
 on:
   push:
-    branches: [dev, main]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -28,9 +28,7 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=moderate
       - run: npm test
-      - if: github.event_name == 'pull_request'
-        run: npm run build:dev
-      - run: npm run ${{ github.ref_name == 'dev' && 'build:dev' || 'build' }}
+      - run: npm run build
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: github.event_name != 'pull_request'
         with:
@@ -38,14 +36,14 @@ jobs:
           path: dist
           retention-days: 1
 
-  # El token solo existe en el environment production, que acepta únicamente dev y main. Este job no instala dependencias del proyecto.
+  # El token solo existe en el environment production, que acepta únicamente main. Este job no instala dependencias del proyecto.
   publicar:
     if: github.event_name != 'pull_request'
     needs: construir
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: ${{ github.ref_name == 'main' && 'https://seguiapp.pages.dev' || format('https://{0}.seguiapp.pages.dev', github.ref_name) }}
+      url: https://seguiapp.pages.dev
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -54,8 +52,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-      - run: npx --yes wrangler@4.154.0 pages deploy dist --project-name seguiapp --branch "$RAMA" --commit-dirty=true
+      - run: npx --yes wrangler@4.154.0 pages deploy dist --project-name seguiapp --branch main --commit-dirty=true
         env:
-          RAMA: ${{ github.ref_name }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}

@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 import {
-  asegurarPerfil, cerrarSesion, eliminarRegistro, enviarCola, obtenerPlantillasActivas, obtenerRecibos, obtenerRegistros,
-  obtenerSeguimientos, registrar, type RegistroGuardado, type Seguimiento,
+  asegurarPerfil, cerrarSesion, eliminarRegistro, enviarCola, obtenerMetasAhorro, obtenerPlantillasActivas, obtenerTareas, obtenerPrestamos, obtenerRecibos, obtenerRegistros,
+  obtenerSeguimientos, registrar, soyAdministrador, type RegistroGuardado, type Seguimiento,
 } from './datos'
 import {
   agregado, estado, formatoValor, inicioPeriodo, ordenEstado, periodoDe, seSuma, serie,
@@ -11,12 +11,21 @@ import {
 } from './indicadores'
 import Grafico from './Grafico'
 import Privacidad from './Privacidad'
+import Instalar from './Instalar'
+import { estaInstalada } from './equipo'
 import Finanzas from './finanzas/Finanzas'
 import Salud from './salud/Salud'
 import Habitos from './habitos/Habitos'
+import Tareas from './tareas/Tareas'
+import Avisos from './avisos/Avisos'
+import MisDatos from './misdatos/MisDatos'
+import Administrar from './misdatos/Administrar'
+import { aTiempoSemana, deHoy, fechaColombia, sumarDias } from './tareas/calculos'
 import { dias } from './habitos/calculos'
 import { mesesAntes } from './finanzas/calculos'
 import { recibosDelMes } from './finanzas/estadoRecibos'
+import { amortizacion, estadoPrestamo } from './finanzas/prestamos'
+import { metaProxima } from './finanzas/metas'
 import { conSigno } from './salud/calculos'
 import { activos, moduloDe, MODULOS, resumenFinanzas, resumenHabitos, resumenSalud, type Modulo } from './inicio/resumenes'
 import { activarModulos, Bienvenida, COLOR, Crear, NOMBRE, QUE_MIDE, type Destino } from './inicio/Crear'
@@ -47,7 +56,9 @@ function textoMeta(s: Seguimiento) {
 
 export default function App() {
   const [sesion, setSesion] = useState<Session | null | undefined>(undefined)
-  const [verPrivacidad, setVerPrivacidad] = useState(false)
+  // #privacidad abre la política directo: es el enlace de la pantalla de permiso de Google
+  const [verPrivacidad, setVerPrivacidad] = useState(location.hash === '#privacidad')
+  const [verInstalar, setVerInstalar] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSesion(data.session))
@@ -57,11 +68,12 @@ export default function App() {
 
   if (sesion === undefined) return <div className="contenedor"><p className="tenue">Cargando…</p></div>
   if (verPrivacidad) return <Privacidad alVolver={() => setVerPrivacidad(false)} />
-  if (!sesion) return <Entrar alPrivacidad={() => setVerPrivacidad(true)} />
-  return <Panel sesion={sesion} alPrivacidad={() => setVerPrivacidad(true)} />
+  if (verInstalar) return <Instalar alVolver={() => setVerInstalar(false)} />
+  if (!sesion) return <Entrar alPrivacidad={() => setVerPrivacidad(true)} alInstalar={() => setVerInstalar(true)} />
+  return <Panel sesion={sesion} alPrivacidad={() => setVerPrivacidad(true)} alInstalar={() => setVerInstalar(true)} />
 }
 
-function Entrar({ alPrivacidad }: { alPrivacidad: () => void }) {
+function Entrar({ alPrivacidad, alInstalar }: { alPrivacidad: () => void; alInstalar: () => void }) {
   const [error, setError] = useState('')
   async function entrar() {
     const { error } = await supabase.auth.signInWithOAuth({
@@ -79,19 +91,30 @@ function Entrar({ alPrivacidad }: { alPrivacidad: () => void }) {
       <p className="tenue">
         El acceso es solo por invitación. Al entrar aceptas la <button className="enlace" onClick={alPrivacidad}>política de privacidad</button>.
       </p>
+      {!estaInstalada() && <p className="tenue"><button className="enlace" onClick={alInstalar}>Instalar la app</button> en tu celular o computador.</p>}
       {error && <p role="alert" className="error">{error}</p>}
     </div>
   )
 }
 
-type Vista = { tipo: 'inicio' } | { tipo: 'crear'; modulo?: Modulo } | Destino | { tipo: 'detalle'; id: string }
+type Vista = { tipo: 'inicio' } | { tipo: 'crear'; modulo?: Modulo } | Destino | { tipo: 'detalle'; id: string } | { tipo: 'avisos' } | { tipo: 'misdatos' } | { tipo: 'administrar' }
 
-function Panel({ sesion, alPrivacidad }: { sesion: Session; alPrivacidad: () => void }) {
-  const [vista, setVista] = useState<Vista>({ tipo: 'inicio' })
+// Al tocar un aviso se abre la app con ?ir=; se lee una vez y se limpia la dirección.
+function vistaInicial(): Vista {
+  const ir = new URLSearchParams(location.search).get('ir')
+  if (ir) history.replaceState(null, '', location.pathname)
+  return ir === 'tareas' ? { tipo: 'tareas' } : ir === 'finanzas' ? { tipo: 'finanzas' }
+    : ir === 'misdatos' ? { tipo: 'misdatos' } : ir === 'administrar' ? { tipo: 'administrar' } : { tipo: 'inicio' }
+}
+
+function Panel({ sesion, alPrivacidad, alInstalar }: { sesion: Session; alPrivacidad: () => void; alInstalar: () => void }) {
+  const [vista, setVista] = useState<Vista>(vistaInicial)
   const [seguimientos, setSeguimientos] = useState<Seguimiento[] | null>(null)
   const [registros, setRegistros] = useState<RegistroGuardado[]>([])
   const [plantillas, setPlantillas] = useState<string[]>([])
   const [error, setError] = useState('')
+  const [administrador, setAdministrador] = useState(false)
+  useEffect(() => { soyAdministrador().then(setAdministrador, () => setAdministrador(false)) }, [])
   const nombre = (sesion.user.user_metadata?.full_name as string | undefined)?.slice(0, 100) ?? null
 
   const cargar = useCallback(async () => {
@@ -137,6 +160,10 @@ function Panel({ sesion, alPrivacidad }: { sesion: Session; alPrivacidad: () => 
         <Habitos seguimientos={seguimientos} registros={registros} enfocar={vista.tipo === 'habitos' && vista.enfocar}
           alVolver={alInicio} alCambiar={cargar} />
       )}
+      {vista.tipo === 'tareas' && <Tareas abrir={vista.abrir} alVolver={alInicio} />}
+      {vista.tipo === 'avisos' && <Avisos alVolver={alInicio} alInstalar={alInstalar} />}
+      {vista.tipo === 'misdatos' && <MisDatos alVolver={alInicio} />}
+      {vista.tipo === 'administrar' && administrador && <Administrar alVolver={alInicio} />}
       {vista.tipo === 'detalle' && actual && !moduloDe(actual.codigo_plantilla) && (
         <Detalle
           seguimiento={actual}
@@ -161,10 +188,16 @@ function Panel({ sesion, alPrivacidad }: { sesion: Session; alPrivacidad: () => 
           alCrear={modulo => setVista({ tipo: 'crear', modulo })}
           alActivar={modulo => activarModulos([modulo], seguimientos ?? []).then(cargar).catch(e => setError((e as Error).message))}
           alIr={setVista}
+          alAvisos={() => setVista({ tipo: 'avisos' })}
           alAbrir={id => setVista({ tipo: 'detalle', id })}
         />
       )}
-      <footer className="pie"><button className="enlace" onClick={alPrivacidad}>Privacidad</button></footer>
+      <footer className="pie">
+        <button className="enlace" onClick={alPrivacidad}>Privacidad</button>
+        {' · '}<button className="enlace" onClick={() => setVista({ tipo: 'misdatos' })}>Mis datos</button>
+        {administrador && <> · <button className="enlace" onClick={() => setVista({ tipo: 'administrar' })}>Mensajes</button></>}
+        {!estaInstalada() && <> · <button className="enlace" onClick={alInstalar}>Instalar la app</button></>}
+      </footer>
     </div>
   )
 }
@@ -173,13 +206,14 @@ const ICONO: Record<Estado, string> = { en_meta: '✓', cerca: '◐', fuera: '�
 const pesos = (v: number) => (v < 0 ? '-' : '') + formatoValor('dinero', Math.abs(v))
 interface Dato { texto: string; estado?: Estado | null }
 
-function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, alAbrir }: {
+function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, alAvisos, alAbrir }: {
   seguimientos: Seguimiento[] | null
   registros: RegistroGuardado[]
   activos: Modulo[]
   alCrear: (modulo?: Modulo) => void
   alActivar: (modulo: Modulo) => void
   alIr: (destino: Destino) => void
+  alAvisos: () => void
   alAbrir: (id: string) => void
 }) {
   const hoy = hoyIso()
@@ -190,7 +224,21 @@ function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, al
     .map((s, indice) => ({ s, indice, ...resumen(s, registros) }))
     .sort((a, b) => ordenEstado(a.estado) - ordenEstado(b.estado)), [seguimientos, registros])
   const [facturas, setFacturas] = useState<{ porPagar: number; vencidas: number; total: number } | null>(null)
+  const [cuotas, setCuotas] = useState<{ pendientes: number; atrasadas: number; total: number } | null>(null)
+  const [tareas, setTareas] = useState<{ pendientes: number; vencidas: number; recordatorios: number; aTiempo: number; total: number } | null>(null)
+  const conTareas = activos.includes('tareas')
+  // las tareas viven en sus tablas, no en los registros
+  useEffect(() => {
+    if (!conTareas) return
+    const hoyCol = fechaColombia(new Date())
+    obtenerTareas(sumarDias(hoyCol, -30)).then(d => {
+      const h = deHoy(d.tareas, d.recordatorios, hoyCol)
+      setTareas({ pendientes: h.deHoy.length + h.sinFecha.length, vencidas: h.vencidas.length, recordatorios: h.recordatorios.length, ...aTiempoSemana(d.tareas, hoyCol) })
+    }).catch(() => setTareas(null))
+  }, [conTareas])
+  const [meta, setMeta] = useState<ReturnType<typeof metaProxima> | null>(null)
   const conFinanzas = !!finanzas
+  const idAhorro = seguimientos?.find(s => s.codigo_plantilla === 'finanzas' && s.nombre === 'Ahorro')?.id_seguimiento
 
   // las facturas viven en sus tablas, no en los registros; se vuelven a pedir cuando cambia algo
   useEffect(() => {
@@ -199,7 +247,13 @@ function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, al
       const filas = recibosDelMes(d.recibos, d.pagos, hoy)
       setFacturas({ porPagar: filas.filter(f => f.estado === 'por_pagar').length, vencidas: filas.filter(f => f.estado === 'vencido').length, total: filas.length })
     }).catch(() => setFacturas(null))
-  }, [conFinanzas, registros, hoy])
+    obtenerPrestamos().then(d => {
+      const estados = d.prestamos.map(p => estadoPrestamo(amortizacion(p, d.movimientos.filter(m => m.id_prestamo === p.id_prestamo)).filas, hoy).estado)
+      setCuotas({ pendientes: estados.filter(e => e === 'pendiente').length, atrasadas: estados.filter(e => e === 'atrasada').length, total: estados.length })
+    }).catch(() => setCuotas(null))
+    if (idAhorro) obtenerMetasAhorro(idAhorro).then(d => setMeta(metaProxima(d.metas, d.ahorros.map(r =>
+      ({ fecha: r.fecha, valor: r.valor, tipo: 'ahorro' as const, id_etiqueta: r.id_etiqueta })), hoy))).catch(() => setMeta(null))
+  }, [conFinanzas, registros, hoy, idAhorro])
 
   // el estado que más pide atención va en la chapa; lo demás, como dato
   const saldo: Dato | null = finanzas && (finanzas.saldo >= 0
@@ -208,8 +262,19 @@ function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, al
     : facturas.vencidas ? { texto: `${facturas.vencidas} ${facturas.vencidas === 1 ? 'factura vencida' : 'facturas vencidas'}`, estado: 'fuera' }
       : facturas.porPagar ? { texto: `${facturas.porPagar} ${facturas.porPagar === 1 ? 'factura' : 'facturas'} por pagar`, estado: 'cerca' }
         : { texto: 'Facturas al día', estado: 'en_meta' }
-  const chapaFinanzas = factura && factura.estado !== 'en_meta' ? factura : saldo
-  const datosFinanzas = [saldo, factura].filter((d): d is Dato => !!d && d !== chapaFinanzas)
+  const fijos = finanzas?.ingresosFijos
+  const ingreso: Dato | null = !fijos?.total ? null
+    : fijos.atrasados ? { texto: `${fijos.atrasados} ${fijos.atrasados === 1 ? 'ingreso fijo atrasado' : 'ingresos fijos atrasados'}`, estado: 'fuera' }
+      : fijos.pendientes ? { texto: `${fijos.pendientes} ${fijos.pendientes === 1 ? 'ingreso fijo pendiente' : 'ingresos fijos pendientes'}`, estado: 'cerca' }
+        : { texto: 'Ingresos fijos recibidos', estado: 'en_meta' }
+  const cuota: Dato | null = !cuotas?.total ? null
+    : cuotas.atrasadas ? { texto: `${cuotas.atrasadas} ${cuotas.atrasadas === 1 ? 'cuota atrasada' : 'cuotas atrasadas'}`, estado: 'fuera' }
+      : cuotas.pendientes ? { texto: `${cuotas.pendientes} ${cuotas.pendientes === 1 ? 'cuota' : 'cuotas'} por pagar este mes`, estado: 'cerca' }
+        : { texto: 'Préstamos al día', estado: 'en_meta' }
+  const ahorro: Dato | null = meta && { texto: `Meta ${meta.meta.nombre}: ${meta.porcentaje} %`, estado: meta.estado === 'atrasada' ? 'cerca' : meta.estado === 'va_bien' ? 'en_meta' : null }
+  const avisos = [factura, cuota, ingreso]
+  const chapaFinanzas = avisos.find(d => d && d.estado === 'fuera') ?? avisos.find(d => d && d.estado === 'cerca') ?? saldo
+  const datosFinanzas = [saldo, ...avisos, ahorro].filter((d): d is Dato => !!d && d !== chapaFinanzas)
   const montos = finanzas ? [['Gastos', finanzas.gastos], ['Ingresos', finanzas.ingresos], ['Ahorro', finanzas.ahorro]] as [string, number][] : undefined
   const datosSalud: Dato[] = salud ? [
     { texto: salud.peso
@@ -231,6 +296,7 @@ function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, al
         </div>
         <div className="acciones">
           {activos.length > 0 && <button className="principal crear" onClick={() => alCrear()}>+ Crear</button>}
+          <button className="secundario" onClick={alAvisos}>Avisos</button>
           <button className="secundario" onClick={cerrarSesion}>Salir</button>
         </div>
       </header>
@@ -248,6 +314,14 @@ function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, al
           <Bloque modulo="habitos" vacio={!habitos} cifra={habitos ? `${habitos.hechos} de ${habitos.total}` : ''} sub="hechos hoy" chapa={chapaHabitos}
             datos={habitos ? [{ texto: `Mejor racha viva ${dias(habitos.mejorRacha)}` }] : []}
             puntos={habitos?.puntos ?? []} meta={habitos?.total} alAbrir={() => alIr({ tipo: 'habitos' })} alCrear={() => alCrear('habitos')} />
+        )}
+        {activos.includes('tareas') && (
+          <Bloque modulo="tareas" vacio={!tareas || (!tareas.pendientes && !tareas.vencidas && !tareas.recordatorios && !tareas.total)}
+            cifra={tareas ? String(tareas.pendientes + tareas.vencidas + tareas.recordatorios) : ''} sub="pendientes hoy"
+            chapa={tareas?.vencidas ? { texto: `${tareas.vencidas} ${tareas.vencidas === 1 ? 'vencida' : 'vencidas'}`, estado: 'fuera' }
+              : tareas && !tareas.pendientes && !tareas.recordatorios ? { texto: 'Todo al día', estado: 'en_meta' } : null}
+            datos={tareas?.total ? [{ texto: `${Math.round(tareas.aTiempo / tareas.total * 100)} % a tiempo esta semana (${tareas.aTiempo} de ${tareas.total})` }] : []}
+            puntos={[]} alAbrir={() => alIr({ tipo: 'tareas' })} alCrear={() => alCrear('tareas')} />
         )}
         {otros.length > 0 && (
           <section className="tarjeta t4 otros" aria-label="Otros">

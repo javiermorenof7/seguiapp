@@ -4,6 +4,10 @@ import type { Frecuencia, Meta, Registro, TipoMedida } from './indicadores'
 import type { Categoria } from './finanzas/parseo'
 import type { PagoRecibo, Recibo } from './finanzas/calculos'
 import type { PagoGuardado, ReciboVisible } from './finanzas/estadoRecibos'
+import type { MovimientoPrestamo, Prestamo } from './finanzas/prestamos'
+import type { MetaAhorro } from './finanzas/metas'
+import type { Recordatorio, Tarea } from './tareas/calculos'
+import type { PreferenciaAviso } from './avisos/reglas'
 
 export interface Seguimiento {
   id_seguimiento: string
@@ -147,12 +151,14 @@ export async function eliminarRegistro(id: string) {
 
 export interface Presupuesto { id_meta: string; id_etiqueta: string; valor: number }
 
-// Lo que necesita la pantalla Finanzas además de los registros: categorías de Gastos, presupuestos,
+// Lo que necesita la pantalla Finanzas además de los registros: categorías de Gastos, fuentes de Ingresos, presupuestos,
 // lo aprendido y los recibos con sus pagos de los últimos 4 meses (para los pendientes).
-export async function obtenerFinanzas(idGastos: string, desdePagos: string) {
-  const [categorias, presupuestos, aprendido, recibos, pagos] = await Promise.all([
-    supabase.from('etiqueta').select('id_etiqueta, nombre, grupo, palabras_clave')
-      .eq('id_seguimiento', idGastos).eq('estado', 'activo').order('nombre'),
+export async function obtenerFinanzas(idGastos: string, desdePagos: string, idIngresos?: string) {
+  const etiquetas = (id: string) => supabase.from('etiqueta').select('id_etiqueta, nombre, grupo, palabras_clave')
+    .eq('id_seguimiento', id).eq('estado', 'activo').order('nombre')
+  const [categorias, fuentes, presupuestos, aprendido, recibos, pagos] = await Promise.all([
+    etiquetas(idGastos),
+    idIngresos ? etiquetas(idIngresos) : { data: [], error: null },
     supabase.from('meta').select('id_meta, id_etiqueta, valor')
       .eq('id_seguimiento', idGastos).eq('estado', 'activo').not('id_etiqueta', 'is', null),
     supabase.from('alias').select('texto_escrito, texto_correcto').eq('tipo', 'categoria').eq('estado', 'activo'),
@@ -161,6 +167,7 @@ export async function obtenerFinanzas(idGastos: string, desdePagos: string) {
   ])
   return {
     categorias: revisar(categorias) as Categoria[],
+    fuentes: revisar(fuentes) as Categoria[],
     presupuestos: revisar(presupuestos) as Presupuesto[],
     aprendido: new Map(revisar(aprendido).map(a => [a.texto_escrito, a.texto_correcto] as [string, string])),
     recibos: revisar(recibos) as Recibo[],
@@ -210,6 +217,125 @@ export async function obtenerSinCategoria(idGastos: string) {
 export async function categorizar(ids: string[], idEtiqueta: string) {
   for (let i = 0; i < ids.length; i += 100)
     revisar(await supabase.from('registro').update({ id_etiqueta: idEtiqueta }).in('id_registro', ids.slice(i, i + 100)).is('id_etiqueta', null))
+}
+
+// Metas de ahorro y todos los ahorros (no solo el último año), para el total de cada meta.
+// shortcut: hasta 1.000 ahorros (límite de la API); paginar si alguien tiene más.
+export async function obtenerMetasAhorro(idAhorro: string) {
+  const [etiquetas, metas, ahorros] = await Promise.all([
+    supabase.from('etiqueta').select('id_etiqueta, nombre').eq('id_seguimiento', idAhorro).eq('estado', 'activo'),
+    supabase.from('meta').select('id_meta, id_etiqueta, valor, fecha_inicio, fecha_fin')
+      .eq('id_seguimiento', idAhorro).eq('estado', 'activo').not('id_etiqueta', 'is', null).order('fecha_creacion'),
+    obtenerRegistros('1900-01-01', idAhorro),
+  ])
+  const nombres = new Map(revisar(etiquetas).map(e => [e.id_etiqueta, e.nombre] as [string, string]))
+  return {
+    metas: revisar(metas).flatMap(m => nombres.has(m.id_etiqueta) ? [{ ...m, nombre: nombres.get(m.id_etiqueta)! }] : []) as MetaAhorro[],
+    ahorros,
+  }
+}
+
+// El nombre es único en Ahorro aunque la meta se haya quitado: si la etiqueta ya existe, se reusa con sus ahorros.
+export async function crearMetaAhorro(idAhorro: string, meta: { nombre: string; valor: number; fecha_fin: string | null }) {
+  const { data, error } = await supabase.from('etiqueta').insert({ id_seguimiento: idAhorro, nombre: meta.nombre }).select('id_etiqueta').single()
+  let idEtiqueta = data?.id_etiqueta as string | undefined
+  if (error) {
+    const [existente] = revisar(await supabase.from('etiqueta').update({ estado: 'activo' })
+      .eq('id_seguimiento', idAhorro).eq('nombre', meta.nombre).select('id_etiqueta'))
+    if (!existente) revisar({ data: null, error })
+    idEtiqueta = existente.id_etiqueta
+    const conMeta = revisar(await supabase.from('meta').select('id_meta').eq('id_etiqueta', idEtiqueta).eq('estado', 'activo'))
+    if (conMeta.length) throw new ErrorDatos(`Ya tienes una meta llamada "${meta.nombre}".`)
+  }
+  // periodo es obligatorio en meta; en las de ahorro no se usa (manda fecha_fin)
+  revisar(await supabase.from('meta').insert({
+    id_seguimiento: idAhorro, id_etiqueta: idEtiqueta, valor: meta.valor, direccion: 'mas_es_mejor', periodo: 'ano', fecha_fin: meta.fecha_fin,
+  }))
+}
+
+export async function editarMetaAhorro(meta: MetaAhorro, cambios: { nombre: string; valor: number; fecha_fin: string | null }) {
+  if (cambios.nombre !== meta.nombre) {
+    const { error } = await supabase.from('etiqueta').update({ nombre: cambios.nombre }).eq('id_etiqueta', meta.id_etiqueta)
+    if (error) throw new ErrorDatos(`Ya tienes una meta llamada "${cambios.nombre}".`)
+  }
+  revisar(await supabase.from('meta').update({ valor: cambios.valor, fecha_fin: cambios.fecha_fin }).eq('id_meta', meta.id_meta))
+}
+
+// Sus ahorros no se borran: quedan como ahorro libre.
+export async function quitarMetaAhorro(idAhorro: string, meta: MetaAhorro) {
+  revisar(await supabase.from('registro').update({ id_etiqueta: null }).eq('id_seguimiento', idAhorro).eq('id_etiqueta', meta.id_etiqueta))
+  revisar(await supabase.from('meta').update({ estado: 'eliminado' }).eq('id_meta', meta.id_meta))
+  revisar(await supabase.from('etiqueta').update({ estado: 'eliminado' }).eq('id_etiqueta', meta.id_etiqueta))
+}
+
+// Pendientes, hechas de los últimos 30 días y recordatorios que siguen vivos.
+export async function obtenerTareas(desdeHechas: string) {
+  const [pendientes, hechas, recordatorios] = await Promise.all([
+    supabase.from('tarea').select('id_tarea, descripcion, fecha_limite, fecha_realizacion, estado').eq('estado', 'pendiente'),
+    supabase.from('tarea').select('id_tarea, descripcion, fecha_limite, fecha_realizacion, estado').eq('estado', 'hecho')
+      .gte('fecha_realizacion', desdeHechas).order('fecha_realizacion', { ascending: false }),
+    supabase.from('recordatorio').select('id_recordatorio, descripcion, hora_envio, tipo_repeticion, dias_semana, dia_mes, fecha_proximo_envio, estado')
+      .in('estado', ['activo', 'pausado']).order('hora_envio'),
+  ])
+  return {
+    tareas: [...revisar(pendientes), ...revisar(hechas)] as Tarea[],
+    recordatorios: revisar(recordatorios) as Recordatorio[],
+  }
+}
+
+export async function crearTarea(tarea: { descripcion: string; fecha_limite: string | null }) {
+  revisar(await supabase.from('tarea').insert(tarea))
+}
+
+export async function marcarTarea(idTarea: string, hecha: boolean) {
+  revisar(await supabase.from('tarea').update(hecha
+    ? { estado: 'hecho', fecha_realizacion: new Date().toISOString() }
+    : { estado: 'pendiente', fecha_realizacion: null }).eq('id_tarea', idTarea))
+}
+
+export async function quitarTarea(idTarea: string) {
+  revisar(await supabase.from('tarea').update({ estado: 'eliminado' }).eq('id_tarea', idTarea))
+}
+
+export async function crearRecordatorio(r: Omit<Recordatorio, 'id_recordatorio' | 'estado'>) {
+  revisar(await supabase.from('recordatorio').insert({ ...r, estado: r.fecha_proximo_envio ? 'activo' : 'terminado' }))
+}
+
+export async function cambiarRecordatorio(idRecordatorio: string, cambios: Partial<Pick<Recordatorio, 'fecha_proximo_envio' | 'estado'>> | { estado: 'eliminado' }) {
+  revisar(await supabase.from('recordatorio').update(cambios).eq('id_recordatorio', idRecordatorio))
+}
+
+const CAMPOS_PREFERENCIA = 'estado, recibir_resumen_diario, frecuencia_resumen_diario, hora_resumen_diario, recibir_resumen_semanal, '
+  + 'dia_resumen_semanal, hora_resumen_semanal, recibir_cierre_mes, hora_cierre_mes, recibir_recordatorios, tipos_recordatorio, mostrar_descripcion, recibir_aviso_descarga'
+
+// null si nunca ha guardado: la pantalla parte de PREFERENCIA_INICIAL.
+export async function obtenerAvisos() {
+  const [preferencia, equipos] = await Promise.all([
+    supabase.from('preferencia_aviso').select(CAMPOS_PREFERENCIA).maybeSingle(),
+    supabase.from('suscripcion_push').select('id_suscripcion_push', { count: 'exact', head: true }),
+  ])
+  if (preferencia.error || equipos.error) revisar({ data: null, error: preferencia.error ?? equipos.error })
+  return { preferencia: preferencia.data as unknown as Omit<PreferenciaAviso, `fecha_ultimo_${string}`> | null, equipos: equipos.count ?? 0 }
+}
+
+// Las fechas del último envío las lleva la función que envía; aquí no se tocan.
+export async function guardarPreferenciaAviso(p: Omit<PreferenciaAviso, `fecha_ultimo_${string}`>) {
+  revisar(await supabase.from('preferencia_aviso').upsert(p, { onConflict: 'id_usuario' }))
+}
+
+export async function guardarSuscripcion(s: { endpoint: string; llave_p256dh: string; llave_auth: string; nombre_equipo: string }) {
+  revisar(await supabase.from('suscripcion_push').upsert(s, { onConflict: 'endpoint' }))
+}
+
+// Solo llega a los equipos de quien la pide (la función lo sabe por la sesión).
+export async function enviarAvisoPrueba(): Promise<number> {
+  const { data, error } = await supabase.functions.invoke('avisos', { body: {} })
+  if (error) throw new ErrorDatos('No se pudo enviar el aviso de prueba. Inténtalo de nuevo.')
+  return data?.entregados ?? 0
+}
+
+export async function quitarSuscripcion(endpoint: string) {
+  revisar(await supabase.from('suscripcion_push').delete().eq('endpoint', endpoint))
 }
 
 // Recibos activos (número siempre enmascarado) y sus pagos del último año, para el día aprendido y el gráfico.
@@ -270,6 +396,48 @@ export async function deshacerPago(pago: { id_pago_recibo: string; id_registro: 
   if (pago.id_registro) await eliminarRegistro(pago.id_registro)
 }
 
+const CAMPOS_PRESTAMO = 'id_prestamo, nombre_entidad, nombre_prestamo, valor_saldo_inicial, fecha_primera_cuota, cantidad_cuotas, tasa_efectiva_anual, valor_seguro_mensual, dia_pago'
+
+export async function obtenerPrestamos() {
+  const [prestamos, movimientos] = await Promise.all([
+    supabase.from('prestamo').select(CAMPOS_PRESTAMO).eq('estado', 'activo').order('fecha_creacion'),
+    supabase.from('movimiento_prestamo')
+      .select('id_movimiento_prestamo, id_prestamo, id_registro, tipo_movimiento, fecha_movimiento, numero_cuota, valor, tasa_efectiva_anual, tipo_abono'),
+  ])
+  return { prestamos: revisar(prestamos) as Prestamo[], movimientos: revisar(movimientos) as MovimientoPrestamo[] }
+}
+
+export async function crearPrestamo(datos: Omit<Prestamo, 'id_prestamo'>) {
+  revisar(await supabase.from('prestamo').insert(datos))
+}
+
+export async function quitarPrestamo(idPrestamo: string) {
+  revisar(await supabase.from('prestamo').update({ estado: 'eliminado' }).eq('id_prestamo', idPrestamo))
+}
+
+type NuevoMovimientoPrestamo = Pick<MovimientoPrestamo, 'id_prestamo' | 'tipo_movimiento' | 'fecha_movimiento'>
+  & Partial<Pick<MovimientoPrestamo, 'numero_cuota' | 'valor' | 'tasa_efectiva_anual' | 'tipo_abono'>>
+
+// Cuota o abono: crea el gasto y luego el movimiento; si el movimiento falla, quita el gasto (como pagarRecibo).
+// shortcut: dos llamadas sin transacción; pasar a una función SQL si llegan a quedar gastos huérfanos.
+export async function registrarMovimientoPrestamo(movimiento: NuevoMovimientoPrestamo,
+  gasto?: { id_seguimiento: string; id_etiqueta: string | null; nota: string }) {
+  const id_registro = gasto ? crypto.randomUUID() : null
+  if (gasto) revisar(await supabase.from('registro').insert({
+    ...gasto, id_registro, grupo: 'basico', fecha_registro: movimiento.fecha_movimiento, valor: movimiento.valor,
+  }))
+  const { error } = await supabase.from('movimiento_prestamo').insert({ ...movimiento, id_registro })
+  if (error) {
+    if (id_registro) await eliminarRegistro(id_registro).catch(() => {})
+    revisar({ data: null, error })
+  }
+}
+
+export async function deshacerMovimientoPrestamo(m: Pick<MovimientoPrestamo, 'id_movimiento_prestamo' | 'id_registro'>) {
+  revisar(await supabase.from('movimiento_prestamo').delete().eq('id_movimiento_prestamo', m.id_movimiento_prestamo))
+  if (m.id_registro) await eliminarRegistro(m.id_registro)
+}
+
 // Ejercicios (etiquetas de Gym), series del último año y nombres aprendidos; las fechas salen de los registros.
 export async function obtenerSalud(idGym: string, desde: string) {
   const [ejercicios, series, alias] = await Promise.all([
@@ -284,9 +452,10 @@ export async function obtenerSalud(idGym: string, desde: string) {
   }
 }
 
-export async function crearEjercicio(idGym: string, nombre: string) {
-  return revisar(await supabase.from('etiqueta').insert({ id_seguimiento: idGym, nombre }).select('id_etiqueta').single()).id_etiqueta as string
+export async function crearEtiqueta(idSeguimiento: string, nombre: string) {
+  return revisar(await supabase.from('etiqueta').insert({ id_seguimiento: idSeguimiento, nombre }).select('id_etiqueta').single()).id_etiqueta as string
 }
+export const crearEjercicio = crearEtiqueta
 
 // El registro guarda el peso (o las repeticiones si es sin peso) para la tendencia; la serie, el detalle.
 // shortcut: dos llamadas sin transacción y sin cola; pasar a una función SQL si un fallo entre las dos deja huérfanos.
@@ -315,5 +484,119 @@ export async function guardarMeta(idSeguimiento: string, meta: Meta | null) {
 
 export async function cerrarSesion() {
   await vaciar()
+  // En un equipo compartido, quien entre después no recibe los avisos de quien salió. Si falla, igual cierra la sesión.
+  try {
+    const registro = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : undefined
+    const suscripcion = await registro?.pushManager?.getSubscription()
+    if (suscripcion) {
+      await quitarSuscripcion(suscripcion.endpoint)
+      await suscripcion.unsubscribe()
+    }
+  } catch { /* sigue con el cierre */ }
   await supabase.auth.signOut()
+}
+
+// ---------- Mis datos ----------
+
+export type ModuloDescarga = 'finanzas' | 'deudas' | 'salud' | 'habitos' | 'tareas' | 'cuenta'
+const PLANTILLAS_DESCARGA: Partial<Record<ModuloDescarga, string[]>> = { finanzas: ['finanzas', 'recibos'], salud: ['gym', 'cuerpo'] }
+
+// Todas las filas de la persona (la RLS filtra); de 1.000 en 1.000, el máximo que entrega la API. Sin id_usuario.
+async function todas(tabla: string, orden = `id_${tabla}`, en?: [string, string[]]) {
+  const filas: Record<string, unknown>[] = []
+  for (let desde = 0; ; desde += 1000) {
+    let consulta = supabase.from(tabla).select('*')
+    if (en) consulta = consulta.in(en[0], en[1])
+    const lote = revisar(await consulta.order(orden).range(desde, desde + 999)) as Record<string, unknown>[]
+    filas.push(...lote.map(({ id_usuario: _, ...resto }) => resto))
+    if (lote.length < 1000) return filas
+  }
+}
+
+// Seguimientos del módulo con sus etiquetas, metas y registros. Hábitos se lleva también los creados a mano.
+async function deSeguimientos(modulo: ModuloDescarga) {
+  const propias = PLANTILLAS_DESCARGA[modulo]
+  const otras = Object.values(PLANTILLAS_DESCARGA).flat()
+  const seguimientos = (await todas('seguimiento')).filter(s =>
+    propias ? propias.includes(s.codigo_plantilla as string) : !otras.includes(s.codigo_plantilla as string))
+  const ids = seguimientos.map(s => s.id_seguimiento as string)
+  const [etiquetas, metas, registros] = await Promise.all(['etiqueta', 'meta', 'registro'].map(t => todas(t, undefined, ['id_seguimiento', ids])))
+  return [
+    { titulo: 'Seguimientos', filas: seguimientos }, { titulo: 'Etiquetas', filas: etiquetas },
+    { titulo: 'Metas', filas: metas }, { titulo: 'Registros', filas: registros },
+  ]
+}
+
+export async function obtenerDescarga(modulo: ModuloDescarga) {
+  const tablas = async (...t: [string, string, string?][]) =>
+    Promise.all(t.map(async ([titulo, tabla, orden]) => ({ titulo, filas: await todas(tabla, orden) })))
+  switch (modulo) {
+    case 'finanzas': return [...await deSeguimientos(modulo), ...await tablas(['Recibos', 'recibo_visible', 'id_recibo'], ['Pagos de recibos', 'pago_recibo'])]
+    case 'deudas': return tablas(['Préstamos', 'prestamo'], ['Movimientos de préstamos', 'movimiento_prestamo'])
+    case 'salud': return [...await deSeguimientos(modulo), ...await tablas(['Series de gym', 'serie_gym'])]
+    case 'habitos': return deSeguimientos(modulo)
+    case 'tareas': return tablas(['Tareas', 'tarea'], ['Recordatorios', 'recordatorio'])
+    case 'cuenta': return tablas(['Perfil', 'perfil', 'id_usuario'], ['Módulos activos', 'plantilla_activa'], ['Nombres aprendidos', 'alias'],
+      ['Preferencias de avisos', 'preferencia_aviso'], ['Mensajes de contacto', 'mensaje_contacto'])
+  }
+}
+
+export interface MensajeContacto {
+  id_mensaje_contacto: string
+  motivo: 'duda' | 'mis_datos' | 'error' | 'otro'
+  mensaje: string
+  respuesta: string | null
+  fecha_respuesta: string | null
+  estado: 'nuevo' | 'respondido'
+  fecha_creacion: string
+}
+const CAMPOS_MENSAJE = 'id_mensaje_contacto, motivo, mensaje, respuesta, fecha_respuesta, estado, fecha_creacion'
+
+export async function obtenerMisMensajes(): Promise<MensajeContacto[]> {
+  return revisar(await supabase.from('mensaje_contacto').select(CAMPOS_MENSAJE).order('fecha_creacion', { ascending: false }).limit(50)) as MensajeContacto[]
+}
+
+export async function enviarMensaje(motivo: MensajeContacto['motivo'], mensaje: string) {
+  const { error } = await supabase.from('mensaje_contacto').insert({ motivo, mensaje })
+  if (error?.message === 'limite de mensajes') throw new ErrorDatos('Ya enviaste 5 mensajes hoy. Inténtalo mañana.')
+  revisar({ data: null, error })
+}
+
+export async function soyAdministrador(): Promise<boolean> {
+  return revisar(await supabase.rpc('soy_administrador')) as boolean
+}
+
+export async function obtenerMensajesRecibidos(): Promise<(MensajeContacto & { correo: string })[]> {
+  return revisar(await supabase.rpc('mensajes_contacto_recibidos')) as (MensajeContacto & { correo: string })[]
+}
+
+export async function responderMensaje(idMensaje: string, texto: string) {
+  revisar(await supabase.rpc('responder_mensaje_contacto', { id_mensaje: idMensaje, texto }))
+}
+
+export type Invitado = { correo: string; estado: 'activo' | 'inactivo'; es_administrador: boolean; tiene_cuenta: boolean; fecha_actualizacion: string }
+
+export async function obtenerInvitados(): Promise<Invitado[]> {
+  return revisar(await supabase.rpc('invitados')) as Invitado[]
+}
+
+export async function invitar(correo: string) {
+  const { error } = await supabase.rpc('invitar', { correo_invitado: correo })
+  if (error?.message === 'correo invalido') throw new ErrorDatos('Revisa el correo.')
+  revisar({ data: null, error })
+}
+
+// Borra la cuenta de esa persona con todos sus datos; su correo queda inactivo.
+export async function quitarInvitado(correo: string) {
+  const { error } = await supabase.rpc('quitar_invitado', { correo_invitado: correo })
+  if (error?.message === 'administrador') throw new ErrorDatos('La cuenta del administrador no se quita.')
+  revisar({ data: null, error })
+}
+
+// Borra todo en la base; después se cierra la sesión en este equipo (quita su suscripción local y la cola).
+export async function borrarMiCuenta() {
+  const { error } = await supabase.rpc('borrar_mi_cuenta')
+  if (error?.message === 'administrador') throw new ErrorDatos('La cuenta del administrador no se borra desde la app.')
+  revisar({ data: null, error })
+  await cerrarSesion()
 }

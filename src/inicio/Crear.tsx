@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { activarPlantillas, crearSeguimiento, type Seguimiento } from '../datos'
 import type { AccionFinanzas } from '../finanzas/Finanzas'
+import type { AccionTareas } from '../tareas/Tareas'
 import { INICIALES } from '../salud/Salud'
 import { PLANTILLAS, TIPO_FINANZAS, type Modulo } from './resumenes'
 
@@ -9,13 +10,15 @@ export type Destino =
   | { tipo: 'finanzas'; abrir?: AccionFinanzas }
   | { tipo: 'salud'; abrir?: 'ejercicio' | 'medida' }
   | { tipo: 'habitos'; enfocar?: boolean }
+  | { tipo: 'tareas'; abrir?: AccionTareas }
 
-export const NOMBRE: Record<Modulo, string> = { finanzas: 'Finanzas', salud: 'Salud', habitos: 'Hábitos' }
-export const COLOR: Record<Modulo, string> = { finanzas: 't1', salud: 't2', habitos: 't5' }
+export const NOMBRE: Record<Modulo, string> = { finanzas: 'Finanzas', salud: 'Salud', habitos: 'Hábitos', tareas: 'Tareas' }
+export const COLOR: Record<Modulo, string> = { finanzas: 't1', salud: 't2', habitos: 't5', tareas: 't3' }
 export const QUE_MIDE: Record<Modulo, string> = {
   finanzas: 'Gastos, ingresos, ahorro, presupuestos y facturas.',
   salud: 'Gym, peso y medidas.',
   habitos: 'Lo que haces cada día, con rachas.',
+  tareas: 'Pendientes con fecha y recordatorios.',
 }
 const OPCIONES: Record<Modulo, { texto: string; ejemplo: string; destino: Destino }[]> = {
   finanzas: [
@@ -30,6 +33,10 @@ const OPCIONES: Record<Modulo, { texto: string; ejemplo: string; destino: Destin
     { texto: 'Medida', ejemplo: 'peso, cintura o la que quieras', destino: { tipo: 'salud', abrir: 'medida' } },
   ],
   habitos: [{ texto: 'Hábito', ejemplo: 'agua 2 litros', destino: { tipo: 'habitos', enfocar: true } }],
+  tareas: [
+    { texto: 'Tarea', ejemplo: 'pagar el arriendo el viernes', destino: { tipo: 'tareas', abrir: 'tarea' } },
+    { texto: 'Recordatorio', ejemplo: 'pastilla cada día a las 8', destino: { tipo: 'tareas', abrir: 'recordatorio' } },
+  ],
 }
 
 // Activa los módulos y crea sus seguimientos base si faltan (Hábitos no tiene: cada hábito lo crea la persona).
@@ -92,6 +99,7 @@ export function Bienvenida({ nombre, alEmpezar }: { nombre: string | null; alEmp
     <form className="formulario" onSubmit={empezar}>
       <h1>Hola{nombre ? `, ${nombre.split(' ')[0]}` : ''}</h1>
       <p className="tenue">Lo que no se mide no se controla. Elige qué quieres seguir; luego puedes activar más.</p>
+      <p className="tenue">Si el administrador te quita el acceso, se borran todos tus datos. Puedes descargarlos cuando quieras en Mis datos.</p>
       <fieldset>
         <legend>¿Qué quieres seguir?</legend>
         {(Object.keys(NOMBRE) as Modulo[]).map(m => (

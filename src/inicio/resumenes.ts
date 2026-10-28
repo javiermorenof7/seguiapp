@@ -3,11 +3,12 @@ import type { RegistroGuardado, Seguimiento } from '../datos'
 import { estado, inicioPeriodo, type Registro } from '../indicadores'
 import { resumenMes, type Movimiento, type TipoMovimiento } from '../finanzas/calculos'
 import { racha, totalDelDia } from '../habitos/calculos'
+import { estadoFijo, fijos } from '../finanzas/ingresos'
 import { comparar, restarDias } from '../salud/calculos'
 
-export type Modulo = 'finanzas' | 'salud' | 'habitos'
-export const MODULOS: Modulo[] = ['finanzas', 'salud', 'habitos']
-export const PLANTILLAS: Record<Modulo, string[]> = { finanzas: ['finanzas'], salud: ['gym', 'cuerpo'], habitos: ['habitos'] }
+export type Modulo = 'finanzas' | 'salud' | 'habitos' | 'tareas'
+export const MODULOS: Modulo[] = ['finanzas', 'salud', 'habitos', 'tareas']
+export const PLANTILLAS: Record<Modulo, string[]> = { finanzas: ['finanzas'], salud: ['gym', 'cuerpo'], habitos: ['habitos'], tareas: ['tareas'] }
 export const moduloDe = (codigo: string | null) => MODULOS.find(m => PLANTILLAS[m].includes(codigo ?? ''))
 export const TIPO_FINANZAS: Record<string, TipoMovimiento> = { Gastos: 'gasto', Ingresos: 'ingreso', Ahorro: 'ahorro' }
 
@@ -36,8 +37,10 @@ export function resumenFinanzas(seguimientos: Seguimiento[], registros: Registro
   for (const m of movimientos.filter(m => m.fecha.startsWith(mes)).sort((a, b) => a.fecha.localeCompare(b.fecha))) {
     porDia.set(m.fecha, (saldo += SIGNO[m.tipo] * m.valor))
   }
+  const estados = fijos(movimientos, mes).map(f => estadoFijo(f, movimientos, hoy))
   return {
     idGastos: (suyos.find(s => s.nombre === 'Gastos') ?? suyos[0]).id_seguimiento,
+    ingresosFijos: { total: estados.length, pendientes: estados.filter(e => e === 'pendiente').length, atrasados: estados.filter(e => e === 'atrasado').length },
     ...resumenMes(movimientos, mes),
     hayDatos: movimientos.length > 0,
     puntos: [...porDia].map(([fecha, valor]): Registro => ({ fecha, valor })),

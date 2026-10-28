@@ -29,3 +29,22 @@ self.addEventListener('fetch', evento => {
       .catch(() => caches.match(request)))
   }
 })
+
+// Avisos: el texto llega cifrado desde la función de Supabase; al tocarlo abre (o enfoca) la app en la pantalla del aviso.
+self.addEventListener('push', evento => {
+  const aviso = evento.data ? evento.data.json() : { titulo: 'seguiapp', cuerpo: 'Tienes un aviso.', abrir: '/' }
+  evento.waitUntil(self.registration.showNotification(aviso.titulo, {
+    body: aviso.cuerpo, icon: 'icono.svg', badge: 'icono.svg', data: { abrir: aviso.abrir },
+  }))
+})
+
+self.addEventListener('notificationclick', evento => {
+  evento.notification.close()
+  // solo rutas propias: nunca abre otro sitio aunque el aviso lo pida
+  const destino = new URL(evento.notification.data?.abrir ?? '/', self.registration.scope)
+  const url = destino.origin === location.origin ? new URL(destino.pathname.replace(/^\//, '') + destino.search, self.registration.scope).href : self.registration.scope
+  evento.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(ventanas => {
+    const abierta = ventanas.find(v => v.url.startsWith(self.registration.scope))
+    return abierta ? abierta.navigate(url).then(v => v && v.focus()) : self.clients.openWindow(url)
+  }))
+})

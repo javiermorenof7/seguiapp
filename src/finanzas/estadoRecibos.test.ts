@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { diaAprendido, recibosDelMes, totalesDelMes, valoresEnElTiempo, type PagoGuardado, type ReciboVisible } from './estadoRecibos'
+import { diaAprendido, recibosDelMes, sinPagarMesAnterior, totalesDelMes, valoresEnElTiempo, type PagoGuardado, type ReciboVisible } from './estadoRecibos'
 
 const r = (id: string, extra: Partial<ReciboVisible> = {}): ReciboVisible => ({
   id_recibo: id, nombre_servicio: id, nombre_ubicacion: null, tipo_recibo: 'personal', dia_pago: null, numero_cuenta_enmascarado: null, ...extra,
@@ -31,13 +31,14 @@ describe('recibosDelMes', () => {
     expect(de('luz')).toMatchObject({ estado: 'vencido', valor: 100000, dia: 10 })
   })
   it('por pagar antes de su día', () => expect(de('agua')).toMatchObject({ estado: 'por_pagar', valor: 60000, dia: 20 }))
-  it('sin pendiente si no se pagó en 2 de los 3 meses anteriores', () => expect(de('gas')).toMatchObject({ estado: 'sin_pendiente', valor: null }))
+  it('toda activa queda pendiente aunque se haya pagado una sola vez', () => expect(de('gas')).toMatchObject({ estado: 'vencido', valor: 30000 }))
   it('pagado con el valor real del mes', () => expect(de('net')).toMatchObject({ estado: 'pagado', valor: 85000 }))
   it('ordena vencidos, por pagar, sin pendiente y pagados', () =>
-    expect(filas.map(f => f.estado)).toEqual(['vencido', 'por_pagar', 'sin_pendiente', 'pagado']))
-  it('el vencido de un mes no pasa al siguiente si dejó de cumplir la regla', () => {
-    const noviembre = recibosDelMes([r('gas')], [p('gas', '2026-09', 30000)], '2026-11-20')
-    expect(noviembre[0].estado).toBe('sin_pendiente')
+    expect(filas.map(f => f.estado)).toEqual(['vencido', 'vencido', 'por_pagar', 'pagado']))
+  it('nueva sin pagos: pendiente sin valor; cancelada en el mes: sin pendiente', () => {
+    expect(recibosDelMes([r('nueva')], [], '2026-10-01')[0]).toMatchObject({ estado: 'por_pagar', valor: null })
+    const cancelado = { ...p('gas', '2026-10', 0, null), estado: 'cancelado' }
+    expect(recibosDelMes([r('gas')], [cancelado], '2026-10-20')[0].estado).toBe('sin_pendiente')
   })
   it('sin día aprendido usa el guardado y, sin ninguno, nunca vence', () => {
     const sinFecha = [p('x', '2026-08', 1, null), p('x', '2026-09', 1, null)]
@@ -45,7 +46,23 @@ describe('recibosDelMes', () => {
     expect(recibosDelMes([r('x')], sinFecha, '2026-10-31')[0].estado).toBe('por_pagar')
   })
   it('suma pagado, por pagar y vencido', () =>
-    expect(totalesDelMes(filas)).toEqual({ pagado: 85000, porPagar: 60000, vencido: 100000 }))
+    expect(totalesDelMes(filas)).toEqual({ pagado: 85000, porPagar: 60000, vencido: 130000 }))
+})
+
+describe('sinPagarMesAnterior', () => {
+  const hoy = '2026-11-05'
+  it('avisa la que venía en uso y no se pagó el mes pasado, con su último valor', () => {
+    expect(sinPagarMesAnterior([r('luz')], [p('luz', '2026-08', 90000), p('luz', '2026-09', 100000)], hoy))
+      .toMatchObject([{ nombre: 'luz', periodo: '2026-10-01', valor: 100000 }])
+  })
+  it('no avisa si se pagó o se marcó como no pagado', () => {
+    expect(sinPagarMesAnterior([r('luz')], [p('luz', '2026-09', 1), p('luz', '2026-10', 1)], hoy)).toEqual([])
+    expect(sinPagarMesAnterior([r('luz')], [p('luz', '2026-09', 1), { ...p('luz', '2026-10', 0, null), estado: 'cancelado' }], hoy)).toEqual([])
+  })
+  it('no avisa una recién creada o activada sin pagos recientes', () => {
+    expect(sinPagarMesAnterior([r('nueva')], [], hoy)).toEqual([])
+    expect(sinPagarMesAnterior([r('vieja')], [p('vieja', '2025-12', 1)], hoy)).toEqual([])
+  })
 })
 
 it('valoresEnElTiempo ordena los pagos del recibo', () => {

@@ -53,6 +53,9 @@ export default function Habitos({ seguimientos, registros, enfocar, alVolver, al
     if (existente?.tipo_medida === 'numero' && l.valor === null) {
       return setError(`${nombre} se mide en ${existente.unidad ?? 'cantidad'}: escribe cuánto, por ejemplo "${nombre} 2".`)
     }
+    // los de sí/no se cumplen una vez al día; los de cantidad sí se suman
+    if (existente?.tipo_medida === 'si_no' && marcas.get(existente.id_seguimiento)?.some(m => m.fecha === l.fecha)
+      && !confirm(`Ya marcaste ${nombre} ${l.fecha === hoy ? 'hoy' : `el ${diaMes(l.fecha)}`}. ¿Marcarlo otra vez?`)) return
     setEnviando(true)
     try {
       const esSiNo = existente ? existente.tipo_medida === 'si_no' : l.valor === null

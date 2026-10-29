@@ -244,7 +244,7 @@ function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, al
   useEffect(() => {
     if (!conFinanzas) return
     obtenerRecibos(`${mesesAntes(hoy.slice(0, 7), 12)}-01`).then(d => {
-      const filas = recibosDelMes(d.recibos, d.pagos, hoy)
+      const filas = recibosDelMes(d.recibos.filter(r => r.estado !== 'no_se_paga'), d.pagos, hoy)
       setFacturas({ porPagar: filas.filter(f => f.estado === 'por_pagar').length, vencidas: filas.filter(f => f.estado === 'vencido').length, total: filas.length })
     }).catch(() => setFacturas(null))
     obtenerPrestamos().then(d => {

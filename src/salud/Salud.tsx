@@ -271,6 +271,7 @@ function Medida({ medida, registros, alCambiar }: { medida: Seguimiento; registr
     evento.preventDefault()
     const n = leerNumero(valor)
     if (!Number.isFinite(n) || n < rango[0] || n > rango[1]) return setError(`Escribe ${nombre.toLowerCase()} en ${unidad ?? 'números'}, por ejemplo 78,5.`)
+    if (ultimo?.fecha === hoy && !confirm(`Ya registraste ${nombre.toLowerCase()} hoy (${formatoValor('numero', ultimo.valor, unidad)}). ¿Guardar otro?`)) return
     setEnviando(true)
     try {
       const c = comparar(n, registros, hoy)

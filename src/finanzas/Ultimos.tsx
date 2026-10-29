@@ -1,34 +1,64 @@
 import { useState, type FormEvent } from 'react'
-import { aprenderCategoria, corregirRegistro, type RegistroGuardado } from '../datos'
+import { aprenderCategoria, borrarMovimiento, corregirRegistro, TEXTO_ORIGEN, type Origen, type RegistroGuardado } from '../datos'
 import { formatoValor } from '../indicadores'
 import { leerMonto, leidoDe, MONTO_INVALIDO, normalizar, type Categoria } from './parseo'
 
 const MAX_DESCRIPCION = 120
 const pesos = (v: number) => formatoValor('dinero', v)
 
-// El último movimiento y los 5 anteriores, cada uno con "Corregir".
-export default function Ultimos({ registros, idGastos, categorias, alCambiar }: {
+// Los 6 movimientos más recientes, con filtro por tipo; "Ver todos" abre el Historial con ese filtro.
+export default function Ultimos({ registros, tipos, idGastos, categorias, origenes, mes, alVerTodos, alCambiar }: {
   registros: RegistroGuardado[]
+  tipos: [string, string][]
   idGastos: string
   categorias: Categoria[]
+  origenes: Map<string, Origen>
+  mes: string
+  alVerTodos: (idSeguimiento: string, origen: string) => void
   alCambiar: () => Promise<void>
 }) {
+  const [filtro, setFiltro] = useState('')
+  const nombreTipo = new Map(tipos)
+  // solo lo registrado a mano; lo que crean facturas y préstamos va resumido aparte
+  const lista = registros.filter(r => !origenes.has(r.id_registro) && (!filtro || r.id_seguimiento === filtro)).slice(0, 6)
+  const automaticos = registros.filter(r => origenes.has(r.id_registro) && r.fecha.startsWith(mes))
+  const cuantos = (o: Origen) => automaticos.filter(r => origenes.get(r.id_registro) === o).length
+  const partes = [[cuantos('factura'), 'factura', 'facturas'], [cuantos('prestamo'), 'cuota', 'cuotas']] as const
   if (!registros.length) return null
   return (
     <section>
-      <h2>Últimos movimientos</h2>
-      <ul className="lista">
-        {registros.map(r => <FilaMovimiento key={r.id_registro} registro={r} idGastos={idGastos} categorias={categorias} alCambiar={alCambiar} />)}
-      </ul>
+      <h2>Lo último que registraste</h2>
+      {tipos.length > 1 && <div className="chips" role="radiogroup" aria-label="Ver movimientos de">
+        {[['', 'Todos'] as [string, string], ...tipos].map(([id, nombre]) => (
+          <button key={id} type="button" role="radio" aria-checked={filtro === id} className="chip" onClick={() => setFiltro(id)}>{nombre}</button>
+        ))}
+      </div>}
+      {lista.length ? (
+        <ul className="lista">
+          {lista.map(r => (
+            <FilaMovimiento key={r.id_registro} registro={r} idGastos={idGastos} categorias={categorias} alCambiar={alCambiar} origen={origenes.get(r.id_registro)}
+              tipo={r.id_seguimiento === idGastos ? undefined : nombreTipo.get(r.id_seguimiento)} />
+          ))}
+        </ul>
+      ) : <p className="tenue">Sin movimientos de este tipo.</p>}
+      <button className="enlace" onClick={() => alVerTodos(filtro, 'manual')}>Ver todos en el Historial</button>
+      {automaticos.length > 0 && (
+        <p className="tenue">
+          Pagos automáticos del mes: {partes.filter(([n]) => n).map(([n, uno, varios]) => `${n} ${n === 1 ? uno : varios}`).join(' y ')}
+          {' '}({pesos(automaticos.reduce((t, r) => t + r.valor, 0))}) · <button className="enlace" onClick={() => alVerTodos('', '')}>Ver</button>
+        </p>
+      )}
     </section>
   )
 }
 
 // Un movimiento con "Corregir"; también lo usa el historial (tipo = Ingreso o Ahorro cuando van mezclados).
-export function FilaMovimiento({ registro: r, idGastos, categorias, tipo, alCambiar }: {
-  registro: RegistroGuardado; idGastos: string; categorias: Categoria[]; tipo?: string; alCambiar: () => Promise<void>
+export function FilaMovimiento({ registro: r, idGastos, categorias, tipo, origen, alCambiar }: {
+  registro: RegistroGuardado; idGastos: string; categorias: Categoria[]; tipo?: string; origen?: Origen; alCambiar: () => Promise<void>
 }) {
   const [abierto, setAbierto] = useState(false)
+  const [confirmar, setConfirmar] = useState(false)
+  const [error, setError] = useState('')
   if (abierto) return (
     <Corregir registro={r} esGasto={r.id_seguimiento === idGastos} categorias={categorias}
       alTerminar={async cambio => { if (cambio) await alCambiar(); setAbierto(false) }} />
@@ -38,9 +68,21 @@ export function FilaMovimiento({ registro: r, idGastos, categorias, tipo, alCamb
       <span>{r.fecha.split('-').reverse().join('/')}</span>
       <strong>{pesos(r.valor)}</strong>
       <span className="tenue">
-        {[tipo, r.nota, r.id_seguimiento === idGastos && (categorias.find(c => c.id_etiqueta === r.id_etiqueta)?.nombre ?? 'Sin categoría')].filter(Boolean).join(' · ')}
+        {[tipo, origen && TEXTO_ORIGEN[origen], r.nota, r.id_seguimiento === idGastos && (categorias.find(c => c.id_etiqueta === r.id_etiqueta)?.nombre ?? 'Sin categoría')].filter(Boolean).join(' · ')}
       </span>
-      <button className="secundario" onClick={() => setAbierto(true)}>Corregir</button>
+      {confirmar ? (
+        <span className="chips">
+          <span className="tenue">¿Seguro? Si viene de una factura o un préstamo, también se deshace.</span>
+          <button className="secundario" onClick={() => borrarMovimiento(r.id_registro).then(alCambiar, e => setError((e as Error).message))}>Sí, borrar</button>
+          <button className="secundario" onClick={() => setConfirmar(false)}>No</button>
+        </span>
+      ) : (
+        <span className="chips">
+          <button className="secundario" onClick={() => setAbierto(true)}>Corregir</button>
+          <button className="secundario" onClick={() => setConfirmar(true)}>Borrar</button>
+        </span>
+      )}
+      {error && <span role="alert" className="error">{error}</span>}
     </li>
   )
 }

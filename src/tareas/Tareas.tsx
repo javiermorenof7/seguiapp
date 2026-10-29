@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { normalizar } from '../finanzas/parseo'
 import { cambiarRecordatorio, crearRecordatorio, crearTarea, marcarTarea, obtenerTareas, quitarTarea } from '../datos'
 import {
   despuesDeListo, deHoy, fechaColombia, proximoEnvio, sumarDias, type Recordatorio, type Repeticion, type Tarea,
@@ -83,7 +84,8 @@ export default function Tareas({ abrir, alVolver }: { abrir?: AccionTareas; alVo
             alListo={r => accion(() => cambiarRecordatorio(r.id_recordatorio, despuesDeListo(r, new Date())), `Listo: ${r.descripcion}.`)} />}
           {pestana === 'tareas' && (
             <>
-              <NuevaTarea hoy={hoy} enfocar={abrir === 'tarea'} alGuardar={t => guardar(() => crearTarea(t), `Tarea creada: ${t.descripcion}.`)} />
+              <NuevaTarea hoy={hoy} enfocar={abrir === 'tarea'}
+                pendientes={datos.tareas.filter(t => t.estado === 'pendiente').map(t => t.descripcion)} alGuardar={t => guardar(() => crearTarea(t), `Tarea creada: ${t.descripcion}.`)} />
               <section>
                 <h2>Pendientes</h2>
                 {!datos.tareas.some(t => t.estado === 'pendiente') && <p className="tenue">No tienes tareas pendientes.</p>}
@@ -170,7 +172,9 @@ function Hoy({ datos, hoy, fila, alListo }: { datos: Datos; hoy: string; fila: (
   )
 }
 
-function NuevaTarea({ hoy, enfocar, alGuardar }: { hoy: string; enfocar?: boolean; alGuardar: (t: { descripcion: string; fecha_limite: string | null }) => Promise<void> }) {
+function NuevaTarea({ hoy, enfocar, pendientes, alGuardar }: {
+  hoy: string; enfocar?: boolean; pendientes: string[]; alGuardar: (t: { descripcion: string; fecha_limite: string | null }) => Promise<void>
+}) {
   const [descripcion, setDescripcion] = useState('')
   const [fecha, setFecha] = useState('')
   const [error, setError] = useState('')
@@ -180,6 +184,7 @@ function NuevaTarea({ hoy, enfocar, alGuardar }: { hoy: string; enfocar?: boolea
     evento.preventDefault()
     const limpia = descripcion.replace(/\s+/g, ' ').trim()
     if (!limpia) return setError('Escribe qué tienes que hacer.')
+    if (pendientes.some(p => normalizar(p) === normalizar(limpia)) && !confirm(`Ya tienes pendiente "${limpia}". ¿Crearla otra vez?`)) return
     setEnviando(true)
     try {
       await alGuardar({ descripcion: limpia, fecha_limite: fecha || null })

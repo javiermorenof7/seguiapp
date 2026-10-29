@@ -9,6 +9,9 @@
   --radio: 22px;
   /* estado frente a la meta, apto para daltonismo y siempre con texto */
   --en-meta: #1D4ED8; --cerca: #B45309; --fuera: #BE123C;
+  /* gráficos: un color fijo por serie y una escala Trópico aparte para categorías */
+  --ingresos: #059669; --gastos: #EA580C; --ahorro: #7C3AED; --pista: #DDE3DA;
+  --c1: #0D9488; --c2: #4F46E5; --c3: #CA8A04; --c4: #65A30D; --c5: #C026D3;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -19,6 +22,8 @@
     --linea: #24352B;
     --t1: #0E7F5C;
     --en-meta: #60A5FA; --cerca: #F59E0B; --fuera: #FB7185;
+    --ingresos: #34D399; --gastos: #FB923C; --ahorro: #A78BFA; --pista: #2B3F33;
+    --c1: #2DD4BF; --c2: #818CF8; --c3: #FBBF24; --c4: #A3E635; --c5: #E879F9;
   }
 }
 
@@ -123,7 +128,9 @@ button:disabled { opacity: .6; cursor: default; }
 .chip:disabled { opacity: .5; }
 @media (max-width: 420px) { .lista li.ultimo { grid-template-columns: auto 1fr auto; } .lista li.ultimo .tenue { grid-column: 1 / -1; grid-row: 2; } }
 .pestanas { margin: 0 0 20px; }
-.lista li.recibo { grid-template-columns: 1fr auto auto; }
+.lista li.recibo { grid-template-columns: 1fr auto auto auto; }
+.lista li.recibo > button { justify-self: end; }
+@media (max-width: 560px) { .lista li.recibo { grid-template-columns: 1fr auto; } .lista li.recibo > button { grid-column: 1 / -1; justify-self: stretch; } }
 .lista li.recibo > form, .lista li.recibo > .acciones, .lista li.recibo > [role="alert"] { grid-column: 1 / -1; margin: 0; }
 .lista li.recibo > span:first-child .tenue { display: block; font-size: 14px; white-space: normal; }
 .lista .estado.en-meta { background: var(--en-meta); color: var(--fondo); }
@@ -193,3 +200,52 @@ button:disabled { opacity: .6; cursor: default; }
 .mensaje { display: grid; gap: 4px; padding: 12px 0; border-bottom: 1px solid var(--linea); }
 .mensaje p { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .peligro { border-color: var(--fuera); color: var(--fuera); }
+
+/* Ritmo entre secciones: más aire arriba de cada título que debajo, para que gráficos y listas no queden pegados. */
+section:not([class]), details.plegable { margin-top: 40px; }
+section:not([class]) > h2:first-child { margin-bottom: 14px; }
+.grafico { margin: 16px 0 28px; }
+.encabezado-seccion { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.registrar { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; max-width: 520px; }
+.registrar .ingreso { background: var(--t4); }
+.registrar .ahorro { background: var(--t6); }
+/* Corregir y Borrar al final de la fila, no en una línea aparte */
+.lista li.ultimo > .chips { grid-column: auto; justify-content: end; }
+
+.plegable { border-top: 1px solid var(--linea); padding-top: 4px; }
+.plegable > summary { cursor: pointer; font-size: 20px; font-weight: 700; padding: 14px 0; list-style-position: inside; }
+.plegable > section:first-of-type { margin-top: 8px; }
+
+
+.dona { display: grid; grid-template-columns: minmax(180px, 260px) minmax(0, 1fr); gap: 24px; align-items: center; margin: 16px 0 8px; }
+.dona-lienzo { position: relative; height: 240px; }
+.dona-centro { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; margin: 0; pointer-events: none; }
+.dona-centro strong { font-size: 20px; }
+.dona-leyenda { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.dona-leyenda li { display: grid; grid-template-columns: auto 1fr auto 3.5em; gap: 10px; align-items: center; }
+.dona-leyenda .tenue { margin: 0; text-align: right; }
+.muestra { display: inline-block; width: 12px; height: 12px; border-radius: 4px; vertical-align: middle; }
+@media (max-width: 560px) { .dona { grid-template-columns: minmax(0, 1fr); } .dona-lienzo { height: 220px; } }
+
+.sugeridos { display: grid; gap: 8px; }
+.sugeridos .tenue { margin: 0; font-size: 14px; }
+section:not([class]) + form.formulario { margin-top: 40px; }
+
+.apilada, .avance { position: relative; display: flex; height: 22px; margin: 12px 0 10px; border-radius: 8px; background: var(--pista); }
+.apilada span:first-child, .avance span { border-radius: 8px 0 0 8px; }
+.apilada span:last-of-type { border-radius: 0 8px 8px 0; }
+.avance span { border-radius: 8px; }
+.apilada i, .avance i { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--tinta); }
+.apilada i b { position: absolute; top: 100%; transform: translateX(-50%); font-size: 12px; font-weight: 600; color: var(--tenue); margin-top: 4px; }
+.leyenda { list-style: none; padding: 0; margin: 20px 0 0; display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.bloque-pie { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.bloque-pie .tenue { margin: 0; }
+.cifra-media { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; }
+.lista li.meta-avance { grid-template-columns: 1fr auto; }
+.lista li.meta-avance .avance { grid-column: 1 / -1; margin: 4px 0 0; }
+.registrar-uno { margin-top: 24px; }
+.explica { max-width: 65ch; margin-bottom: 16px; }
+.mas > summary { cursor: pointer; color: var(--tenue); font-size: 14px; list-style: none; }
+.mas > summary::after { content: ' ▾'; }
+.mas[open] > summary::after { content: ' ▴'; }
+.lista li .mas, .lista li .fila-presupuesto { grid-column: 1 / -1; }

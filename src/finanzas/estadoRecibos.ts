@@ -1,7 +1,7 @@
 // Cuentas de la pestaña Recibos. "mes" es 'AAAA-MM'; "hoy" es 'AAAA-MM-DD'.
-import { recibosPendientes, type PagoRecibo, type Recibo } from './calculos'
+import { mesesAntes, recibosPendientes, type PagoRecibo, type Recibo } from './calculos'
 
-export interface ReciboVisible extends Recibo { dia_pago: number | null; numero_cuenta_enmascarado: string | null }
+export interface ReciboVisible extends Recibo { dia_pago: number | null; numero_cuenta_enmascarado: string | null; estado?: 'activo' | 'no_se_paga' }
 export interface PagoGuardado extends PagoRecibo { id_pago_recibo: string; id_registro: string | null; fecha_pago: string | null }
 export type EstadoRecibo = 'vencido' | 'por_pagar' | 'pagado' | 'sin_pendiente'
 export interface FilaRecibo {
@@ -31,8 +31,23 @@ export function recibosDelMes(recibos: ReciboVisible[], pagos: PagoGuardado[], h
     const estado: EstadoRecibo = pago ? 'pagado'
       : pendiente === undefined ? 'sin_pendiente'
         : dia && Number(hoy.slice(8, 10)) > dia ? 'vencido' : 'por_pagar'
-    return { recibo: r, nombre: nombreRecibo(r), estado, valor: pago ? Number(pago.valor) : pendiente ?? null, dia, pago }
+    return { recibo: r, nombre: nombreRecibo(r), estado, valor: pago ? Number(pago.valor) : pendiente || null, dia, pago }
   }).sort((a, b) => orden[a.estado] - orden[b.estado] || a.nombre.localeCompare(b.nombre))
+}
+
+// Facturas que el mes pasado quedaron sin pagar ni marcar; solo las que venían en uso (algún pago en los 3 meses antes),
+// para no avisar de una recién creada o activada.
+export function sinPagarMesAnterior(recibos: ReciboVisible[], pagos: PagoGuardado[], hoy: string) {
+  const mes = hoy.slice(0, 7)
+  const anterior = `${mesesAntes(mes, 1)}-01`
+  const antes = [2, 3, 4].map(n => `${mesesAntes(mes, n)}-01`)
+  return recibos.flatMap(r => {
+    const suyos = pagos.filter(p => p.id_recibo === r.id_recibo)
+    if (suyos.some(p => p.fecha_periodo === anterior && (p.estado === 'pagado' || p.estado === 'cancelado'))) return []
+    const usados = suyos.filter(p => p.estado === 'pagado' && antes.includes(p.fecha_periodo))
+      .sort((a, b) => b.fecha_periodo.localeCompare(a.fecha_periodo))
+    return usados.length ? [{ recibo: r, nombre: nombreRecibo(r), periodo: anterior, valor: Number(usados[0].valor) }] : []
+  })
 }
 
 export function totalesDelMes(filas: FilaRecibo[]) {

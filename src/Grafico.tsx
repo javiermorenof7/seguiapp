@@ -12,12 +12,13 @@ interface Props {
   descripcion: string
   compacto?: boolean
   formato?: (valor: number) => string
+  formatoEje?: (valor: number) => string
 }
 
 const diaMes = (fecha: string) => `${fecha.slice(8, 10)}/${fecha.slice(5, 7)}`
 
 // Línea de lo medido con la meta punteada; el último punto (el registro nuevo) va resaltado.
-export default function Grafico({ puntos, meta, color, colorMeta, descripcion, compacto, formato }: Props) {
+export default function Grafico({ puntos, meta, color, colorMeta, descripcion, compacto, formato, formatoEje }: Props) {
   const lienzo = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -54,13 +55,15 @@ export default function Grafico({ puntos, meta, color, colorMeta, descripcion, c
           },
         },
         scales: {
-          x: { display: !compacto, ticks: { color, maxTicksLimit: 6 }, grid: { display: false } },
-          y: { display: !compacto, ticks: { color, maxTicksLimit: 5 }, grid: { color: `${colorMeta}33` } },
+          x: { display: !compacto, ticks: { color: colorMeta, maxTicksLimit: 6 }, grid: { display: false } },
+          y: { display: !compacto, ticks: { color: colorMeta, maxTicksLimit: 5, ...(formato ? { callback: v => (formatoEje ?? formato)(Number(v)) } : {}) },
+            // transparencia solo si viene en hex de 6 dígitos
+            grid: { color: /^#[0-9a-f]{6}$/i.test(colorMeta) ? `${colorMeta}33` : colorMeta } },
         },
       },
     })
     return () => grafico.destroy()
-  }, [puntos, meta, color, colorMeta, compacto, formato])
+  }, [puntos, meta, color, colorMeta, compacto, formato, formatoEje])
 
   return (
     <div className={compacto ? 'grafico compacto' : 'grafico'}>

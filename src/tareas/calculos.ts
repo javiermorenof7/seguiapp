@@ -96,3 +96,16 @@ export function aTiempoSemana(tareas: Tarea[], hoy: string) {
   const aTiempo = conFecha.filter(t => t.estado === 'hecho' && t.fecha_realizacion && fechaColombia(t.fecha_realizacion) <= t.fecha_limite!)
   return { aTiempo: aTiempo.length, total: conFecha.length }
 }
+
+// Las últimas n semanas de lunes a domingo: tareas con fecha límite ya cumplida, hechas a tiempo o tarde (o sin hacer).
+export function aTiempoPorSemana(tareas: Tarea[], hoy: string, n = 8) {
+  const lunes = sumarDias(hoy, 1 - diaSemana(hoy))
+  return Array.from({ length: n }, (_, i) => {
+    const desde = sumarDias(lunes, -7 * (n - 1 - i)), hasta = sumarDias(desde, 6)
+    const vencen = tareas.filter(t => t.fecha_limite && t.fecha_limite >= desde && t.fecha_limite <= hasta)
+    const aTiempo = vencen.filter(t => t.estado === 'hecho' && t.fecha_realizacion && fechaColombia(t.fecha_realizacion) <= t.fecha_limite!).length
+    // las pendientes que aún no vencen no cuentan todavía
+    const tarde = vencen.filter(t => t.fecha_limite! < hoy || t.estado === 'hecho').length - aTiempo
+    return { desde, aTiempo, tarde }
+  })
+}

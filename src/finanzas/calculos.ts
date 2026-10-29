@@ -42,16 +42,14 @@ export function estadoPresupuesto(gastado: number, presupuesto: number | null): 
   return gastado >= presupuesto * 0.8 ? 'cerca' : null
 }
 
-// Pendiente del mes: pagado en al menos 2 de los 3 meses anteriores y sin pagar ni cancelar en este; vale lo del último pago.
+// Pendiente del mes: toda factura activa sin pagar ni cancelar en este mes; vale lo del último pago (0 si nunca se pagó).
 export function recibosPendientes(recibos: Recibo[], pagos: PagoRecibo[], mes: string): Pendiente[] {
-  const anteriores = [1, 2, 3].map(n => `${mesesAntes(mes, n)}-01`)
   return recibos.flatMap(r => {
     const suyos = pagos.filter(p => p.id_recibo === r.id_recibo)
-    const cerrado = suyos.some(p => p.fecha_periodo === `${mes}-01` && (p.estado === 'pagado' || p.estado === 'cancelado'))
-    const pagados = suyos.filter(p => p.estado === 'pagado').sort((a, b) => b.fecha_periodo.localeCompare(a.fecha_periodo))
-    if (cerrado || pagados.filter(p => anteriores.includes(p.fecha_periodo)).length < 2) return []
+    if (suyos.some(p => p.fecha_periodo === `${mes}-01` && (p.estado === 'pagado' || p.estado === 'cancelado'))) return []
+    const ultimo = suyos.filter(p => p.estado === 'pagado').sort((a, b) => b.fecha_periodo.localeCompare(a.fecha_periodo))[0]
     const nombre = r.nombre_ubicacion ? `${r.nombre_servicio} · ${r.nombre_ubicacion}` : r.nombre_servicio
-    return [{ id_recibo: r.id_recibo, nombre, valor: pagados[0].valor, tipo_recibo: r.tipo_recibo }]
+    return [{ id_recibo: r.id_recibo, nombre, valor: ultimo ? Number(ultimo.valor) : 0, tipo_recibo: r.tipo_recibo }]
   })
 }
 

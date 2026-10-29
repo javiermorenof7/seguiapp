@@ -53,8 +53,16 @@ describe('recibos pendientes', () => {
     p('raro', '2026-09-01', 10), p('raro', '2026-08-01', 10, 'vencido'),
   ]
 
-  it('2 de 3 meses, sin pagar este mes, con el último valor', () => {
-    expect(recibosPendientes(recibos, pagos, '2026-10')).toEqual([{ id_recibo: 'luz', nombre: 'Luz · Casa', valor: 120, tipo_recibo: 'hogar' }])
+  it('toda factura activa sin pagar este mes, con el último valor', () => {
+    expect(recibosPendientes(recibos, pagos, '2026-10')).toEqual([
+      { id_recibo: 'luz', nombre: 'Luz · Casa', valor: 120, tipo_recibo: 'hogar' },
+      { id_recibo: 'raro', nombre: 'Revista', valor: 10, tipo_recibo: 'personal' },
+    ])
+  })
+  it('una factura nueva queda pendiente en 0 y una cancelada este mes no', () => {
+    const nueva: Recibo = { id_recibo: 'nueva', nombre_servicio: 'Agua', nombre_ubicacion: 'Casa', tipo_recibo: 'hogar' }
+    expect(recibosPendientes([nueva], [], '2026-10')).toEqual([{ id_recibo: 'nueva', nombre: 'Agua · Casa', valor: 0, tipo_recibo: 'hogar' }])
+    expect(recibosPendientes([nueva], [p('nueva', '2026-10-01', 0, 'cancelado')], '2026-10')).toEqual([])
   })
 })
 

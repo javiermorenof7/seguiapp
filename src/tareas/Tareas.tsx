@@ -1,10 +1,33 @@
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import { cambiarRecordatorio, crearRecordatorio, crearTarea, marcarTarea, obtenerTareas, quitarTarea } from '../datos'
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { normalizar } from '../finanzas/parseo'
+import { cambiarRecordatorio, crearRecordatorio, crearTarea, editarTarea, marcarTarea, obtenerTareas, quitarTarea } from '../datos'
+import CambiarNombre from '../CambiarNombre'
+import { Avance } from '../finanzas/Medidas'
+import Barras from '../finanzas/Barras'
 import {
+  aTiempoPorSemana, aTiempoSemana,
   despuesDeListo, deHoy, fechaColombia, proximoEnvio, sumarDias, type Recordatorio, type Repeticion, type Tarea,
 } from './calculos'
 
 type Datos = Awaited<ReturnType<typeof obtenerTareas>>
+
+const cssVar = (nombre: string) => getComputedStyle(document.documentElement).getPropertyValue(nombre).trim()
+
+// Barras apiladas de las últimas 8 semanas: a tiempo encima de tarde.
+function TiempoPorSemana({ semanas }: { semanas: ReturnType<typeof aTiempoPorSemana> }) {
+  const series = useMemo(() => [
+    { nombre: 'A tiempo', datos: semanas.map(w => w.aTiempo), color: cssVar('--en-meta') },
+    { nombre: 'Tarde o sin hacer', datos: semanas.map(w => w.tarde), color: cssVar('--fuera') },
+  ], [semanas])
+  const etiquetas = useMemo(() => semanas.map(w => `${w.desde.slice(8, 10)}/${w.desde.slice(5, 7)}`), [semanas])
+  return (
+    <>
+      <h3>Últimas 8 semanas</h3>
+      <Barras apilado etiquetas={etiquetas} series={series} formato={v => `${Math.round(v)}`} colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
+        descripcion={`Tareas a tiempo y tarde por semana: ${semanas.map(w => `${etiquetas[semanas.indexOf(w)]} ${w.aTiempo} a tiempo, ${w.tarde} tarde`).join('; ')}`} />
+    </>
+  )
+}
 export type AccionTareas = 'tarea' | 'recordatorio'
 
 const PESTANAS = { hoy: 'Hoy', tareas: 'Tareas', recordatorios: 'Recordatorios' }
@@ -27,6 +50,23 @@ export default function Tareas({ abrir, alVolver }: { abrir?: AccionTareas; alVo
   const [datos, setDatos] = useState<Datos | null>(null)
   const [error, setError] = useState('')
   const [aviso, setAviso] = useState('')
+  // id de la tarea o recordatorio que espera el "¿Seguro?" antes de quitarse
+  const [porQuitar, setPorQuitar] = useState<string | null>(null)
+  // id de la tarea o recordatorio con el texto abierto para editar
+  const [editando, setEditando] = useState<string | null>(null)
+  const botonEditar = (id: string) =>
+    <button className="enlace" aria-expanded={editando === id} onClick={() => { setEditando(editando === id ? null : id); setPorQuitar(null) }}>Editar</button>
+  const formEditar = (id: string, texto: string, cambiar: (nuevo: string) => Promise<unknown>) => editando === id && (
+    <CambiarNombre inicial={texto} etiqueta="Nuevo texto" maximo={MAX_DESCRIPCION} alCancelar={() => setEditando(null)}
+      alGuardar={async nuevo => { await guardar(() => cambiar(nuevo), `Cambiado: ${nuevo}.`); setEditando(null) }} />
+  )
+  const confirmarQuitar = (id: string, quitar: () => void) => porQuitar === id ? (
+    <span className="chips">
+      <span className="tenue">¿Seguro?</span>
+      <button className="secundario" onClick={() => { setPorQuitar(null); quitar() }}>Sí, quitar</button>
+      <button className="secundario" onClick={() => setPorQuitar(null)}>No</button>
+    </span>
+  ) : <button className="enlace" onClick={() => setPorQuitar(id)}>Quitar</button>
 
   const cargar = useCallback(async () => {
     try {
@@ -51,13 +91,13 @@ export default function Tareas({ abrir, alVolver }: { abrir?: AccionTareas; alVo
     <li key={t.id_tarea} className="tres">
       <span className={t.estado === 'hecho' ? 'hecha' : undefined}>{t.descripcion}
         {conFecha && t.fecha_limite && <span className="tenue"> · {t.fecha_limite < hoy && t.estado === 'pendiente' ? 'venció ' : ''}{fechaCorta(t.fecha_limite)}</span>}
+        {t.estado === 'pendiente' && <> {botonEditar(t.id_tarea)}</>}
       </span>
       {t.estado === 'pendiente'
         ? <button className="secundario" onClick={() => accion(() => marcarTarea(t.id_tarea, true), `Hecha: ${t.descripcion}.`)}>✓ Hecha</button>
         : <button className="enlace" onClick={() => accion(() => marcarTarea(t.id_tarea, false), `${t.descripcion} vuelve a pendiente.`)}>Deshacer</button>}
-      {t.estado === 'pendiente'
-        ? <button className="enlace" onClick={() => accion(() => quitarTarea(t.id_tarea), `${t.descripcion} quitada.`)}>Quitar</button>
-        : <span />}
+      {confirmarQuitar(t.id_tarea, () => accion(() => quitarTarea(t.id_tarea), `${t.descripcion} quitada.`))}
+      {formEditar(t.id_tarea, t.descripcion, nuevo => editarTarea(t.id_tarea, nuevo))}
     </li>
   )
 
@@ -83,7 +123,9 @@ export default function Tareas({ abrir, alVolver }: { abrir?: AccionTareas; alVo
             alListo={r => accion(() => cambiarRecordatorio(r.id_recordatorio, despuesDeListo(r, new Date())), `Listo: ${r.descripcion}.`)} />}
           {pestana === 'tareas' && (
             <>
-              <NuevaTarea hoy={hoy} enfocar={abrir === 'tarea'} alGuardar={t => guardar(() => crearTarea(t), `Tarea creada: ${t.descripcion}.`)} />
+              <NuevaTarea hoy={hoy} enfocar={abrir === 'tarea'}
+                pendientes={datos.tareas.filter(t => t.estado === 'pendiente').map(t => t.descripcion)}
+                repetidas={repetidas(datos.tareas)} alGuardar={t => guardar(() => crearTarea(t), `Tarea creada: ${t.descripcion}.`)} />
               <section>
                 <h2>Pendientes</h2>
                 {!datos.tareas.some(t => t.estado === 'pendiente') && <p className="tenue">No tienes tareas pendientes.</p>}
@@ -113,6 +155,7 @@ export default function Tareas({ abrir, alVolver }: { abrir?: AccionTareas; alVo
                       <span>{r.descripcion}
                         <span className="tenue"> · {textoRepeticion(r)} a las {hora12(r.hora_envio)}
                           {r.estado === 'pausado' ? ' · en pausa' : r.fecha_proximo_envio ? ` · próximo ${fechaCorta(fechaColombia(r.fecha_proximo_envio))}` : ''}</span>
+                        {' '}{botonEditar(r.id_recordatorio)}
                       </span>
                       {r.estado === 'activo'
                         ? <button className="enlace" onClick={() => accion(() => cambiarRecordatorio(r.id_recordatorio, { estado: 'pausado' }), `${r.descripcion} en pausa.`)}>Pausar</button>
@@ -121,7 +164,8 @@ export default function Tareas({ abrir, alVolver }: { abrir?: AccionTareas; alVo
                           accion(() => cambiarRecordatorio(r.id_recordatorio, { fecha_proximo_envio: proximo, estado: proximo ? 'activo' : 'terminado' }),
                             proximo ? `${r.descripcion} activo otra vez.` : `${r.descripcion} ya pasó y quedó terminado.`)
                         }}>Reanudar</button>}
-                      <button className="enlace" onClick={() => accion(() => cambiarRecordatorio(r.id_recordatorio, { estado: 'eliminado' }), `${r.descripcion} quitado.`)}>Quitar</button>
+                      {confirmarQuitar(r.id_recordatorio, () => accion(() => cambiarRecordatorio(r.id_recordatorio, { estado: 'eliminado' }), `${r.descripcion} quitado.`))}
+                      {formEditar(r.id_recordatorio, r.descripcion, nuevo => cambiarRecordatorio(r.id_recordatorio, { descripcion: nuevo }))}
                     </li>
                   ))}
                 </ul>
@@ -137,8 +181,28 @@ export default function Tareas({ abrir, alVolver }: { abrir?: AccionTareas; alVo
 function Hoy({ datos, hoy, fila, alListo }: { datos: Datos; hoy: string; fila: (t: Tarea, conFecha?: boolean) => ReactNode; alListo: (r: Recordatorio) => void }) {
   const h = deHoy(datos.tareas, datos.recordatorios, hoy)
   const nada = !h.vencidas.length && !h.deHoy.length && !h.sinFecha.length && !h.recordatorios.length
+  const delDia = h.hechasHoy.length + h.deHoy.length + h.vencidas.length
+  const semana = aTiempoSemana(datos.tareas, hoy)
+  const semanas = aTiempoPorSemana(datos.tareas, hoy)
+  const conVencidas = semanas.some(w => w.aTiempo || w.tarde)
+  const color = (bien: boolean) => getComputedStyle(document.documentElement).getPropertyValue(bien ? '--en-meta' : '--c1').trim()
   return (
     <>
+      {delDia > 0 && (
+        <section>
+          <h2>¿Cómo voy hoy?</h2>
+          <p><strong className="cifra-media">{h.hechasHoy.length} de {delDia}</strong> <span className="tenue">tareas del día hechas{h.vencidas.length ? ` · ${h.vencidas.length} vencidas` : ''}</span></p>
+          <Avance valor={h.hechasHoy.length} tope={delDia} color={color(h.hechasHoy.length === delDia)} descripcion={`Hoy: ${h.hechasHoy.length} de ${delDia} tareas hechas`} />
+        </section>
+      )}
+      {semana.total > 0 && (
+        <section>
+          <h2>¿Las hago a tiempo?</h2>
+          <p><strong className="cifra-media">{Math.round((semana.aTiempo / semana.total) * 100)} %</strong> <span className="tenue">a tiempo esta semana ({semana.aTiempo} de {semana.total})</span></p>
+          <Avance valor={semana.aTiempo} tope={semana.total} color={color(semana.aTiempo === semana.total)} descripcion={`Esta semana: ${semana.aTiempo} de ${semana.total} tareas a tiempo`} />
+          {conVencidas && <TiempoPorSemana semanas={semanas} />}
+        </section>
+      )}
       {nada && <p className="tenue">Nada pendiente para hoy. Crea tareas o recordatorios en sus pestañas.</p>}
       {h.recordatorios.length > 0 && (
         <section>
@@ -170,7 +234,20 @@ function Hoy({ datos, hoy, fila, alListo }: { datos: Datos; hoy: string; fila: (
   )
 }
 
-function NuevaTarea({ hoy, enfocar, alGuardar }: { hoy: string; enfocar?: boolean; alGuardar: (t: { descripcion: string; fecha_limite: string | null }) => Promise<void> }) {
+// las que ya creó 2 veces o más y no tiene pendientes ahora
+const repetidas = (tareas: Tarea[]) => {
+  const veces = new Map<string, { texto: string; n: number }>()
+  for (const t of tareas) {
+    const k = normalizar(t.descripcion)
+    veces.set(k, { texto: t.descripcion, n: (veces.get(k)?.n ?? 0) + 1 })
+  }
+  const pendientes = new Set(tareas.filter(t => t.estado === 'pendiente').map(t => normalizar(t.descripcion)))
+  return [...veces.entries()].filter(([k, v]) => v.n >= 2 && !pendientes.has(k)).sort((a, b) => b[1].n - a[1].n).slice(0, 5).map(([, v]) => v.texto)
+}
+
+function NuevaTarea({ hoy, enfocar, pendientes, repetidas: sugeridas, alGuardar }: {
+  hoy: string; enfocar?: boolean; pendientes: string[]; repetidas: string[]; alGuardar: (t: { descripcion: string; fecha_limite: string | null }) => Promise<void>
+}) {
   const [descripcion, setDescripcion] = useState('')
   const [fecha, setFecha] = useState('')
   const [error, setError] = useState('')
@@ -180,6 +257,7 @@ function NuevaTarea({ hoy, enfocar, alGuardar }: { hoy: string; enfocar?: boolea
     evento.preventDefault()
     const limpia = descripcion.replace(/\s+/g, ' ').trim()
     if (!limpia) return setError('Escribe qué tienes que hacer.')
+    if (pendientes.some(p => normalizar(p) === normalizar(limpia)) && !confirm(`Ya tienes pendiente "${limpia}". ¿Crearla otra vez?`)) return
     setEnviando(true)
     try {
       await alGuardar({ descripcion: limpia, fecha_limite: fecha || null })
@@ -195,6 +273,12 @@ function NuevaTarea({ hoy, enfocar, alGuardar }: { hoy: string; enfocar?: boolea
     <form className="formulario" onSubmit={guardar}>
       <label>Nueva tarea<input required maxLength={MAX_DESCRIPCION} value={descripcion} onChange={ev => setDescripcion(ev.target.value)}
         placeholder="Qué tienes que hacer" autoComplete="off" autoFocus={enfocar} /><small className="ayuda">Ej.: pagar el arriendo, llamar al banco</small></label>
+      {sugeridas.length > 0 && !descripcion.trim() && (
+        <div className="sugeridos">
+          <span className="tenue">Las que sueles repetir</span>
+          <div className="chips">{sugeridas.map(t => <button key={t} type="button" className="chip" onClick={() => setDescripcion(t)}>{t}</button>)}</div>
+        </div>
+      )}
       <label>Para cuándo (opcional)
         <input type="date" value={fecha} min={hoy} onChange={ev => setFecha(ev.target.value)} />
         <small className="ayuda">Sin fecha sale cada día en Hoy hasta que la hagas</small>

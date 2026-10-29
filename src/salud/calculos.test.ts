@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  anteriorDe, comparar, diasEntrenados, diasPorSemana, leerSerie, parecido, pesoPorDia, progreso, sugerencia, type Sesion,
+  anteriorDe, comparar, diasEntrenados, faltaParaMeta, estadoSemana, metaSemanal, diasPorSemana, leerSerie, parecido, pesoPorDia, progreso, sugerencia, type Sesion,
 } from './calculos'
 
 const s = (fecha: string, ejercicio: string, series: number, repeticiones: number, peso: number | null): Sesion =>
@@ -49,11 +49,17 @@ describe('gym', () => {
   })
   it('mayor peso por día', () => expect(pesoPorDia(sesiones, 'press banca').map(p => p.valor)).toEqual([55, 57.5, 62.5]))
   it('días entrenados en 30 días', () => expect(diasEntrenados(sesiones, '2026-10-20')).toBe(4))
-  it('días por semana, la más antigua primero', () => {
+  it('días por semana de lunes a domingo, la más antigua primero y la última la que va', () => {
     const semanas = diasPorSemana(sesiones, '2026-10-21', 3)
-    expect(semanas.map(w => w.dias)).toEqual([1, 2, 1])
-    expect(semanas[2].desde).toBe('2026-10-15')
+    expect(semanas.map(w => w.dias)).toEqual([2, 1, 0])
+    expect(semanas.map(w => w.desde)).toEqual(['2026-10-05', '2026-10-12', '2026-10-19'])
   })
+})
+
+it('lo que falta para la meta según la dirección', () => {
+  expect(faltaParaMeta(80.5, 75, 'menos_es_mejor')).toBe(5.5)
+  expect(faltaParaMeta(74, 75, 'menos_es_mejor')).toBe(0)
+  expect(faltaParaMeta(30, 35, 'mas_es_mejor')).toBe(5)
 })
 
 it('comparar frente al último y a hace 30 días', () => {
@@ -62,4 +68,15 @@ it('comparar frente al último y a hace 30 días', () => {
     ultimo: { fecha: '2026-10-18', cambio: -0.5 }, hace30: { fecha: '2026-09-20', cambio: -1.5 },
   })
   expect(comparar(80, [], '2026-10-20')).toEqual({ ultimo: null, hace30: null })
+})
+
+describe('meta semanal del gym', () => {
+  it('usa la meta propia o, sin ella, el promedio redondeado', () => {
+    expect(metaSemanal([{ dias: 3 }, { dias: 4 }], 5)).toEqual({ valor: 5, propia: true })
+    expect(metaSemanal([{ dias: 3 }, { dias: 4 }, { dias: 4 }])).toEqual({ valor: 4, propia: false })
+    expect(metaSemanal([{ dias: 0 }])).toBeNull()
+  })
+  it('estado de cada semana frente a la meta', () => {
+    expect([estadoSemana(4, 4), estadoSemana(3, 4), estadoSemana(1, 4)]).toEqual(['en_meta', 'cerca', 'fuera'])
+  })
 })

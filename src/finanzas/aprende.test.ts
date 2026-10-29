@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agrupar, cincuentaTreintaVeinte, gastoInusual } from './aprende'
+import { agrupar, cincuentaTreintaVeinte, facturaParecida, gastoInusual, posibleRepetido, sugeridos } from './aprende'
 import type { Movimiento } from './calculos'
 
 const g = (fecha: string, valor: number, extra: Partial<Movimiento> = {}): Movimiento =>
@@ -50,5 +50,32 @@ describe('agrupar', () => {
       { id_registro: '3', nota: 'Uber', valor: 50 }, { id_registro: '4', nota: null, valor: 1 },
     ])
     expect(grupos.map(x => [x.texto, x.ids.length, x.total])).toEqual([['Café', 2, 10], ['Uber', 1, 50], ['Sin descripción', 1, 1]])
+  })
+})
+
+describe('aprende de lo registrado', () => {
+  const g = (fecha: string, valor: number, nota: string, id_etiqueta = 'comida'): Movimiento => ({ fecha, valor, tipo: 'gasto', id_etiqueta, nota })
+  const movs = [
+    g('2026-10-27', 20000, 'Almuerzo'), g('2026-10-20', 18000, 'almuerzo'), g('2026-10-13', 19000, 'Almuerzo'),
+    g('2026-10-25', 12000, 'Taxi', 'transporte'), g('2025-01-10', 90000, 'Regalo', 'otros'),
+  ]
+
+  it('sugiere lo más registrado con su último valor y categoría; lo viejo y aislado no', () => {
+    expect(sugeridos(movs, 'gasto', '2026-10-28')).toEqual([
+      { nota: 'Almuerzo', valor: 20000, id_etiqueta: 'comida' },
+      { nota: 'Taxi', valor: 12000, id_etiqueta: 'transporte' },
+    ])
+    expect(sugeridos(movs, 'ingreso', '2026-10-28')).toEqual([])
+  })
+  it('avisa un posible repetido: misma descripción, valor parecido, 2 días', () => {
+    expect(posibleRepetido(movs, { tipo: 'gasto', fecha: '2026-10-28', valor: 21000, descripcion: ' almuerzo ' })?.fecha).toBe('2026-10-27')
+    expect(posibleRepetido(movs, { tipo: 'gasto', fecha: '2026-10-28', valor: 40000, descripcion: 'almuerzo' })).toBeNull()
+    expect(posibleRepetido(movs, { tipo: 'gasto', fecha: '2026-10-31', valor: 20000, descripcion: 'almuerzo' })).toBeNull()
+  })
+  it('reconoce la factura en lo que escribió', () => {
+    const recibos = [{ nombre_servicio: 'Agua', id: 1 }, { nombre_servicio: 'Disney +', id: 2 }]
+    expect(facturaParecida(recibos, 'Pago de agua')?.id).toBe(1)
+    expect(facturaParecida(recibos, 'disney + octubre')?.id).toBe(2)
+    expect(facturaParecida(recibos, 'aguacate')).toBeNull()
   })
 })

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 import {
@@ -7,7 +7,7 @@ import {
 } from './datos'
 import {
   agregado, estado, formatoValor, inicioPeriodo, ordenEstado, periodoDe, seSuma, serie,
-  type Estado, type Periodo, type Registro, type TipoMedida,
+  type Estado, type Periodo, type TipoMedida,
 } from './indicadores'
 import Grafico from './Grafico'
 import Privacidad from './Privacidad'
@@ -26,9 +26,10 @@ import { mesesAntes } from './finanzas/calculos'
 import { recibosDelMes } from './finanzas/estadoRecibos'
 import { amortizacion, estadoPrestamo } from './finanzas/prestamos'
 import { metaProxima } from './finanzas/metas'
-import { conSigno } from './salud/calculos'
+import { conSigno, estadoSemana } from './salud/calculos'
 import { activos, moduloDe, MODULOS, resumenFinanzas, resumenHabitos, resumenSalud, type Modulo } from './inicio/resumenes'
 import { activarModulos, Bienvenida, COLOR, Crear, NOMBRE, QUE_MIDE, type Destino } from './inicio/Crear'
+import { EntroSalio, HabitosHoy, SemanaGym, TareasHoy } from './inicio/Minis'
 
 const TEXTO_ESTADO: Record<Estado, string> = { fuera: '✕ Fuera de la meta', cerca: '◐ Cerca de la meta', en_meta: '✓ Vas bien' }
 const TEXTO_PERIODO: Record<Periodo, string> = { dia: 'día', semana: 'semana', mes: 'mes', ano: 'año' }
@@ -53,6 +54,14 @@ function textoMeta(s: Seguimiento) {
   const por = TEXTO_PERIODO[s.meta.periodo]
   return s.meta.direccion === 'menos_es_mejor' ? `Máximo ${cuanto} por ${por}` : `Meta: ${cuanto} por ${por}`
 }
+
+// datos de ejemplo para la pantalla de entrada (nunca de la persona: se ve antes de iniciar sesión)
+const MUESTRA = [
+  { modulo: 'Finanzas', color: 't1', dato: '$1.250.000', texto: 'te queda este mes', linea: '0,18 20,14 40,16 60,9 80,11 100,5' },
+  { modulo: 'Salud', color: 't2', dato: '3 días', texto: 'de gym esta semana', linea: '0,20 20,16 40,17 60,12 80,8 100,6' },
+  { modulo: 'Hábitos', color: 't5', dato: '12 días', texto: 'de racha', linea: '0,22 20,19 40,15 60,13 80,9 100,4' },
+  { modulo: 'Tareas', color: 't3', dato: '4 de 5', texto: 'hechas hoy', linea: '0,16 20,18 40,12 60,14 80,7 100,8' },
+]
 
 export default function App() {
   const [sesion, setSesion] = useState<Session | null | undefined>(undefined)
@@ -84,15 +93,28 @@ function Entrar({ alPrivacidad, alInstalar }: { alPrivacidad: () => void; alInst
   }
   return (
     <div className="contenedor entrar">
-      <h1>seguiapp</h1>
-      <p className="lema">Lo que no se mide no se controla.</p>
-      <p>Mide tus gastos, tu entreno, tus hábitos o lo que quieras, y mira en gráficos cómo vas frente a tu meta.</p>
-      <button className="principal" onClick={entrar}>Entrar con Google</button>
+      <div className="entrar-texto">
+        <img className="logo" src={`${import.meta.env.BASE_URL}icono.svg`} alt="" width={72} height={72} />
+        <h1>seguiapp</h1>
+        <p className="lema">Lo que no se mide no se controla.</p>
+        <p>Mide tus gastos, tu entreno, tus hábitos o lo que quieras, y mira en gráficos cómo vas frente a tu meta.</p>
+        <button className="principal grande" onClick={entrar}>Entrar con Google</button>
       <p className="tenue">
         El acceso es solo por invitación. Al entrar aceptas la <button className="enlace" onClick={alPrivacidad}>política de privacidad</button>.
       </p>
       {!estaInstalada() && <p className="tenue"><button className="enlace" onClick={alInstalar}>Instalar la app</button> en tu celular o computador.</p>}
       {error && <p role="alert" className="error">{error}</p>}
+      </div>
+      <ul className="ejemplos" aria-label="Ejemplo de lo que verás">
+        {MUESTRA.map(m => (
+          <li key={m.modulo} className={`tarjeta ${m.color}`}>
+            <span className="ejemplos-modulo">{m.modulo}</span>
+            <strong>{m.dato}</strong>
+            <span>{m.texto}</span>
+            <svg viewBox="0 0 100 24" aria-hidden="true"><polyline points={m.linea} fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
@@ -203,6 +225,7 @@ function Panel({ sesion, alPrivacidad, alInstalar }: { sesion: Session; alPrivac
 }
 
 const ICONO: Record<Estado, string> = { en_meta: '✓', cerca: '◐', fuera: '✕' }
+const TEXTO_GYM: Record<Estado, string> = { en_meta: 'En meta esta semana', cerca: 'Cerca de la meta', fuera: 'Lejos de la meta' }
 const pesos = (v: number) => (v < 0 ? '-' : '') + formatoValor('dinero', Math.abs(v))
 interface Dato { texto: string; estado?: Estado | null }
 
@@ -225,7 +248,7 @@ function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, al
     .sort((a, b) => ordenEstado(a.estado) - ordenEstado(b.estado)), [seguimientos, registros])
   const [facturas, setFacturas] = useState<{ porPagar: number; vencidas: number; total: number } | null>(null)
   const [cuotas, setCuotas] = useState<{ pendientes: number; atrasadas: number; total: number } | null>(null)
-  const [tareas, setTareas] = useState<{ pendientes: number; vencidas: number; recordatorios: number; aTiempo: number; total: number } | null>(null)
+  const [tareas, setTareas] = useState<{ pendientes: number; vencidas: number; recordatorios: number; hechasHoy: number; delDia: number; aTiempo: number; total: number } | null>(null)
   const conTareas = activos.includes('tareas')
   // las tareas viven en sus tablas, no en los registros
   useEffect(() => {
@@ -233,7 +256,9 @@ function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, al
     const hoyCol = fechaColombia(new Date())
     obtenerTareas(sumarDias(hoyCol, -30)).then(d => {
       const h = deHoy(d.tareas, d.recordatorios, hoyCol)
-      setTareas({ pendientes: h.deHoy.length + h.sinFecha.length, vencidas: h.vencidas.length, recordatorios: h.recordatorios.length, ...aTiempoSemana(d.tareas, hoyCol) })
+      setTareas({ pendientes: h.deHoy.length + h.sinFecha.length, vencidas: h.vencidas.length, recordatorios: h.recordatorios.length,
+        // las del día, como en Tareas: hechas hoy, de hoy y vencidas
+        hechasHoy: h.hechasHoy.length, delDia: h.hechasHoy.length + h.deHoy.length + h.vencidas.length, ...aTiempoSemana(d.tareas, hoyCol) })
     }).catch(() => setTareas(null))
   }, [conTareas])
   const [meta, setMeta] = useState<ReturnType<typeof metaProxima> | null>(null)
@@ -244,7 +269,7 @@ function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, al
   useEffect(() => {
     if (!conFinanzas) return
     obtenerRecibos(`${mesesAntes(hoy.slice(0, 7), 12)}-01`).then(d => {
-      const filas = recibosDelMes(d.recibos, d.pagos, hoy)
+      const filas = recibosDelMes(d.recibos.filter(r => r.estado !== 'no_se_paga'), d.pagos, hoy)
       setFacturas({ porPagar: filas.filter(f => f.estado === 'por_pagar').length, vencidas: filas.filter(f => f.estado === 'vencido').length, total: filas.length })
     }).catch(() => setFacturas(null))
     obtenerPrestamos().then(d => {
@@ -304,16 +329,20 @@ function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, al
         {!seguimientos && [1, 2, 3].map(n => <div key={n} className="tarjeta esqueleto" />)}
         {activos.includes('finanzas') && (
           <Bloque modulo="finanzas" vacio={!finanzas?.hayDatos} cifra={finanzas ? pesos(finanzas.saldo) : ''} sub="saldo del mes" chapa={chapaFinanzas} montos={montos} datos={datosFinanzas}
-            puntos={finanzas?.puntos ?? []} formato={pesos} alAbrir={() => alIr({ tipo: 'finanzas' })} alCrear={() => alCrear('finanzas')} />
+            mini={finanzas && <EntroSalio entro={finanzas.ingresos} salio={finanzas.gastos + finanzas.ahorro} formato={pesos} />}
+            alAbrir={() => alIr({ tipo: 'finanzas' })} alRegistrar={() => alIr({ tipo: 'finanzas', abrir: 'gasto' })} alCrear={() => alCrear('finanzas')} />
         )}
         {activos.includes('salud') && (
-          <Bloque modulo="salud" vacio={!salud?.hayDatos} cifra={dias(salud?.diasGym ?? 0)} sub="de gym esta semana" datos={datosSalud}
-            puntos={salud?.puntos ?? []} alAbrir={() => alIr({ tipo: 'salud' })} alCrear={() => alCrear('salud')} />
+          <Bloque modulo="salud" vacio={!salud?.hayDatos} cifra={salud?.metaGym ? `${salud.diasGym} de ${salud.metaGym}` : dias(salud?.diasGym ?? 0)} sub={salud?.metaGym ? 'días de gym esta semana' : 'de gym esta semana'}
+            chapa={salud?.metaGym ? { texto: TEXTO_GYM[estadoSemana(salud.diasGym, salud.metaGym)], estado: estadoSemana(salud.diasGym, salud.metaGym) } : null} datos={datosSalud}
+            mini={salud && <SemanaGym semana={salud.semana} meta={salud.metaGym} />}
+            alAbrir={() => alIr({ tipo: 'salud' })} alRegistrar={() => alIr({ tipo: 'salud', abrir: 'ejercicio' })} alCrear={() => alCrear('salud')} />
         )}
         {activos.includes('habitos') && (
           <Bloque modulo="habitos" vacio={!habitos} cifra={habitos ? `${habitos.hechos} de ${habitos.total}` : ''} sub="hechos hoy" chapa={chapaHabitos}
             datos={habitos ? [{ texto: `Mejor racha viva ${dias(habitos.mejorRacha)}` }] : []}
-            puntos={habitos?.puntos ?? []} meta={habitos?.total} alAbrir={() => alIr({ tipo: 'habitos' })} alCrear={() => alCrear('habitos')} />
+            mini={habitos && <HabitosHoy lista={habitos.lista} />}
+            alAbrir={() => alIr({ tipo: 'habitos' })} alRegistrar={() => alIr({ tipo: 'habitos', enfocar: true })} alCrear={() => alCrear('habitos')} />
         )}
         {activos.includes('tareas') && (
           <Bloque modulo="tareas" vacio={!tareas || (!tareas.pendientes && !tareas.vencidas && !tareas.recordatorios && !tareas.total)}
@@ -321,7 +350,8 @@ function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, al
             chapa={tareas?.vencidas ? { texto: `${tareas.vencidas} ${tareas.vencidas === 1 ? 'vencida' : 'vencidas'}`, estado: 'fuera' }
               : tareas && !tareas.pendientes && !tareas.recordatorios ? { texto: 'Todo al día', estado: 'en_meta' } : null}
             datos={tareas?.total ? [{ texto: `${Math.round(tareas.aTiempo / tareas.total * 100)} % a tiempo esta semana (${tareas.aTiempo} de ${tareas.total})` }] : []}
-            puntos={[]} alAbrir={() => alIr({ tipo: 'tareas' })} alCrear={() => alCrear('tareas')} />
+            mini={tareas && tareas.delDia > 0 && <TareasHoy hechas={tareas.hechasHoy} total={tareas.delDia} />}
+            alAbrir={() => alIr({ tipo: 'tareas' })} alRegistrar={() => alIr({ tipo: 'tareas', abrir: 'tarea' })} alCrear={() => alCrear('tareas')} />
         )}
         {otros.length > 0 && (
           <section className="tarjeta t4 otros" aria-label="Otros">
@@ -352,10 +382,10 @@ function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, al
   )
 }
 
-function Bloque({ modulo, vacio, cifra, sub, chapa, montos, datos, puntos, meta, formato, alAbrir, alCrear }: {
+// Estado arriba, cifra con su frase, un minigráfico del módulo y al pie las dos acciones.
+function Bloque({ modulo, vacio, cifra, sub, chapa, montos, datos, mini, alAbrir, alRegistrar, alCrear }: {
   modulo: Modulo; vacio: boolean; cifra: string; sub: string; chapa?: Dato | null; montos?: [string, number][]; datos: Dato[]
-  puntos: Registro[]; meta?: number
-  formato?: (valor: number) => string; alAbrir: () => void; alCrear: () => void
+  mini?: ReactNode; alAbrir: () => void; alRegistrar: () => void; alCrear: () => void
 }) {
   if (vacio) return (
     <button className={`tarjeta ${COLOR[modulo]}`} onClick={alCrear}>
@@ -365,23 +395,28 @@ function Bloque({ modulo, vacio, cifra, sub, chapa, montos, datos, puntos, meta,
     </button>
   )
   return (
-    <button className={`tarjeta ${COLOR[modulo]}`} onClick={alAbrir}>
-      <h2>{NOMBRE[modulo]} <span aria-hidden="true">→</span></h2>
+    // toda la tarjeta abre el módulo; con teclado se llega por "Ver"
+    <article className={`tarjeta tocable ${COLOR[modulo]}`} onClick={alAbrir}>
+      <div className="cabeza-tarjeta">
+        <h2>{NOMBRE[modulo]}</h2>
+        {chapa?.estado && <span className="estado">{ICONO[chapa.estado]} {chapa.texto}</span>}
+      </div>
       <span className="cifra">{cifra}</span>
       <span className="sub">{sub}</span>
-      {chapa?.estado && <span className="estado">{ICONO[chapa.estado]} {chapa.texto}</span>}
       {montos && (
         <span className="montos">
           {montos.map(([nombre, valor]) => <span key={nombre}><span className="sub">{nombre}</span><strong>{pesos(valor)}</strong></span>)}
         </span>
       )}
+      {mini}
       <span className="datos">
         {datos.map(d => <span key={d.texto}>{d.estado && `${ICONO[d.estado]} `}{d.texto}</span>)}
       </span>
-      {puntos.length > 1 && (
-        <Grafico compacto puntos={puntos} meta={meta} formato={formato} color="#FFFFFF" colorMeta="#FFFFFFBF" descripcion={`Tendencia de ${NOMBRE[modulo]}`} />
-      )}
-    </button>
+      <div className="pie-tarjeta">
+        <button className="ver" onClick={e => { e.stopPropagation(); alAbrir() }}>Ver {NOMBRE[modulo].toLowerCase()} →</button>
+        <button className="registrar" onClick={e => { e.stopPropagation(); alRegistrar() }}>+ Registrar</button>
+      </div>
+    </article>
   )
 }
 
@@ -448,6 +483,7 @@ function Detalle({ seguimiento: s, indice, registros, alVolver, alCambiar }: {
       </section>
       {puntos.length > 0
         ? <Grafico puntos={puntos} meta={s.meta?.valor} color={color} colorMeta={cssVar('--tenue')} formato={formato}
+            etiquetaMeta={s.meta ? `Meta ${formatoValor(s.tipo_medida, s.meta.valor, s.unidad)}` : undefined}
             descripcion={`${s.nombre}: ${seSuma(s.tipo_medida) ? 'acumulado del período' : 'últimos registros'} frente a la meta`} />
         : <p className="tenue">Todavía no hay registros en este período.</p>}
 

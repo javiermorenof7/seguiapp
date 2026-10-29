@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
-  aprenderCategoria, crearRecibo, deshacerPago, obtenerRecibos, pagarRecibo, quitarRecibo, renombrarRecibo, verNumeroCuenta,
+  aprenderCategoria, cambiarDiaRecibo, cambiarEstadoRecibo, crearRecibo, deshacerPago, marcarSinPago, obtenerRecibos, pagarRecibo, quitarRecibo, renombrarRecibo, verNumeroCuenta,
 } from '../datos'
 import { formatoValor } from '../indicadores'
 import Grafico from '../Grafico'
-import Barras from './Barras'
 import { mesesAntes } from './calculos'
 import { categoriaDe, leerMonto, leidoDe, MONTO_INVALIDO, normalizar, type Categoria } from './parseo'
-import { diaAprendido, nombreRecibo, recibosDelMes, totalesDelMes, valoresEnElTiempo, type EstadoRecibo, type FilaRecibo } from './estadoRecibos'
+import { nombreRecibo, recibosDelMes, sinPagarMesAnterior, valoresEnElTiempo, type EstadoRecibo, type FilaRecibo } from './estadoRecibos'
 
 type Datos = Awaited<ReturnType<typeof obtenerRecibos>>
 
 const pesos = (v: number) => formatoValor('dinero', v)
 const cssVar = (nombre: string) => getComputedStyle(document.documentElement).getPropertyValue(nombre).trim()
 const hoyIso = () => new Date().toLocaleDateString('en-CA')
+const nombreMes = (periodo: string) => new Date(`${periodo}T12:00`).toLocaleDateString('es-CO', { month: 'long' })
 const ESTADO: Record<EstadoRecibo, { texto: string; clase: string }> = {
   vencido: { texto: '✕ Vencido', clase: 'fuera' },
   por_pagar: { texto: '◐ Por pagar', clase: 'cerca' },
@@ -42,20 +42,30 @@ export default function Recibos({ idGastos, categorias, aprendido, abrirNueva, a
   }, [hoy])
   useEffect(() => { cargar() }, [cargar])
 
-  const filas = useMemo(() => datos ? recibosDelMes(datos.recibos, datos.pagos, hoy) : [], [datos, hoy])
+  const activos = useMemo(() => datos?.recibos.filter(r => r.estado !== 'no_se_paga') ?? [], [datos])
+  const pausados = datos?.recibos.filter(r => r.estado === 'no_se_paga') ?? []
+  const filas = useMemo(() => datos ? recibosDelMes(activos, datos.pagos, hoy) : [], [datos, activos, hoy])
+  const [grupo, setGrupo] = useState<'por_pagar' | 'pagadas' | 'pausa'>('por_pagar')
+  const porPagar = filas.filter(f => f.estado === 'vencido' || f.estado === 'por_pagar')
+  const pagadas = filas.filter(f => f.estado === 'pagado' || f.estado === 'sin_pendiente')
+  const visibles = grupo === 'pagadas' ? pagadas : porPagar
+  const atrasados = useMemo(() => datos ? sinPagarMesAnterior(activos, datos.pagos, hoy) : [], [datos, activos, hoy])
   const idHogar = categorias.find(c => normalizar(c.nombre).startsWith('hogar'))?.id_etiqueta ?? null
 
   // Hogar va a básico en Hogar; personal, a personal en la categoría aprendida o la elegida (que se aprende).
-  async function pagar(idRecibo: string, nombre: string, servicio: string, tipo: 'hogar' | 'personal', valor: number, categoria: Categoria | null) {
+  // periodo: otro mes (lo que quedó sin pagar); entonces no mueve el día aprendido.
+  async function pagar(idRecibo: string, nombre: string, servicio: string, tipo: 'hogar' | 'personal', valor: number, categoria: Categoria | null,
+    periodo?: string) {
     const propuesta = categoriaDe(servicio, aprendido, categorias)
     await pagarRecibo({
-      id_recibo: idRecibo, fecha_periodo: `${hoy.slice(0, 7)}-01`, valor, fecha_pago: hoy,
-      dia_pago: diaAprendido([...(datos?.pagos.filter(p => p.id_recibo === idRecibo) ?? []),
-        { id_pago_recibo: '', id_recibo: idRecibo, id_registro: null, fecha_periodo: '', valor, fecha_pago: hoy, estado: 'pagado' }]),
+      id_recibo: idRecibo, fecha_periodo: periodo ?? `${hoy.slice(0, 7)}-01`, valor, fecha_pago: hoy,
+      // el día guardado es solo el que pone la persona; el aprendido se calcula al mostrar
+      dia_pago: null,
       gasto: {
         id_seguimiento: idGastos, nota: `Factura ${nombre}`,
         id_etiqueta: tipo === 'hogar' ? idHogar : categoria?.id_etiqueta ?? null,
-        grupo: tipo === 'hogar' ? 'basico' : 'personal',
+        // la factura personal toma el grupo de su categoría, como un gasto normal
+        grupo: tipo === 'hogar' ? 'basico' : null,
       },
     })
     if (tipo === 'personal' && categoria && categoria.id_etiqueta !== propuesta?.id_etiqueta)
@@ -80,17 +90,50 @@ export default function Recibos({ idGastos, categorias, aprendido, abrirNueva, a
     <>
       {aviso && <p role="status" className="aviso">{aviso}</p>}
       {error && <p role="alert" className="error">{error}</p>}
-      <DelMes filas={filas} />
+      <p className="tenue explica">Aquí guardas tus facturas fijas (luz, agua, internet…). Cada mes vuelven a quedar por pagar; las que pausas no cuentan hasta que las actives.</p>
+      <NuevoRecibo inicial={abrirNueva} categorias={categorias} alGuardar={async (nuevo, valor, categoria) => {
+        const nombre = nuevo.nombre_ubicacion ? `${nuevo.nombre_servicio} · ${nuevo.nombre_ubicacion}` : nuevo.nombre_servicio
+        if (valor === null) {
+          await crearRecibo({ ...nuevo, estado: 'no_se_paga' })
+          setAviso(`${nombre} guardada en pausa.`)
+          return cargar()
+        }
+        const id = await crearRecibo({ ...nuevo, estado: 'activo' })
+        await pagar(id, nombre, nuevo.nombre_servicio, nuevo.tipo_recibo, valor, categoria)
+      }} />
+      {atrasados.length > 0 && (
+        <section>
+          <h2>Quedaron sin pagar en {nombreMes(atrasados[0].periodo)}</h2>
+          <ul className="lista">
+            {atrasados.map(a => (
+              <SinPagar key={a.recibo.id_recibo} nombre={a.nombre} valor={a.valor}
+                propuesta={a.recibo.tipo_recibo === 'personal' ? categoriaDe(a.recibo.nombre_servicio, aprendido, categorias) : null}
+                alPagar={valor => pagar(a.recibo.id_recibo, a.nombre, a.recibo.nombre_servicio, a.recibo.tipo_recibo, valor,
+                    a.recibo.tipo_recibo === 'personal' ? categoriaDe(a.recibo.nombre_servicio, aprendido, categorias) : null, a.periodo)}
+                alDescartar={() => accion(() => marcarSinPago(a.recibo.id_recibo, a.periodo), `${a.nombre}: ${nombreMes(a.periodo)} quedó como no pagado.`)} />
+            ))}
+          </ul>
+        </section>
+      )}
       <section>
-        <h2>Facturas del mes</h2>
-        {!filas.length && <p className="tenue">Aún no tienes facturas. Agrega una abajo al pagarla.</p>}
+        <h2>Mis facturas</h2>
+        <div className="chips" role="radiogroup" aria-label="Ver facturas">
+          {([['por_pagar', 'Por pagar', porPagar.length], ['pagadas', 'Pagadas', pagadas.length], ['pausa', 'En pausa', pausados.length]] as const).map(([g, texto, n]) => (
+            <button key={g} type="button" role="radio" aria-checked={grupo === g} className="chip" onClick={() => setGrupo(g)}>{texto} ({n})</button>
+          ))}
+        </div>
+      </section>
+      {grupo !== 'pausa' && (
         <ul className="lista">
-          {filas.map(f => (
+          {!visibles.length && <li className="tenue">{grupo === 'por_pagar' ? 'No tienes facturas por pagar este mes.' : 'Aún no has pagado facturas este mes.'}</li>}
+          {visibles.map(f => (
             <FilaDeRecibo key={f.recibo.id_recibo} fila={f} categorias={categorias}
               propuesta={f.recibo.tipo_recibo === 'personal' ? categoriaDe(f.recibo.nombre_servicio, aprendido, categorias) : null}
               alPagar={(valor, categoria) => pagar(f.recibo.id_recibo, f.nombre, f.recibo.nombre_servicio, f.recibo.tipo_recibo, valor, categoria)
                 .then(() => setError(''))}
               alDeshacer={() => accion(() => deshacerPago(f.pago!), `Deshecho el pago de ${f.nombre}.`)}
+              alCambiarDia={d => accion(() => cambiarDiaRecibo(f.recibo.id_recibo, d), d ? `${f.nombre} vence el día ${d}.` : `${f.nombre}: el día se vuelve a aprender de tus pagos.`)}
+              alPausar={() => accion(() => cambiarEstadoRecibo(f.recibo.id_recibo, 'no_se_paga'), `${f.nombre} quedó en pausa.`)}
               alQuitar={() => confirm(`¿Quitar ${f.nombre}? Su historial de pagos se conserva.`) &&
                 accion(() => quitarRecibo(f.recibo.id_recibo), `${f.nombre} quitada.`)}
               alRenombrar={async nombres => {
@@ -101,23 +144,34 @@ export default function Recibos({ idGastos, categorias, aprendido, abrirNueva, a
               }} />
           ))}
         </ul>
-      </section>
-      <NuevoRecibo inicial={abrirNueva} categorias={categorias} alGuardar={async (nuevo, valor, categoria) => {
-        const id = await crearRecibo(nuevo)
-        const nombre = nuevo.nombre_ubicacion ? `${nuevo.nombre_servicio} · ${nuevo.nombre_ubicacion}` : nuevo.nombre_servicio
-        await pagar(id, nombre, nuevo.nombre_servicio, nuevo.tipo_recibo, valor, categoria)
-      }} />
+      )}
+      {grupo === 'pausa' && (
+        <>
+          <p className="tenue">No cuentan en el mes ni en los avisos. Actívalas cuando vuelvas a pagarlas.</p>
+          {!pausados.length && <p className="tenue">No tienes facturas en pausa.</p>}
+          <ul className="lista">
+            {pausados.map(r => (
+              <li key={r.id_recibo} className="dos">
+                <span>{nombreRecibo(r)}</span>
+                <button className="secundario" onClick={() => accion(() => cambiarEstadoRecibo(r.id_recibo, 'activo'), `${nombreRecibo(r)} está activa.`)}>Activar</button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       <EnElTiempo filas={filas} datos={datos} />
     </>
   )
 }
 
-function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alQuitar, alRenombrar }: {
+function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alPausar, alQuitar, alRenombrar, alCambiarDia }: {
   fila: FilaRecibo
   categorias: Categoria[]
   propuesta: Categoria | null
   alPagar: (valor: number, categoria: Categoria | null) => Promise<void>
   alDeshacer: () => void
+  alPausar: () => void
+  alCambiarDia: (dia: number | null) => void
   alQuitar: () => void
   alRenombrar: (nombres: { nombre_servicio: string; nombre_ubicacion: string | null }) => Promise<void>
 }) {
@@ -129,6 +183,7 @@ function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alQuit
   const [enviando, setEnviando] = useState(false)
   const [renombrando, setRenombrando] = useState<{ servicio: string; ubicacion: string } | null>(null)
   const pideCategoria = recibo.tipo_recibo === 'personal'
+  const [pagando, setPagando] = useState(false)
 
   async function pagar(evento: FormEvent) {
     evento.preventDefault()
@@ -139,6 +194,7 @@ function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alQuit
     try {
       await alPagar(n, categorias.find(c => c.id_etiqueta === elegida) ?? null)
       setMensaje('')
+      setPagando(false)
     } catch (e) {
       setMensaje((e as Error).message)
     } finally {
@@ -174,21 +230,50 @@ function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alQuit
     }
   }
 
+  const leido = leerMonto(monto)
   return (
     <li className="recibo">
       <span>
         {nombre}
-        <span className="tenue">
-          {dia ? ` · día ${dia}` : ''}
-          {recibo.numero_cuenta_enmascarado && <> · {numero ?? recibo.numero_cuenta_enmascarado}{' '}
-            <button type="button" className="enlace" onClick={alternarNumero}>{numero ? 'ocultar' : 'ver'}</button></>}
-          {' · '}<button type="button" className="enlace" aria-expanded={!!renombrando} onClick={() => {
-            setRenombrando(renombrando ? null : { servicio: recibo.nombre_servicio, ubicacion: recibo.nombre_ubicacion ?? '' }); setMensaje('')
-          }}>Renombrar</button>
-        </span>
+        <span className="tenue">{dia ? `vence el día ${dia}` : ''}</span>
       </span>
       <strong>{valor !== null ? pesos(valor) : ''}</strong>
       <span className={`estado ${ESTADO[estado].clase}`}>{ESTADO[estado].texto}</span>
+      {estado === 'pagado'
+        ? <button className="secundario" onClick={alDeshacer}>Deshacer</button>
+        : <button className="principal" aria-expanded={pagando} onClick={() => { setPagando(!pagando); setMensaje('') }}>{pagando ? 'Cancelar' : 'Pagar'}</button>}
+      {pagando && estado !== 'pagado' && (
+        <form className="fila-presupuesto" onSubmit={pagar}>
+          <label htmlFor={`r-${recibo.id_recibo}`}>Valor pagado</label>
+          <input id={`r-${recibo.id_recibo}`} maxLength={16} value={monto} onChange={ev => setMonto(ev.target.value)} placeholder="Ej. 85 mil" autoFocus />
+          <button className="principal" disabled={enviando || leido === null}>Confirmar pago{leido !== null ? ` de ${pesos(leido)}` : ''}</button>
+          {pideCategoria && (
+            <select aria-label={`Categoría de ${nombre}`} value={elegida} onChange={ev => setElegida(ev.target.value)}>
+              <option value="">Categoría…</option>
+              {categorias.map(c => <option key={c.id_etiqueta} value={c.id_etiqueta}>{c.nombre}</option>)}
+            </select>
+          )}
+        </form>
+      )}
+      <details className="mas">
+        <summary>Más</summary>
+        <div className="chips">
+          <button type="button" className="chip" onClick={() => {
+            setRenombrando(renombrando ? null : { servicio: recibo.nombre_servicio, ubicacion: recibo.nombre_ubicacion ?? '' }); setMensaje('')
+          }}>Renombrar</button>
+          {recibo.numero_cuenta_enmascarado && (
+            <button type="button" className="chip" onClick={alternarNumero}>{numero ? `Ocultar ${numero}` : `Ver número ${recibo.numero_cuenta_enmascarado}`}</button>
+          )}
+          <label className="chip">¿Qué día vence?
+            <select value={recibo.dia_pago ?? ''} onChange={ev => alCambiarDia(ev.target.value ? Number(ev.target.value) : null)}>
+              <option value="">{dia && !recibo.dia_pago ? `Aprendido: ${dia}` : 'No sé'}</option>
+              {Array.from({ length: 31 }, (_, i) => i + 1).map(d => <option key={d} value={d}>Día {d}</option>)}
+            </select>
+          </label>
+          {estado !== 'pagado' && <button type="button" className="chip" onClick={alPausar}>Pausar</button>}
+          <button type="button" className="chip" onClick={alQuitar}>Quitar factura</button>
+        </div>
+      </details>
       {renombrando && (
         <form className="chips" onSubmit={renombrar}>
           <label>Servicio
@@ -205,23 +290,6 @@ function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alQuit
           <button type="button" className="chip" onClick={() => { setRenombrando(null); setMensaje('') }}>Cancelar</button>
         </form>
       )}
-      {estado === 'pagado'
-        ? <div className="acciones"><button className="secundario" onClick={alDeshacer}>Deshacer</button></div>
-        : (
-          <form className="fila-presupuesto" onSubmit={pagar}>
-            <label htmlFor={`r-${recibo.id_recibo}`}>Valor real</label>
-            <input id={`r-${recibo.id_recibo}`} maxLength={16} value={monto} onChange={ev => setMonto(ev.target.value)} placeholder="Valor pagado (ej. 85 mil)" />
-            <button className="secundario" disabled={enviando}>Pagar</button>
-            {monto && <small className="ayuda" aria-live="polite">{leidoDe(monto)}</small>}
-            {pideCategoria && (
-              <select aria-label={`Categoría de ${nombre}`} value={elegida} onChange={ev => setElegida(ev.target.value)}>
-                <option value="">Categoría…</option>
-                {categorias.map(c => <option key={c.id_etiqueta} value={c.id_etiqueta}>{c.nombre}</option>)}
-              </select>
-            )}
-            <button type="button" className="enlace" onClick={alQuitar}>Quitar factura</button>
-          </form>
-        )}
       {mensaje && <p role="alert" className="error">{mensaje}</p>}
     </li>
   )
@@ -230,7 +298,8 @@ function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alQuit
 function NuevoRecibo({ inicial, categorias, alGuardar }: {
   inicial?: boolean
   categorias: Categoria[]
-  alGuardar: (nuevo: Parameters<typeof crearRecibo>[0], valor: number, categoria: Categoria | null) => Promise<void>
+  // valor null = guardar sin pagar; false = no confirmó el pago
+  alGuardar: (nuevo: Omit<Parameters<typeof crearRecibo>[0], 'estado'>, valor: number | null, categoria: Categoria | null) => Promise<unknown>
 }) {
   const [abierto, setAbierto] = useState(!!inicial)
   const [servicio, setServicio] = useState('')
@@ -241,20 +310,20 @@ function NuevoRecibo({ inicial, categorias, alGuardar }: {
   const [elegida, setElegida] = useState('')
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
+  const [pagarAhora, setPagarAhora] = useState(true)
 
-  async function guardar(evento: FormEvent) {
-    evento.preventDefault()
-    const valor = leerMonto(monto)
+  async function guardar() {
+    const valor = pagarAhora ? leerMonto(monto) : null
     if (!servicio.trim()) return setError('Escribe el servicio, por ejemplo "Luz".')
     if (tipo === 'hogar' && !ubicacion.trim()) return setError('Escribe la ubicación del hogar.')
-    if (valor === null) return setError(MONTO_INVALIDO)
-    if (tipo === 'personal' && !elegida) return setError('Elige en qué categoría va.')
+    if (pagarAhora && valor === null) return setError(MONTO_INVALIDO)
+    if (pagarAhora && tipo === 'personal' && !elegida) return setError('Elige en qué categoría va.')
     setEnviando(true)
     try {
-      await alGuardar({
+      if (await alGuardar({
         nombre_servicio: servicio.trim(), tipo_recibo: tipo,
         nombre_ubicacion: tipo === 'hogar' ? ubicacion.trim() : null, numero_cuenta: numero.trim() || null,
-      }, valor, categorias.find(c => c.id_etiqueta === elegida) ?? null)
+      }, valor, categorias.find(c => c.id_etiqueta === elegida) ?? null) === false) return
       setServicio(''); setUbicacion(''); setNumero(''); setMonto(''); setElegida(''); setError(''); setAbierto(false)
     } catch (e) {
       setError((e as Error).message)
@@ -265,11 +334,11 @@ function NuevoRecibo({ inicial, categorias, alGuardar }: {
 
   return (
     <section>
-      <button className="secundario" aria-expanded={abierto} onClick={() => setAbierto(!abierto)}>
-        {abierto ? 'Cerrar' : 'Pagar una factura nueva'}
+      <button className={abierto ? 'secundario' : 'principal'} aria-expanded={abierto} onClick={() => setAbierto(!abierto)}>
+        {abierto ? 'Cerrar' : '+ Agregar factura'}
       </button>
       {abierto && (
-        <form className="formulario" onSubmit={guardar}>
+        <form className="formulario" onSubmit={ev => { ev.preventDefault(); guardar() }}>
           <div className="chips" role="radiogroup" aria-label="Tipo de factura">
             {(['hogar', 'personal'] as const).map(t => (
               <button key={t} type="button" role="radio" aria-checked={tipo === t} className="chip" onClick={() => setTipo(t)}>
@@ -281,7 +350,7 @@ function NuevoRecibo({ inicial, categorias, alGuardar }: {
           {tipo === 'hogar' && (
             <label>Ubicación<input required maxLength={60} value={ubicacion} onChange={ev => setUbicacion(ev.target.value)} placeholder="Dónde llega la factura" autoComplete="off" /><small className="ayuda">Ej.: Casa, La Mesa</small></label>
           )}
-          {tipo === 'personal' && (
+          {tipo === 'personal' && pagarAhora && (
             <label>Categoría
               <select value={elegida} onChange={ev => setElegida(ev.target.value)}>
                 <option value="">Elige…</option>
@@ -293,8 +362,16 @@ function NuevoRecibo({ inicial, categorias, alGuardar }: {
             <input maxLength={40} value={numero} onChange={ev => setNumero(ev.target.value)} autoComplete="off" />
             <small className="ayuda">El de la factura; se muestra oculto (****1234)</small>
           </label>
-          <label>Valor pagado<input required maxLength={16} value={monto} onChange={ev => setMonto(ev.target.value)} placeholder="Valor que pagaste" /><small className="ayuda" aria-live="polite">{leidoDe(monto) || 'Ej.: 85 mil o 85.000'}</small></label>
-          <button className="principal" disabled={enviando}>Guardar y pagar</button>
+          <div className="chips" role="radiogroup" aria-label="¿La pagas ahora?">
+            <span className="tenue">¿La pagas ahora?</span>
+            <button type="button" role="radio" aria-checked={pagarAhora} className="chip" onClick={() => setPagarAhora(true)}>Sí, la pago ahora</button>
+            <button type="button" role="radio" aria-checked={!pagarAhora} className="chip" onClick={() => setPagarAhora(false)}>No, solo guardarla</button>
+          </div>
+          {pagarAhora && <label>Valor pagado<input maxLength={16} value={monto} onChange={ev => setMonto(ev.target.value)} placeholder="Valor que pagaste" /><small className="ayuda" aria-live="polite">{leidoDe(monto) || 'Ej.: 85 mil o 85.000'}</small></label>}
+          <button className="principal" disabled={enviando}>
+            {pagarAhora ? `Guardar y pagar${leerMonto(monto) !== null ? ` ${pesos(leerMonto(monto)!)}` : ''}` : 'Guardar en pausa'}
+          </button>
+          {!pagarAhora && <small className="ayuda">Queda en "En pausa": no cuenta hasta que la actives.</small>}
           {error && <p role="alert" className="error">{error}</p>}
         </form>
       )}
@@ -302,19 +379,46 @@ function NuevoRecibo({ inicial, categorias, alGuardar }: {
   )
 }
 
-function DelMes({ filas }: { filas: FilaRecibo[] }) {
-  const t = totalesDelMes(filas)
-  const series = useMemo(() => [{
-    nombre: 'Este mes', datos: [t.pagado, t.porPagar, t.vencido], color: [cssVar('--en-meta'), cssVar('--cerca'), cssVar('--fuera')],
-  }], [t.pagado, t.porPagar, t.vencido])
-  if (!t.pagado && !t.porPagar && !t.vencido) return null
+function SinPagar({ nombre, valor, propuesta, alPagar, alDescartar }: {
+  nombre: string; valor: number; propuesta: Categoria | null; alPagar: (valor: number) => Promise<unknown>; alDescartar: () => void
+}) {
+  const [monto, setMonto] = useState(Math.round(valor).toLocaleString('es-CO'))
+  const [pagando, setPagando] = useState(false)
+  const [mensaje, setMensaje] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const leido = leerMonto(monto)
+
+  async function pagar(evento: FormEvent) {
+    evento.preventDefault()
+    if (leido === null) return setMensaje(MONTO_INVALIDO)
+    setEnviando(true)
+    try {
+      await alPagar(leido)
+      setMensaje('')
+    } catch (e) {
+      setMensaje((e as Error).message)
+    } finally {
+      setEnviando(false)
+    }
+  }
+
   return (
-    <section>
-      <h2>¿Cómo voy con las facturas del mes?</h2>
-      <Barras horizontal etiquetas={['Pagado', 'Por pagar', 'Vencido']} series={series} formato={pesos}
-        colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
-        descripcion={`Facturas del mes: pagado ${pesos(t.pagado)}, por pagar ${pesos(t.porPagar)}, vencido ${pesos(t.vencido)}`} />
-    </section>
+    <li className="recibo">
+      <span>{nombre}{propuesta && <span className="tenue">{propuesta.nombre}</span>}</span>
+      <strong>{pesos(valor)}</strong>
+      <span className="estado fuera">✕ Sin pagar</span>
+      <button className="principal" aria-expanded={pagando} onClick={() => { setPagando(!pagando); setMensaje('') }}>{pagando ? 'Cancelar' : 'Pagar'}</button>
+      {pagando ? (
+        <form className="fila-presupuesto" onSubmit={pagar}>
+          <label htmlFor={`a-${nombre}`}>Valor pagado</label>
+          <input id={`a-${nombre}`} maxLength={16} value={monto} onChange={ev => setMonto(ev.target.value)} autoFocus />
+          <button className="principal" disabled={enviando || leido === null}>Confirmar pago{leido !== null ? ` de ${pesos(leido)}` : ''}</button>
+        </form>
+      ) : (
+        <div className="acciones"><button type="button" className="enlace" onClick={alDescartar}>No se pagó ese mes</button></div>
+      )}
+      {mensaje && <p role="alert" className="error">{mensaje}</p>}
+    </li>
   )
 }
 
@@ -335,6 +439,7 @@ function EnElTiempo({ filas, datos }: { filas: FilaRecibo[]; datos: Datos }) {
         </label>
       </div>
       <Grafico puntos={puntos} color={cssVar('--acento')} colorMeta={cssVar('--tenue')} formato={pesos}
+        formatoEje={v => `$${new Intl.NumberFormat('es-CO', { notation: 'compact', maximumFractionDigits: 1 }).format(v)}`}
         descripcion={`Valor pagado de ${actual.nombre} en el último año`} />
     </section>
   )

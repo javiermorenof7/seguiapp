@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { diasHechos, leerCantidad, mismoNombre, mejorRacha, racha, totalDelDia, ultimosDias, type Marca } from './calculos'
+import { calendarioSemanas, cumplidosEstaSemana, diasHechos, leerCantidad, mismoNombre, mejorRacha, racha, totalDelDia, ultimosDias, type Marca } from './calculos'
 
 const HOY = '2026-10-26'
 const m = (fecha: string, valor = 1): Marca => ({ fecha, valor })
@@ -37,4 +37,20 @@ describe('últimos días', () => {
     expect(dias).toEqual([m('2026-10-24', 1), m('2026-10-25', 0), m('2026-10-26', 3)])
   })
   it('días hechos solo en la ventana', () => expect(diasHechos([m('2026-09-26'), m('2026-09-27'), m(HOY)], HOY)).toBe(2))
+})
+
+describe('calendario de semanas', () => {
+  it('va de lunes a domingo, la última semana con hoy, sin días futuros', () => {
+    const c = calendarioSemanas([m('2026-10-26'), m('2026-10-20', 0.5)], HOY, 1, 2)
+    expect(c).toHaveLength(14)
+    expect(c[0].fecha).toBe('2026-10-19')
+    expect(c[1]).toEqual({ fecha: '2026-10-20', nivel: 1 })
+    expect(c[7]).toEqual({ fecha: '2026-10-26', nivel: 2 })
+    expect(c[8].nivel).toBeNull()
+  })
+
+  it('cuenta solo lo cumplido de la semana en curso', () => {
+    const c = calendarioSemanas([m('2026-10-26'), m('2026-10-27', 0.5), m('2026-10-20')], HOY, 1, 2)
+    expect(cumplidosEstaSemana(c)).toBe(1)
+  })
 })

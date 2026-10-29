@@ -105,13 +105,26 @@ export async function crearHabito(datos: Pick<Seguimiento, 'nombre' | 'tipo_medi
   return vuelto[0].id_seguimiento as string
 }
 
+// 23505: el nombre ya existe, también entre los quitados.
+async function cambiarNombre(tabla: 'seguimiento' | 'etiqueta', id: string, nuevo: string, repetido: string) {
+  const { error } = await supabase.from(tabla).update({ nombre: nuevo }).eq(`id_${tabla}`, id)
+  if ((error as { code?: string } | null)?.code === '23505') throw new ErrorDatos(repetido)
+  revisar({ data: null, error })
+}
+
 // Lo aprendido con el nombre viejo pasa al nuevo.
 export async function renombrarHabito(id: string, viejo: string, nuevo: string) {
-  const { error } = await supabase.from('seguimiento').update({ nombre: nuevo }).eq('id_seguimiento', id)
-  if ((error as { code?: string } | null)?.code === '23505') throw new ErrorDatos(`Ya existe un hábito llamado ${nuevo} (o lo tuviste antes).`)
-  revisar({ data: null, error })
+  await cambiarNombre('seguimiento', id, nuevo, `Ya existe un hábito llamado ${nuevo} (o lo tuviste antes).`)
   revisar(await supabase.from('alias').update({ texto_correcto: nuevo }).eq('tipo', 'habito').eq('texto_correcto', viejo))
 }
+
+export async function renombrarEjercicio(idEtiqueta: string, viejo: string, nuevo: string) {
+  await cambiarNombre('etiqueta', idEtiqueta, nuevo, `Ya existe un ejercicio llamado ${nuevo} (o lo tuviste antes).`)
+  revisar(await supabase.from('alias').update({ texto_correcto: nuevo }).eq('tipo', 'ejercicio').eq('texto_correcto', viejo))
+}
+
+export const renombrarMedida = (id: string, nuevo: string) =>
+  cambiarNombre('seguimiento', id, nuevo, `Ya tienes algo llamado ${nuevo} (o lo tuviste antes).`)
 
 export async function quitarSeguimiento(id: string) {
   revisar(await supabase.from('seguimiento').update({ estado: 'eliminado' }).eq('id_seguimiento', id))
@@ -303,6 +316,10 @@ export async function marcarTarea(idTarea: string, hecha: boolean) {
     : { estado: 'pendiente', fecha_realizacion: null }).eq('id_tarea', idTarea))
 }
 
+export async function editarTarea(idTarea: string, descripcion: string) {
+  revisar(await supabase.from('tarea').update({ descripcion }).eq('id_tarea', idTarea))
+}
+
 export async function quitarTarea(idTarea: string) {
   revisar(await supabase.from('tarea').update({ estado: 'eliminado' }).eq('id_tarea', idTarea))
 }
@@ -311,7 +328,7 @@ export async function crearRecordatorio(r: Omit<Recordatorio, 'id_recordatorio' 
   revisar(await supabase.from('recordatorio').insert({ ...r, estado: r.fecha_proximo_envio ? 'activo' : 'terminado' }))
 }
 
-export async function cambiarRecordatorio(idRecordatorio: string, cambios: Partial<Pick<Recordatorio, 'fecha_proximo_envio' | 'estado'>> | { estado: 'eliminado' }) {
+export async function cambiarRecordatorio(idRecordatorio: string, cambios: Partial<Pick<Recordatorio, 'fecha_proximo_envio' | 'estado' | 'descripcion'>> | { estado: 'eliminado' }) {
   revisar(await supabase.from('recordatorio').update(cambios).eq('id_recordatorio', idRecordatorio))
 }
 
@@ -518,6 +535,13 @@ export async function registrarSerie(s: {
     await eliminarRegistro(id_registro).catch(() => {})
     revisar({ data: null, error })
   }
+}
+
+// Corrige una serie ya guardada con el mismo reparto de registrarSerie.
+export async function corregirSerie(idRegistro: string, s: { series: number; repeticiones: number; peso: number | null }) {
+  revisar(await supabase.from('serie_gym')
+    .update({ cantidad_series: s.series, cantidad_repeticiones: s.repeticiones, peso_kilogramos: s.peso }).eq('id_registro', idRegistro))
+  revisar(await supabase.from('registro').update({ valor: s.peso ?? s.repeticiones }).eq('id_registro', idRegistro))
 }
 
 // Cambia o quita (valor null) la meta general de un seguimiento.

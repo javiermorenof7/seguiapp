@@ -19,10 +19,9 @@ describe('activos', () => {
 
 describe('resumenFinanzas', () => {
   const lista = [s('g', 'Gastos', 'finanzas'), s('i', 'Ingresos', 'finanzas'), s('a', 'Ahorro', 'finanzas')]
-  it('saldo del mes y su curva día a día, sin lo de meses anteriores', () => {
+  it('saldo del mes, sin lo de meses anteriores', () => {
     const f = resumenFinanzas(lista, [r('i', '2026-10-01', 1000), r('g', '2026-10-01', 200), r('a', '2026-10-05', 300), r('g', '2026-09-30', 50)], HOY)!
     expect(f).toMatchObject({ idGastos: 'g', ingresos: 1000, gastos: 200, ahorro: 300, saldo: 500, hayDatos: true })
-    expect(f.puntos).toEqual([{ fecha: '2026-10-01', valor: 800 }, { fecha: '2026-10-05', valor: 500 }])
   })
   it('cuenta los ingresos fijos pendientes y atrasados del mes', () => {
     const fuente = (fecha: string, id_etiqueta: string) => ({ ...r('i', fecha, 1000), id_etiqueta })
@@ -41,18 +40,21 @@ describe('resumenSalud', () => {
       r('p', '2026-09-20', 80), r('p', '2026-10-20', 78.5), r('c', '2026-10-10', 90),
     ], HOY)
     expect(x).toMatchObject({ diasGym: 1, peso: { valor: 78.5, cambio30: -1.5 }, cintura: { valor: 90 }, hayDatos: true })
-    expect(x.puntos).toEqual([{ fecha: '2026-10-20', valor: 78.5 }])
+  })
+  it('la semana de gym de lunes a domingo, sin los días que no han llegado', () => {
+    const x = resumenSalud(lista, [r('gym', '2026-10-21', 60), r('gym', '2026-10-23', 60), r('gym', '2026-10-19', 60)], '2026-10-23')
+    expect(x.semana).toEqual([true, false, true, false, true, null, null])
+    expect(x.metaGym).toBeNull()
   })
   it('sin datos', () => expect(resumenSalud(lista, [], HOY)).toMatchObject({ diasGym: 0, peso: null, cintura: null, hayDatos: false }))
 })
 
 describe('resumenHabitos', () => {
-  it('hechos hoy según la meta, mejor racha viva y hechos por día de la semana', () => {
+  it('hechos hoy según la meta, mejor racha viva y cada hábito de hoy', () => {
     const x = resumenHabitos([s('agua', 'Agua', 'habitos', 2), s('leer', 'Leer', 'habitos')], [
       r('agua', '2026-10-26', 1), r('leer', '2026-10-26', 1), r('leer', '2026-10-25', 1), r('agua', '2026-10-24', 2),
     ], HOY)!
     expect(x).toMatchObject({ total: 2, hechos: 1, mejorRacha: 2 })
-    expect(x.puntos.map(p => p.valor)).toEqual([0, 0, 0, 0, 1, 1, 1])
-    expect(x.puntos[6].fecha).toBe(HOY)
+    expect(x.lista).toEqual([{ nombre: 'Agua', hecho: false }, { nombre: 'Leer', hecho: true }])
   })
 })

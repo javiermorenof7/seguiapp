@@ -5,12 +5,14 @@ import {
 import { formatoValor } from '../indicadores'
 import { normalizar } from '../finanzas/parseo'
 import Grafico from '../Grafico'
+import Periodo, { useRegistrosDe, type Rango } from '../Periodo'
 import SinDatos from '../SinDatos'
+import MapaSemanas from '../MapaSemanas'
 import Barras from '../finanzas/Barras'
 import { Avance } from '../finanzas/Medidas'
 import Historial, { FilaSimple } from '../historial/Historial'
 import { parecido, restarDias } from '../salud/calculos'
-import { dias, diasHechos, leerCantidad, mismoNombre, mejorRacha, racha, totalDelDia, ultimosDias, type Leido, type Marca } from './calculos'
+import { calendarioSemanas, cumplidosEstaSemana, dias, diasHechos, leerCantidad, mismoNombre, mejorRacha, racha, totalDelDia, ultimosDias, type Leido, type Marca } from './calculos'
 
 const cssVar = (nombre: string) => getComputedStyle(document.documentElement).getPropertyValue(nombre).trim()
 const hoyIso = () => new Date().toLocaleDateString('en-CA')
@@ -334,7 +336,8 @@ function Formulario({ habitos, sugeridos = [], hoy, enviando, enfocar, alEnviar 
 function Constancia({ habitos, marcas, hoy, dias: n }: { habitos: Seguimiento[]; marcas: Map<string, Marca[]>; hoy: string; dias: 7 | 30 }) {
   const filas = useMemo(() => habitos.map(h => ({ nombre: h.nombre, dias: diasHechos(marcas.get(h.id_seguimiento) ?? [], hoy, metaDe(h), n) }))
     .sort((a, b) => b.dias - a.dias), [habitos, marcas, hoy, n])
-  const series = useMemo(() => [{ nombre: 'Días', color: cssVar('--c1'), datos: filas.map(f => f.dias) }], [filas])
+  const color = (d: number) => cssVar(d >= n ? '--en-meta' : d >= n / 2 ? '--cerca' : '--fuera')
+  const series = useMemo(() => [{ nombre: 'Días', color: filas.map(f => color(f.dias)), datos: filas.map(f => f.dias) }], [filas]) // color solo depende de n
   const etiquetas = useMemo(() => filas.map(f => f.nombre), [filas])
   if (filas.every(f => !f.dias)) return (
     <SinDatos titulo={`No cumpliste hábitos en los últimos ${n} días`} detalle="Marca uno hoy en Mis hábitos para empezar una racha." />
@@ -343,7 +346,12 @@ function Constancia({ habitos, marcas, hoy, dias: n }: { habitos: Seguimiento[];
     <section>
       <h2>¿Cuántos días los cumplo?</h2>
       <p className="tenue">De los últimos {n} días</p>
-      <Barras horizontal etiquetas={etiquetas} series={series} formato={v => `${Math.round(v)} de ${n}`}
+      <p className="leyenda-estado">
+        <span><i style={{ background: cssVar('--en-meta') }} />Todos los días</span>
+        <span><i style={{ background: cssVar('--cerca') }} />La mitad o más</span>
+        <span><i style={{ background: cssVar('--fuera') }} />Menos de la mitad</span>
+      </p>
+      <Barras horizontal maximo={n} etiquetas={etiquetas} series={series} formato={v => `${Math.round(v)} de ${n}`}
         colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
         descripcion={`Días cumplidos en los últimos ${n}: ${filas.map(f => `${f.nombre} ${f.dias}`).join(', ')}`} />
     </section>
@@ -387,9 +395,14 @@ function Detalle({ habitos, marcas, hoy, alCambiar }: {
 }) {
   const [elegido, setElegido] = useState('')
   const h = habitos.find(x => x.id_seguimiento === elegido) ?? habitos[0]
-  const dias30 = useMemo(() => ultimosDias(marcas.get(h.id_seguimiento) ?? [], hoy), [marcas, h, hoy])
+  const [rango, setRango] = useState<Rango>(30)
+  const suyas = marcas.get(h.id_seguimiento) ?? []
+  const historial = useRegistrosDe(h.id_seguimiento, h.tipo_medida === 'numero' ? rango : 30, suyas)
   const meta = metaDe(h)
-  const cumple = (v: number) => v > 0 && v >= (meta ?? 0)
+  // con "Todo" se ve desde la primera marca
+  const enRango = useMemo(() => ultimosDias(historial, hoy, rango || Math.max(2, ...historial.map(r => Math.round((Date.parse(hoy) - Date.parse(r.fecha)) / 864e5) + 1))),
+    [historial, hoy, rango])
+  const calendario = useMemo(() => calendarioSemanas(suyas, hoy, meta), [suyas, hoy, meta])
   return (
     <section>
       <h2>¿Cómo voy en cada hábito?</h2>
@@ -400,14 +413,19 @@ function Detalle({ habitos, marcas, hoy, alCambiar }: {
           </select>
         </label>
       </div>
-      {h.tipo_medida === 'numero' ? (
-        <Grafico puntos={dias30} meta={meta} color={cssVar('--acento')} colorMeta={cssVar('--tenue')}
-          formato={v => formatoValor('numero', v, h.unidad)}
-          descripcion={`${h.nombre} por día en los últimos 30${meta ? '; la línea punteada es la meta diaria' : ''}`} />
-      ) : (
-        <div className="calendario" role="img" aria-label={`${h.nombre}: hecho ${dias30.filter(d => cumple(d.valor)).length} de los últimos 30 días`}>
-          {dias30.map(d => <span key={d.fecha} className={cumple(d.valor) ? 'hecho' : ''} title={`${diaMes(d.fecha)}${cumple(d.valor) ? ' · hecho' : ''}`} />)}
-        </div>
+      <p><strong>Racha: {dias(racha(suyas, hoy, meta))}</strong> <span className="tenue">· mejor {dias(mejorRacha(suyas, meta))}</span></p>
+      <h3>Últimas 12 semanas</h3>
+      <MapaSemanas dias={calendario} hoy={hoy}
+        descripcion={`${h.nombre}: cumplido ${calendario.filter(d => d.nivel === 2).length} de los últimos ${calendario.filter(d => d.nivel !== null).length} días`}
+        textos={{ hecho: 'Cumplido', parcial: h.tipo_medida === 'numero' ? 'Sin llegar a la meta' : undefined, nada: 'Nada' }}
+        resumen={<p>Esta semana: <strong>{dias(cumplidosEstaSemana(calendario))} de 7</strong></p>} />
+      {h.tipo_medida === 'numero' && (
+        <>
+          <Periodo valor={rango} alCambiar={setRango} />
+          <Grafico puntos={enRango} meta={meta} color={cssVar('--acento')} colorMeta={cssVar('--tenue')}
+            formato={v => formatoValor('numero', v, h.unidad)} etiquetaMeta={meta ? `Meta ${formatoValor('numero', meta, h.unidad)}` : undefined}
+            descripcion={`${h.nombre} por día ${rango ? `en los últimos ${rango} días` : 'en todo el historial'}${meta ? '; la línea punteada es la meta diaria' : ''}`} />
+        </>
       )}
       {h.tipo_medida === 'numero' && <MetaDiaria key={h.id_seguimiento} habito={h} alCambiar={alCambiar} />}
     </section>

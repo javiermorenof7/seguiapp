@@ -73,20 +73,25 @@ export function progreso(sesiones: Sesion[], ejercicio: string) {
   }
 }
 
-// Mayor peso de cada día en un ejercicio (los últimos 20 días con peso).
-export function pesoPorDia(sesiones: Sesion[], ejercicio: string): Medicion[] {
+// Mayor peso de cada día en un ejercicio desde una fecha.
+export function pesoPorDia(sesiones: Sesion[], ejercicio: string, desde = ''): Medicion[] {
   const maximo = new Map<string, number>()
-  for (const s of sesiones) if (s.ejercicio === ejercicio && s.peso !== null) maximo.set(s.fecha, Math.max(maximo.get(s.fecha) ?? 0, s.peso))
-  return [...maximo].sort((a, b) => a[0].localeCompare(b[0])).slice(-20).map(([fecha, valor]) => ({ fecha, valor }))
+  for (const s of sesiones) if (s.ejercicio === ejercicio && s.peso !== null && s.fecha >= desde) maximo.set(s.fecha, Math.max(maximo.get(s.fecha) ?? 0, s.peso))
+  return [...maximo].sort((a, b) => a[0].localeCompare(b[0])).map(([fecha, valor]) => ({ fecha, valor }))
 }
+
+// Índices de los días que superan todo lo anterior (cada récord nuevo).
+export const indicesRecord = (puntos: Medicion[]) =>
+  puntos.flatMap((p, i) => i && p.valor > Math.max(...puntos.slice(0, i).map(x => x.valor)) ? [i] : [])
 
 export const diasEntrenados = (sesiones: Sesion[], hoy: string, dias = 30) =>
   new Set(sesiones.filter(s => diasEntre(s.fecha, hoy) < dias && s.fecha <= hoy).map(s => s.fecha)).size
 
-// Días entrenados en cada una de las últimas n semanas de 7 días, la más antigua primero.
+// Días entrenados en cada una de las últimas n semanas de lunes a domingo, la más antigua primero; la última es la que va.
 export function diasPorSemana(sesiones: Sesion[], hoy: string, n = 8) {
+  const lunes = restarDias(hoy, (new Date(`${hoy}T12:00:00Z`).getUTCDay() || 7) - 1)
   return Array.from({ length: n }, (_, i) => {
-    const hasta = restarDias(hoy, 7 * (n - 1 - i)), desde = restarDias(hasta, 6)
+    const desde = restarDias(lunes, 7 * (n - 1 - i)), hasta = restarDias(desde, -6)
     return { desde, dias: new Set(sesiones.filter(s => s.fecha >= desde && s.fecha <= hasta).map(s => s.fecha)).size }
   })
 }
@@ -100,3 +105,16 @@ export function comparar(valor: number, anteriores: Medicion[], hoy: string) {
     hace30: antes ? { fecha: antes.fecha, cambio: valor - antes.valor } : null,
   }
 }
+
+// Meta de días por semana: la que puso la persona o, sin meta, su promedio de las semanas dadas (null si no entrenó).
+export function metaSemanal(semanas: { dias: number }[], meta?: number | null) {
+  if (meta) return { valor: meta, propia: true }
+  const promedio = Math.round(semanas.reduce((t, s) => t + s.dias, 0) / (semanas.length || 1))
+  return promedio ? { valor: promedio, propia: false } : null
+}
+
+// Cuánto falta para la meta en la dirección que se busca; 0 si ya se cumplió.
+export const faltaParaMeta = (valor: number, meta: number, direccion: 'menos_es_mejor' | 'mas_es_mejor') =>
+  Math.max(0, Math.round((direccion === 'menos_es_mejor' ? valor - meta : meta - valor) * 100) / 100)
+
+export const estadoSemana = (dias: number, meta: number) => dias >= meta ? 'en_meta' : dias >= meta - 1 ? 'cerca' : 'fuera'

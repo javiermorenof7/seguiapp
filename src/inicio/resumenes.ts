@@ -1,6 +1,6 @@
 // Datos de cada bloque del inicio. "hoy" es 'AAAA-MM-DD'.
 import type { RegistroGuardado, Seguimiento } from '../datos'
-import { estado, inicioPeriodo, type Registro } from '../indicadores'
+import { estado, inicioPeriodo } from '../indicadores'
 import { resumenMes, type Movimiento, type TipoMovimiento } from '../finanzas/calculos'
 import { racha, totalDelDia } from '../habitos/calculos'
 import { estadoFijo, fijos } from '../finanzas/ingresos'
@@ -12,7 +12,6 @@ export const PLANTILLAS: Record<Modulo, string[]> = { finanzas: ['finanzas'], sa
 export const moduloDe = (codigo: string | null) => MODULOS.find(m => PLANTILLAS[m].includes(codigo ?? ''))
 export const TIPO_FINANZAS: Record<string, TipoMovimiento> = { Gastos: 'gasto', Ingresos: 'ingreso', Ahorro: 'ahorro' }
 
-const SIGNO: Record<TipoMovimiento, number> = { ingreso: 1, gasto: -1, ahorro: -1 }
 const ultimo = (registros: RegistroGuardado[]) => registros.reduce<RegistroGuardado | null>((u, r) => !u || r.fecha > u.fecha ? r : u, null)
 const de = (registros: RegistroGuardado[], s?: Seguimiento) => s ? registros.filter(r => r.id_seguimiento === s.id_seguimiento) : []
 
@@ -22,7 +21,7 @@ export function activos(seguimientos: Seguimiento[], plantillas: string[]): Set<
   return new Set(MODULOS.filter(m => PLANTILLAS[m].some(c => codigos.has(c))))
 }
 
-// Saldo del mes y su curva: saldo acumulado al cierre de cada día con movimientos.
+// Saldo del mes con lo que entró y lo que salió (gastos y ahorro).
 export function resumenFinanzas(seguimientos: Seguimiento[], registros: RegistroGuardado[], hoy: string) {
   const suyos = seguimientos.filter(s => s.codigo_plantilla === 'finanzas' && TIPO_FINANZAS[s.nombre])
   if (!suyos.length) return null
@@ -32,18 +31,12 @@ export function resumenFinanzas(seguimientos: Seguimiento[], registros: Registro
     const tipo = tipoDe.get(r.id_seguimiento)
     return tipo ? [{ fecha: r.fecha, valor: r.valor, tipo, id_etiqueta: r.id_etiqueta }] : []
   })
-  const porDia = new Map<string, number>()
-  let saldo = 0
-  for (const m of movimientos.filter(m => m.fecha.startsWith(mes)).sort((a, b) => a.fecha.localeCompare(b.fecha))) {
-    porDia.set(m.fecha, (saldo += SIGNO[m.tipo] * m.valor))
-  }
   const estados = fijos(movimientos, mes).map(f => estadoFijo(f, movimientos, hoy))
   return {
     idGastos: (suyos.find(s => s.nombre === 'Gastos') ?? suyos[0]).id_seguimiento,
     ingresosFijos: { total: estados.length, pendientes: estados.filter(e => e === 'pendiente').length, atrasados: estados.filter(e => e === 'atrasado').length },
     ...resumenMes(movimientos, mes),
     hayDatos: movimientos.length > 0,
-    puntos: [...porDia].map(([fecha, valor]): Registro => ({ fecha, valor })),
   }
 }
 
@@ -63,21 +56,22 @@ export function resumenSalud(seguimientos: Seguimiento[], registros: RegistroGua
     },
     cintura: ultimaCintura && { valor: ultimaCintura.valor, unidad: cintura!.unidad, estado: estado(ultimaCintura.valor, cintura!.meta) },
     hayDatos: de(registros, gym).length + pesos.length > 0 || !!ultimaCintura,
-    puntos: pesos.filter(r => r.fecha >= restarDias(hoy, 30)).sort((a, b) => a.fecha.localeCompare(b.fecha))
-      .map(({ fecha, valor }): Registro => ({ fecha, valor })),
+    // de lunes a domingo: entrenó, no entrenó o null si el día no ha llegado
+    semana: [0, 1, 2, 3, 4, 5, 6].map(n => restarDias(lunes, -n)).map(fecha => fecha > hoy ? null : de(registros, gym).some(r => r.fecha === fecha)),
+    metaGym: gym?.meta?.valor ?? null,
   }
 }
 
 // Un hábito cuenta como hecho el día que llega a su meta (o tiene algún registro si no la tiene).
 export function resumenHabitos(seguimientos: Seguimiento[], registros: RegistroGuardado[], hoy: string) {
   const suyos = seguimientos.filter(s => s.codigo_plantilla === 'habitos')
-    .map(h => ({ marcas: de(registros, h), meta: h.meta?.valor ?? null }))
+    .map(h => ({ nombre: h.nombre, marcas: de(registros, h), meta: h.meta?.valor ?? null }))
   if (!suyos.length) return null
-  const hechos = (fecha: string) => suyos.filter(x => totalDelDia(x.marcas, fecha) >= (x.meta ?? Number.MIN_VALUE)).length
+  const lista = suyos.map(x => ({ nombre: x.nombre, hecho: totalDelDia(x.marcas, hoy) >= (x.meta ?? Number.MIN_VALUE) }))
   return {
     total: suyos.length,
-    hechos: hechos(hoy),
+    hechos: lista.filter(x => x.hecho).length,
     mejorRacha: Math.max(...suyos.map(x => racha(x.marcas, hoy, x.meta))),
-    puntos: [6, 5, 4, 3, 2, 1, 0].map(n => restarDias(hoy, n)).map((fecha): Registro => ({ fecha, valor: hechos(fecha) })),
+    lista,
   }
 }

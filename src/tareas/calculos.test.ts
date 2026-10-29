@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aTiempoSemana, deHoy, despuesDeListo, fechaColombia, proximoEnvio, siguienteFecha, type Recordatorio, type Tarea } from './calculos'
+import { aTiempoPorSemana, aTiempoSemana, deHoy, despuesDeListo, fechaColombia, proximoEnvio, siguienteFecha, type Recordatorio, type Tarea } from './calculos'
 
 const rec = (r: Partial<Recordatorio>): Recordatorio => ({
   id_recordatorio: 'r', descripcion: 'x', hora_envio: '09:00:00', tipo_repeticion: 'diario', dias_semana: null, dia_mes: null,
@@ -84,5 +84,20 @@ describe('aTiempoSemana', () => {
       tarea({ fecha_limite: '2026-11-02' }), tarea({}),
     ]
     expect(aTiempoSemana(tareas, '2026-10-28')).toEqual({ aTiempo: 1, total: 3 })
+  })
+})
+
+describe('aTiempoPorSemana', () => {
+  it('cuenta a tiempo y tarde por semana; las pendientes que no vencen no cuentan', () => {
+    const tareas = [
+      tarea({ fecha_limite: '2026-10-20', estado: 'hecho', fecha_realizacion: '2026-10-20T15:00:00Z' }),
+      tarea({ fecha_limite: '2026-10-21' }),
+      tarea({ fecha_limite: '2026-10-26', estado: 'hecho', fecha_realizacion: '2026-10-27T15:00:00Z' }),
+      tarea({ fecha_limite: '2026-10-30' }),
+    ]
+    expect(aTiempoPorSemana(tareas, '2026-10-28', 2)).toEqual([
+      { desde: '2026-10-19', aTiempo: 1, tarde: 1 },
+      { desde: '2026-10-26', aTiempo: 0, tarde: 1 },
+    ])
   })
 })

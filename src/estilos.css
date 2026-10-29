@@ -164,10 +164,30 @@ button:disabled { opacity: .6; cursor: default; }
 .lista li.recibo > span:first-child .tenue { display: block; font-size: 14px; white-space: normal; }
 .lista .estado.en-meta { background: var(--en-meta); color: var(--fondo); }
 .fila-presupuesto select { font: inherit; color: var(--tinta); background: var(--fondo); border: 1px solid var(--linea); border-radius: 12px; padding: 10px 12px; min-width: 0; }
-.calendario { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; margin-top: 12px; max-width: 420px; }
-.calendario span { aspect-ratio: 1; border-radius: 6px; background: var(--linea); }
-.calendario span.hecho { background: var(--acento); }
+.con-estado .estado { margin-right: 6px; }
+.con-estado .estado.en-meta { background: var(--en-meta); color: var(--fondo); }
+.con-estado .estado.cerca { background: var(--cerca); color: var(--fondo); }
+.con-estado .estado.fuera { background: var(--fuera); color: var(--fondo); }
+.leyenda-estado { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 8px 0 0; font-size: 14px; color: var(--tenue); }
+.leyenda-estado span { display: inline-flex; align-items: center; gap: 6px; }
+.leyenda-estado i { width: 12px; height: 12px; border-radius: 3px; background: var(--linea); }
+.leyenda-estado i.linea-meta { height: 0; border-radius: 0; background: none; border-top: 2px dashed var(--tinta); }
+.mapa-semanas { display: grid; grid-template-rows: auto repeat(7, 1fr); grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; margin-top: 8px; }
+.mapa-semanas b { font-size: 11px; font-weight: 600; color: var(--tenue); align-self: center; }
+.mapa-semanas span { aspect-ratio: 1; border-radius: 4px; background: var(--linea); }
+.mapa-semanas span.parcial, .leyenda-estado i.parcial { background: color-mix(in srgb, var(--acento) 40%, transparent); }
+.mapa-semanas span.hecho, .leyenda-estado i.hecho { background: var(--acento); }
+.mapa-semanas span.futuro { visibility: hidden; }
+.mapa-semanas .mes { font-size: 11px; font-style: normal; color: var(--tenue); white-space: nowrap; align-self: end; }
+.mapa-semanas span.hoy, .leyenda-estado i.hoy { outline: 2px solid var(--tinta); outline-offset: 1px; }
 .lista li .chips { grid-column: 1 / -1; }
+.cambiar-nombre { align-items: center; }
+.cambiar-nombre label { flex: 1 1 260px; display: flex; align-items: center; gap: 8px; }
+.cambiar-nombre input { flex: 1; min-width: 0; }
+.lista li.ultimo > form.chips { grid-column: 1 / -1; justify-content: start; }
+.editar-serie { align-items: center; }
+.editar-serie label { display: flex; align-items: center; gap: 6px; }
+.editar-serie input { width: 6em; }
 
 /* Inicio por módulos */
 .tarjeta .datos { display: grid; gap: 4px; margin-top: 10px; overflow-wrap: anywhere; }
@@ -178,6 +198,25 @@ button:disabled { opacity: .6; cursor: default; }
 /* en escritorio: Finanzas a lo ancho y los demás módulos en dos columnas */
 @media (min-width: 700px) { .cuadricula:has(> .tarjeta + .tarjeta) { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cuadricula .tarjeta:first-child { grid-column: 1 / -1; } }
 .tarjeta .datos > span { display: block; }
+.tarjeta.tocable { cursor: pointer; }
+.cabeza-tarjeta { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%; }
+.cabeza-tarjeta h2 { margin: 0; }
+.cabeza-tarjeta .estado { margin-top: 0; }
+.tarjeta .mini { display: grid; gap: 6px; width: 100%; margin-top: 14px; }
+.mini .pista { display: block; height: 10px; border-radius: 999px; background: rgba(255, 255, 255, .25); overflow: hidden; }
+.mini .pista > span { display: block; height: 100%; border-radius: inherit; background: #FFFFFF; }
+.mini-barras > span { display: grid; grid-template-columns: 3.5em 1fr; align-items: center; gap: 8px; }
+.mini-semana { display: grid; grid-template-columns: repeat(7, 28px); gap: 6px; }
+.mini-semana > span { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: rgba(255, 255, 255, .22); }
+.mini-semana > span.lleno { background: #FFFFFF; color: #13241B; }
+.mini-semana > span.futuro { background: none; border: 1px dashed rgba(255, 255, 255, .6); }
+.tarjeta .mini-habitos { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.mini-habitos > span { display: inline-flex; align-items: center; gap: 6px; }
+.mini-habitos i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #FFFFFF; }
+.mini-habitos .lleno i { background: #FFFFFF; }
+.pie-tarjeta { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%; margin-top: auto; padding-top: 16px; }
+.pie-tarjeta .ver { background: none; color: #FFFFFF; font-weight: 700; padding: 8px 0; text-decoration: underline; text-underline-offset: 3px; }
+.pie-tarjeta .registrar { background: rgba(255, 255, 255, .95); color: #13241B; font-weight: 700; padding: 8px 16px; border-radius: 999px; }
 .tarjeta.otros ul { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 6px; }
 .enlace-claro { background: none; padding: 4px 0; color: #FFFFFF; text-align: left; text-decoration: underline; text-underline-offset: 3px; }
 .esqueleto { background: var(--linea); animation: latir 1.2s ease-in-out infinite alternate; }

@@ -60,3 +60,17 @@ export function ultimosDias(marcas: Marca[], hoy: string, n = 30): Marca[] {
     return { fecha, valor: suma.get(fecha) ?? 0 }
   })
 }
+
+// Calendario de n semanas de lunes a domingo, la última con hoy: 2 cumplido, 1 algo sin llegar a la meta, 0 nada; null después de hoy.
+export function calendarioSemanas(marcas: Marca[], hoy: string, meta?: number | null, semanas = 12) {
+  const suma = porDia(marcas)
+  const lunes = restarDias(hoy, (new Date(`${hoy}T12:00:00Z`).getUTCDay() || 7) - 1)
+  const inicio = restarDias(lunes, 7 * (semanas - 1))
+  return Array.from({ length: semanas * 7 }, (_, i) => {
+    const fecha = restarDias(inicio, -i), v = suma.get(fecha) ?? 0
+    return { fecha, nivel: fecha > hoy ? null : v > 0 && v >= (meta ?? 0) ? 2 : v > 0 ? 1 : 0 }
+  })
+}
+
+// Días cumplidos en la semana en curso: la última fila de calendarioSemanas.
+export const cumplidosEstaSemana = (calendario: { nivel: number | null }[]) => calendario.slice(-7).filter(d => d.nivel === 2).length

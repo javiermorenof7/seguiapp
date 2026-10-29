@@ -109,7 +109,10 @@ export default function Historial({ ids, registros, filtros, buscar, suma, forma
 }
 
 // Fila de Salud y Hábitos: fecha, qué, cuánto y borrar con confirmación (el borrado es lógico).
-export function FilaSimple({ fecha, titulo, detalle, alBorrar }: { fecha: string; titulo: string; detalle: string; alBorrar: () => Promise<void> }) {
+// children: lo que se abre debajo de la fila (p. ej. el formulario de Editar)
+export function FilaSimple({ fecha, titulo, detalle, alBorrar, alEditar, children }: {
+  fecha: string; titulo: string; detalle: string; alBorrar: () => Promise<void>; alEditar?: () => void; children?: ReactNode
+}) {
   const [confirmar, setConfirmar] = useState(false)
   const [error, setError] = useState('')
   return (
@@ -122,8 +125,14 @@ export function FilaSimple({ fecha, titulo, detalle, alBorrar }: { fecha: string
           <button className="secundario" onClick={() => alBorrar().catch(e => setError((e as Error).message))}>Sí, borrar</button>
           <button className="secundario" onClick={() => setConfirmar(false)}>No</button>
         </span>
+      ) : alEditar ? (
+        <span className="chips">
+          <button className="secundario" onClick={alEditar}>Editar</button>
+          <button className="secundario" onClick={() => setConfirmar(true)}>Borrar</button>
+        </span>
       ) : <button className="secundario" onClick={() => setConfirmar(true)}>Borrar</button>}
       {error && <span role="alert" className="error">{error}</span>}
+      {children}
     </li>
   )
 }

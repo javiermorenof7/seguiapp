@@ -11,8 +11,9 @@ export interface FilaRecibo {
 export const nombreRecibo = (r: Recibo) => r.nombre_ubicacion ? `${r.nombre_servicio} · ${r.nombre_ubicacion}` : r.nombre_servicio
 
 // Mediana de los días en que se pagó; null sin pagos con fecha.
+// shortcut: los pagos cargados de la hoja tienen fecha de pago = inicio del período; se ignoran (un pago real justo el día 1 también, raro).
 export function diaAprendido(pagos: PagoGuardado[]): number | null {
-  const dias = pagos.filter(p => p.estado === 'pagado' && p.fecha_pago).map(p => Number(p.fecha_pago!.slice(8, 10))).sort((a, b) => a - b)
+  const dias = pagos.filter(p => p.estado === 'pagado' && p.fecha_pago && p.fecha_pago !== p.fecha_periodo).map(p => Number(p.fecha_pago!.slice(8, 10))).sort((a, b) => a - b)
   if (!dias.length) return null
   const m = dias.length >> 1
   return dias.length % 2 ? dias[m] : Math.round((dias[m - 1] + dias[m]) / 2)
@@ -25,7 +26,8 @@ export function recibosDelMes(recibos: ReciboVisible[], pagos: PagoGuardado[], h
   const orden: Record<EstadoRecibo, number> = { vencido: 0, por_pagar: 1, sin_pendiente: 2, pagado: 3 }
   return recibos.map(r => {
     const suyos = pagos.filter(p => p.id_recibo === r.id_recibo)
-    const dia = diaAprendido(suyos) ?? r.dia_pago
+    // el día que la persona puso manda; si no hay, el aprendido de sus pagos
+    const dia = r.dia_pago ?? diaAprendido(suyos)
     const pago = suyos.find(p => p.fecha_periodo === `${mes}-01` && p.estado === 'pagado') ?? null
     const pendiente = pendientes.get(r.id_recibo)
     const estado: EstadoRecibo = pago ? 'pagado'

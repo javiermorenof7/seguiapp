@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { normalizar } from '../finanzas/parseo'
 import { cambiarRecordatorio, crearRecordatorio, crearTarea, marcarTarea, obtenerTareas, quitarTarea } from '../datos'
+import { Avance } from '../finanzas/Medidas'
 import {
+  aTiempoSemana,
   despuesDeListo, deHoy, fechaColombia, proximoEnvio, sumarDias, type Recordatorio, type Repeticion, type Tarea,
 } from './calculos'
 
@@ -28,6 +30,15 @@ export default function Tareas({ abrir, alVolver }: { abrir?: AccionTareas; alVo
   const [datos, setDatos] = useState<Datos | null>(null)
   const [error, setError] = useState('')
   const [aviso, setAviso] = useState('')
+  // id de la tarea o recordatorio que espera el "¿Seguro?" antes de quitarse
+  const [porQuitar, setPorQuitar] = useState<string | null>(null)
+  const confirmarQuitar = (id: string, quitar: () => void) => porQuitar === id ? (
+    <span className="chips">
+      <span className="tenue">¿Seguro?</span>
+      <button className="secundario" onClick={() => { setPorQuitar(null); quitar() }}>Sí, quitar</button>
+      <button className="secundario" onClick={() => setPorQuitar(null)}>No</button>
+    </span>
+  ) : <button className="enlace" onClick={() => setPorQuitar(id)}>Quitar</button>
 
   const cargar = useCallback(async () => {
     try {
@@ -56,9 +67,7 @@ export default function Tareas({ abrir, alVolver }: { abrir?: AccionTareas; alVo
       {t.estado === 'pendiente'
         ? <button className="secundario" onClick={() => accion(() => marcarTarea(t.id_tarea, true), `Hecha: ${t.descripcion}.`)}>✓ Hecha</button>
         : <button className="enlace" onClick={() => accion(() => marcarTarea(t.id_tarea, false), `${t.descripcion} vuelve a pendiente.`)}>Deshacer</button>}
-      {t.estado === 'pendiente'
-        ? <button className="enlace" onClick={() => accion(() => quitarTarea(t.id_tarea), `${t.descripcion} quitada.`)}>Quitar</button>
-        : <span />}
+      {confirmarQuitar(t.id_tarea, () => accion(() => quitarTarea(t.id_tarea), `${t.descripcion} quitada.`))}
     </li>
   )
 
@@ -85,7 +94,8 @@ export default function Tareas({ abrir, alVolver }: { abrir?: AccionTareas; alVo
           {pestana === 'tareas' && (
             <>
               <NuevaTarea hoy={hoy} enfocar={abrir === 'tarea'}
-                pendientes={datos.tareas.filter(t => t.estado === 'pendiente').map(t => t.descripcion)} alGuardar={t => guardar(() => crearTarea(t), `Tarea creada: ${t.descripcion}.`)} />
+                pendientes={datos.tareas.filter(t => t.estado === 'pendiente').map(t => t.descripcion)}
+                repetidas={repetidas(datos.tareas)} alGuardar={t => guardar(() => crearTarea(t), `Tarea creada: ${t.descripcion}.`)} />
               <section>
                 <h2>Pendientes</h2>
                 {!datos.tareas.some(t => t.estado === 'pendiente') && <p className="tenue">No tienes tareas pendientes.</p>}
@@ -123,7 +133,7 @@ export default function Tareas({ abrir, alVolver }: { abrir?: AccionTareas; alVo
                           accion(() => cambiarRecordatorio(r.id_recordatorio, { fecha_proximo_envio: proximo, estado: proximo ? 'activo' : 'terminado' }),
                             proximo ? `${r.descripcion} activo otra vez.` : `${r.descripcion} ya pasó y quedó terminado.`)
                         }}>Reanudar</button>}
-                      <button className="enlace" onClick={() => accion(() => cambiarRecordatorio(r.id_recordatorio, { estado: 'eliminado' }), `${r.descripcion} quitado.`)}>Quitar</button>
+                      {confirmarQuitar(r.id_recordatorio, () => accion(() => cambiarRecordatorio(r.id_recordatorio, { estado: 'eliminado' }), `${r.descripcion} quitado.`))}
                     </li>
                   ))}
                 </ul>
@@ -139,8 +149,25 @@ export default function Tareas({ abrir, alVolver }: { abrir?: AccionTareas; alVo
 function Hoy({ datos, hoy, fila, alListo }: { datos: Datos; hoy: string; fila: (t: Tarea, conFecha?: boolean) => ReactNode; alListo: (r: Recordatorio) => void }) {
   const h = deHoy(datos.tareas, datos.recordatorios, hoy)
   const nada = !h.vencidas.length && !h.deHoy.length && !h.sinFecha.length && !h.recordatorios.length
+  const delDia = h.hechasHoy.length + h.deHoy.length + h.vencidas.length
+  const semana = aTiempoSemana(datos.tareas, hoy)
+  const color = (bien: boolean) => getComputedStyle(document.documentElement).getPropertyValue(bien ? '--en-meta' : '--c1').trim()
   return (
     <>
+      {delDia > 0 && (
+        <section>
+          <h2>¿Cómo voy hoy?</h2>
+          <p><strong className="cifra-media">{h.hechasHoy.length} de {delDia}</strong> <span className="tenue">tareas del día hechas{h.vencidas.length ? ` · ${h.vencidas.length} vencidas` : ''}</span></p>
+          <Avance valor={h.hechasHoy.length} tope={delDia} color={color(h.hechasHoy.length === delDia)} descripcion={`Hoy: ${h.hechasHoy.length} de ${delDia} tareas hechas`} />
+        </section>
+      )}
+      {semana.total > 0 && (
+        <section>
+          <h2>¿Las hago a tiempo?</h2>
+          <p><strong className="cifra-media">{Math.round((semana.aTiempo / semana.total) * 100)} %</strong> <span className="tenue">a tiempo esta semana ({semana.aTiempo} de {semana.total})</span></p>
+          <Avance valor={semana.aTiempo} tope={semana.total} color={color(semana.aTiempo === semana.total)} descripcion={`Esta semana: ${semana.aTiempo} de ${semana.total} tareas a tiempo`} />
+        </section>
+      )}
       {nada && <p className="tenue">Nada pendiente para hoy. Crea tareas o recordatorios en sus pestañas.</p>}
       {h.recordatorios.length > 0 && (
         <section>
@@ -172,8 +199,19 @@ function Hoy({ datos, hoy, fila, alListo }: { datos: Datos; hoy: string; fila: (
   )
 }
 
-function NuevaTarea({ hoy, enfocar, pendientes, alGuardar }: {
-  hoy: string; enfocar?: boolean; pendientes: string[]; alGuardar: (t: { descripcion: string; fecha_limite: string | null }) => Promise<void>
+// las que ya creó 2 veces o más y no tiene pendientes ahora
+const repetidas = (tareas: Tarea[]) => {
+  const veces = new Map<string, { texto: string; n: number }>()
+  for (const t of tareas) {
+    const k = normalizar(t.descripcion)
+    veces.set(k, { texto: t.descripcion, n: (veces.get(k)?.n ?? 0) + 1 })
+  }
+  const pendientes = new Set(tareas.filter(t => t.estado === 'pendiente').map(t => normalizar(t.descripcion)))
+  return [...veces.entries()].filter(([k, v]) => v.n >= 2 && !pendientes.has(k)).sort((a, b) => b[1].n - a[1].n).slice(0, 5).map(([, v]) => v.texto)
+}
+
+function NuevaTarea({ hoy, enfocar, pendientes, repetidas: sugeridas, alGuardar }: {
+  hoy: string; enfocar?: boolean; pendientes: string[]; repetidas: string[]; alGuardar: (t: { descripcion: string; fecha_limite: string | null }) => Promise<void>
 }) {
   const [descripcion, setDescripcion] = useState('')
   const [fecha, setFecha] = useState('')
@@ -200,6 +238,12 @@ function NuevaTarea({ hoy, enfocar, pendientes, alGuardar }: {
     <form className="formulario" onSubmit={guardar}>
       <label>Nueva tarea<input required maxLength={MAX_DESCRIPCION} value={descripcion} onChange={ev => setDescripcion(ev.target.value)}
         placeholder="Qué tienes que hacer" autoComplete="off" autoFocus={enfocar} /><small className="ayuda">Ej.: pagar el arriendo, llamar al banco</small></label>
+      {sugeridas.length > 0 && !descripcion.trim() && (
+        <div className="sugeridos">
+          <span className="tenue">Las que sueles repetir</span>
+          <div className="chips">{sugeridas.map(t => <button key={t} type="button" className="chip" onClick={() => setDescripcion(t)}>{t}</button>)}</div>
+        </div>
+      )}
       <label>Para cuándo (opcional)
         <input type="date" value={fecha} min={hoy} onChange={ev => setFecha(ev.target.value)} />
         <small className="ayuda">Sin fecha sale cada día en Hoy hasta que la hagas</small>

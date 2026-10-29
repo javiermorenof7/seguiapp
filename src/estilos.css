@@ -53,8 +53,20 @@ button:disabled { opacity: .6; cursor: default; }
 
 .encabezado { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 12px; margin-bottom: 20px; }
 .acciones { display: flex; gap: 8px; }
-.entrar { max-width: 560px; padding-top: 12vh; }
-.entrar .principal { margin-top: 12px; }
+.entrar { min-height: 100dvh; display: grid; align-content: center; justify-items: center; gap: 40px; padding-top: 32px; text-align: center; }
+.entrar-texto { display: grid; justify-items: center; max-width: 560px; }
+.entrar-texto > p:not(.lema) { max-width: 46ch; margin-inline: auto; }
+.entrar-texto .tenue { font-size: 14px; }
+.entrar h1 { font-size: clamp(48px, 10vw, 88px); margin-top: 20px; }
+.entrar .lema { font-size: clamp(22px, 4vw, 30px); }
+.entrar .logo { display: block; border-radius: 18px; }
+.entrar .principal.grande { margin: 24px 0 8px; padding: 16px 32px; font-size: 18px; }
+.ejemplos { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; width: 100%; max-width: 960px; text-align: left; }
+@media (min-width: 900px) { .ejemplos { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.ejemplos .tarjeta { display: grid; gap: 4px; color: #FFFFFF; min-height: 130px; align-content: start; }
+.ejemplos .tarjeta strong { font-size: clamp(24px, 6vw, 34px); font-weight: 800; letter-spacing: -1px; }
+.ejemplos .ejemplos-modulo { font-weight: 700; }
+.ejemplos svg { width: 100%; height: 28px; margin-top: auto; }
 
 .cuadricula { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
 .tarjeta { display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 18px; border-radius: var(--radio); color: #FFFFFF; min-height: 190px; width: 100%; }
@@ -119,6 +131,9 @@ button:disabled { opacity: .6; cursor: default; }
 .fila-presupuesto button:disabled { opacity: .4; }
 .fila-presupuesto [role="status"], .fila-presupuesto .ayuda { grid-column: 1 / -1; margin: 0; }
 .lista li:has(> .fila-presupuesto) { display: block; }
+/* las facturas siguen en cuadrícula aunque abran el formulario de pago */
+.lista li.recibo:has(> .fila-presupuesto) { display: grid; }
+.lista li.recibo .mas label.chip { display: inline-flex; align-items: center; gap: 6px; }
 @media (max-width: 420px) { .fila-presupuesto { grid-template-columns: 1fr auto; } .fila-presupuesto label { grid-column: 1 / -1; } }
 .lista li.ultimo { grid-template-columns: auto auto 1fr auto; }
 .formulario.corregir { margin: 8px 0; }
@@ -127,7 +142,21 @@ button:disabled { opacity: .6; cursor: default; }
 .asistente p { margin: 0; }
 .chip:disabled { opacity: .5; }
 @media (max-width: 420px) { .lista li.ultimo { grid-template-columns: auto 1fr auto; } .lista li.ultimo .tenue { grid-column: 1 / -1; grid-row: 2; } }
-.pestanas { margin: 0 0 20px; }
+/* El menú navega: pestañas con línea, en una sola fila que se desliza en celular */
+.pestanas { margin: 0 0 20px; flex-wrap: nowrap; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--linea); scrollbar-width: none; }
+.pestanas .chip { flex: none; border: 0; border-radius: 0; padding: 10px 12px; color: var(--tenue); border-bottom: 3px solid transparent; margin-bottom: -1px; }
+.pestanas .chip[aria-checked="true"] { background: transparent; color: var(--tinta); border-bottom-color: var(--acento); }
+/* Los filtros ajustan: panel "Período" con control segmentado, más pequeño que el menú */
+.panel-periodo { display: grid; gap: 10px; padding: 14px 16px; margin: 0 0 8px; border-radius: 16px; background: color-mix(in srgb, var(--linea) 45%, transparent); }
+.panel-periodo > .etiqueta { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--tenue); }
+.panel-periodo .periodo, .panel-periodo .filtros { margin: 0; }
+.panel-periodo .aviso { margin: 0; }
+.segmentado { display: inline-flex; flex-wrap: wrap; gap: 0; padding: 3px; border-radius: 12px; background: var(--fondo); border: 1px solid var(--linea); width: fit-content; }
+.segmentado .chip { border: 0; border-radius: 9px; padding: 6px 12px; font-size: 14px; }
+.segmentado .chip[aria-checked="true"] { background: var(--tinta); color: var(--fondo); }
+.segmentado + select, .panel-periodo .fila-filtros select { padding: 6px 10px; border-radius: 10px; }
+.panel-periodo .fila-filtros { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+@media (max-width: 560px) { .segmentado { display: grid; grid-template-columns: repeat(2, 1fr); width: 100%; } }
 .lista li.recibo { grid-template-columns: 1fr auto auto auto; }
 .lista li.recibo > button { justify-self: end; }
 @media (max-width: 560px) { .lista li.recibo { grid-template-columns: 1fr auto; } .lista li.recibo > button { grid-column: 1 / -1; justify-self: stretch; } }
@@ -249,3 +278,13 @@ section:not([class]) + form.formulario { margin-top: 40px; }
 .mas > summary::after { content: ' ▾'; }
 .mas[open] > summary::after { content: ' ▴'; }
 .lista li .mas, .lista li .fila-presupuesto { grid-column: 1 / -1; }
+
+/* inicio: Finanzas a lo ancho y los otros tres en columnas iguales; una tarjeta que queda sola llena su fila */
+@media (min-width: 700px) { .cuadricula > .tarjeta:last-child:nth-child(even) { grid-column: 1 / -1; } }
+@media (min-width: 1000px) {
+  .cuadricula:has(> .tarjeta:nth-child(4):last-child) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .cuadricula:has(> .tarjeta:nth-child(4):last-child) > .tarjeta:last-child { grid-column: auto; }
+}
+.sin-datos { display: grid; gap: 8px; justify-items: start; margin: 24px 0; padding: 20px; border: 1px dashed var(--linea); border-radius: var(--radio); }
+.sin-datos strong { font-size: 18px; }
+.sin-datos .tenue { margin: 0; }

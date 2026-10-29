@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { obtenerRegistros, type RegistroGuardado } from '../datos'
 import Barras from '../finanzas/Barras'
+import SinDatos from '../SinDatos'
 import { normalizar } from '../finanzas/parseo'
 import { agrupar, mover, rango, type Escala } from './periodo'
 
@@ -59,7 +60,9 @@ export default function Historial({ ids, registros, filtros, buscar, suma, forma
 
   return (
     <section>
-      <div className="chips" role="radiogroup" aria-label="Ver por">
+      <div className="panel-periodo">
+      <span className="etiqueta">Período y filtros</span>
+      <div className="chips segmentado" role="radiogroup" aria-label="Ver por">
         {ESCALAS.map(([e, t]) => (
           <button key={e} type="button" role="radio" aria-checked={escala === e} className="chip" onClick={() => setEscala(e)}>{t}</button>
         ))}
@@ -85,13 +88,22 @@ export default function Historial({ ids, registros, filtros, buscar, suma, forma
           </label>
         )}
       </div>
+      </div>
       {error && <p role="alert" className="error">{error}</p>}
       <p className="aviso" aria-live="polite">{total(delPeriodo)} · {delPeriodo.length} {delPeriodo.length === 1 ? 'registro' : 'registros'}</p>
       {delPeriodo.length > 0 && (
         <Barras etiquetas={puntos.map(p => etiqueta(escala, p.fecha))} series={[{ nombre: r.titulo, color: cssVar('--acento'), datos: puntos.map(p => p.valor) }]}
           formato={formato} colorTexto={cssVar('--tenue')} colorLinea={cssVar('--linea')} descripcion={`${suma ? 'Total' : 'Registros'} por ${escala === 'ano' ? 'mes' : 'día'} de ${r.titulo}`} />
       )}
-      {delPeriodo.length === 0 ? <p className="tenue">No hay registros en este período.</p> : <ul className="lista">{delPeriodo.map(fila)}</ul>}
+      {delPeriodo.length === 0 ? (() => {
+        const conFiltros = !!texto.trim() || Object.values(elegidos).some(Boolean)
+        return <SinDatos titulo={conFiltros ? 'No encontramos registros con estos filtros' : `No hay registros en ${r.titulo.toLowerCase()}`}
+          detalle={conFiltros ? 'Prueba quitando algún filtro o mira otro período.' : 'Mira otro período o registra algo nuevo.'}
+          acciones={[
+            ...(conFiltros ? [{ texto: 'Quitar filtros', hacer: () => { setTexto(''); setElegidos(Object.fromEntries(filtros.map(f => [f.nombre, '']))) } }] : []),
+            ...(r.hasta < hoy ? [{ texto: 'Ir al período actual', hacer: () => setAncla(hoy) }] : []),
+          ]} />
+      })() : <ul className="lista">{delPeriodo.map(fila)}</ul>}
     </section>
   )
 }

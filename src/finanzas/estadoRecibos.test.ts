@@ -69,3 +69,9 @@ it('valoresEnElTiempo ordena los pagos del recibo', () => {
   expect(valoresEnElTiempo([p('a', '2026-09', 2), p('b', '2026-08', 9), p('a', '2026-08', 1)], 'a'))
     .toEqual([{ fecha: '2026-08-01', valor: 1 }, { fecha: '2026-09-01', valor: 2 }])
 })
+
+it('no aprende el día de los pagos cargados de la hoja (pago = inicio del período) y el día puesto manda', () => {
+  const cargado = { ...p('a', '2026-08', 1), fecha_pago: '2026-08-01' }
+  expect(diaAprendido([cargado, { ...p('a', '2026-09', 1), fecha_pago: '2026-09-01' }])).toBeNull()
+  expect(recibosDelMes([r('a', { dia_pago: 20 })], [p('a', '2026-09', 1, 5)], '2026-10-15')[0]).toMatchObject({ dia: 20, estado: 'por_pagar' })
+})

@@ -389,6 +389,10 @@ export async function marcarSinPago(idRecibo: string, fechaPeriodo: string) {
     { onConflict: 'id_usuario,id_recibo,fecha_periodo' }))
 }
 
+export async function cambiarDiaRecibo(idRecibo: string, dia: number | null) {
+  revisar(await supabase.from('recibo').update({ dia_pago: dia }).eq('id_recibo', idRecibo))
+}
+
 export async function renombrarRecibo(idRecibo: string, nombres: { nombre_servicio: string; nombre_ubicacion: string | null }) {
   const { error } = await supabase.from('recibo').update(nombres).eq('id_recibo', idRecibo)
   if (error?.code === '23505') throw new ErrorDatos('Ya tienes una factura con ese servicio y ubicación.')

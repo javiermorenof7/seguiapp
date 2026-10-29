@@ -5,6 +5,7 @@ import {
 } from '../datos'
 import { formatoValor, type Direccion } from '../indicadores'
 import Grafico from '../Grafico'
+import SinDatos from '../SinDatos'
 import Historial, { FilaSimple } from '../historial/Historial'
 import Barras from '../finanzas/Barras'
 import { normalizar } from '../finanzas/parseo'
@@ -35,7 +36,7 @@ export default function Salud({ seguimientos, registros, abrir, alVolver, alCamb
   alVolver: () => void
   alCambiar: () => Promise<void>
 }) {
-  const [pestana, setPestana] = useState<'gym' | 'cuerpo' | 'historial'>(abrir === 'medida' ? 'cuerpo' : 'gym')
+  const [pestana, setPestana] = useState<'resumen' | 'gym' | 'cuerpo' | 'historial'>(abrir === 'medida' ? 'cuerpo' : abrir === 'ejercicio' ? 'gym' : 'resumen')
   const [error, setError] = useState('')
   const creando = useRef(false)
   const gym = seguimientos.find(s => s.codigo_plantilla === 'gym')
@@ -55,15 +56,21 @@ export default function Salud({ seguimientos, registros, abrir, alVolver, alCamb
       <header className="encabezado"><div><h1>Salud</h1></div></header>
       {error && <p role="alert" className="error">{error}</p>}
       <div className="chips pestanas" role="radiogroup" aria-label="Sección de Salud">
-        {(['gym', 'cuerpo', 'historial'] as const).map(p => (
+        {(['resumen', 'gym', 'cuerpo', 'historial'] as const).map(p => (
           <button key={p} type="button" role="radio" aria-checked={pestana === p} className="chip" onClick={() => setPestana(p)}>
-            {p === 'gym' ? 'Gym' : p === 'cuerpo' ? 'Cuerpo' : 'Historial'}
+            {p === 'resumen' ? 'Resumen' : p === 'gym' ? 'Gym' : p === 'cuerpo' ? 'Cuerpo' : 'Historial'}
           </button>
         ))}
       </div>
       {!gym && <p className="tenue">Preparando…</p>}
+      {gym && pestana === 'resumen' && (
+        <>
+          <Gym vista="resumen" idGym={gym.id_seguimiento} registros={registros.filter(r => r.id_seguimiento === gym.id_seguimiento)} alCambiar={alCambiar} />
+          <CuerpoHoy medidas={medidas} registros={registros} alVer={() => setPestana('cuerpo')} />
+        </>
+      )}
       {gym && pestana === 'gym' && (
-        <Gym idGym={gym.id_seguimiento} registros={registros.filter(r => r.id_seguimiento === gym.id_seguimiento)} enfocar={abrir === 'ejercicio'} alCambiar={alCambiar} />
+        <Gym vista="registrar" idGym={gym.id_seguimiento} registros={registros.filter(r => r.id_seguimiento === gym.id_seguimiento)} enfocar={abrir === 'ejercicio'} alCambiar={alCambiar} />
       )}
       {gym && pestana === 'historial' && <HistorialSalud gym={gym} medidas={medidas} registros={registros} alCambiar={alCambiar} />}
       {pestana === 'cuerpo' && (
@@ -81,7 +88,8 @@ export default function Salud({ seguimientos, registros, abrir, alVolver, alCamb
   )
 }
 
-function Gym({ idGym, registros, enfocar, alCambiar }: {
+function Gym({ vista, idGym, registros, enfocar, alCambiar }: {
+  vista: 'resumen' | 'registrar'
   idGym: string; registros: RegistroGuardado[]; enfocar?: boolean; alCambiar: () => Promise<void>
 }) {
   const hoy = hoyIso()
@@ -90,6 +98,7 @@ function Gym({ idGym, registros, enfocar, alCambiar }: {
   const [campos, setCampos] = useState({ series: '', repeticiones: '', peso: '' })
   const [pregunta, setPregunta] = useState<{ leido: Leido; sugerido: string } | null>(null)
   const [aviso, setAviso] = useState('')
+  const [abierto, setAbierto] = useState(!!enfocar)
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
 
@@ -120,6 +129,19 @@ function Gym({ idGym, registros, enfocar, alCambiar }: {
   const conocidos = useMemo(() => datos?.ejercicios.map(e => e.nombre).sort() ?? [], [datos])
 
   // al elegir un ejercicio que ya hizo, trae lo de la vez anterior para cambiar solo lo que subió
+  // los 5 ejercicios más hechos en los últimos 30 días, con su última serie
+  const frecuentes = useMemo(() => {
+    const desde = restarDias(hoy, 30)
+    const cuenta = new Map<string, { veces: number; ultima: Sesion }>()
+    for (const x of sesiones) {
+      if (x.fecha < desde) continue
+      const c = cuenta.get(x.ejercicio)
+      if (!c) cuenta.set(x.ejercicio, { veces: 1, ultima: x })
+      else { c.veces++; if (x.fecha > c.ultima.fecha) c.ultima = x }
+    }
+    return [...cuenta.values()].sort((a, b) => b.veces - a.veces).slice(0, 5).map(c => c.ultima)
+  }, [sesiones, hoy])
+
   function elegirEjercicio(texto: string) {
     setEjercicio(texto)
     setPregunta(null)
@@ -174,16 +196,60 @@ function Gym({ idGym, registros, enfocar, alCambiar }: {
   }
 
   if (!datos) return error ? <p role="alert" className="error">{error}</p> : <p className="tenue">Cargando…</p>
+  if (vista === 'resumen') return !sesiones.length ? (
+    <SinDatos titulo="Aún no registras ejercicios" detalle="Cuando registres tu primer ejercicio en Gym, aquí verás tu constancia y tu progreso." />
+  ) : (
+    <>
+      <Constancia sesiones={sesiones} hoy={hoy} />
+      <Progreso sesiones={sesiones} ejercicios={datos.ejercicios.map(e => e.nombre).sort()} />
+    </>
+  )
+  const nombres = new Map(datos.ejercicios.map(e => [e.id_etiqueta, e.nombre]))
+  const deSerie = new Map(datos.series.map(x => [x.id_registro, x]))
+  const ultimos = registros.filter(r => deSerie.has(r.id_registro)).slice(0, 6)
+  const loUltimo = ultimos.length > 0 && (
+    <section>
+      <h2>Lo último que registraste</h2>
+      <ul className="lista">
+        {ultimos.map(r => {
+          const x = deSerie.get(r.id_registro)!
+          return <FilaSimple key={r.id_registro} fecha={r.fecha} titulo={nombres.get(r.id_etiqueta ?? '') ?? 'Ejercicio'}
+            detalle={serie({ ejercicio: '', series: x.cantidad_series, repeticiones: x.cantidad_repeticiones, peso: x.peso_kilogramos === null ? null : Number(x.peso_kilogramos) })}
+            alBorrar={() => eliminarRegistro(r.id_registro).then(alCambiar)} />
+        })}
+      </ul>
+    </section>
+  )
+  if (!abierto) return (
+    <>
+      <section>
+        <button className="principal registrar-uno" onClick={() => setAbierto(true)}>+ Registrar ejercicio</button>
+        {aviso && <p role="status" className="aviso">{aviso}</p>}
+      </section>
+      {loUltimo}
+    </>
+  )
   return (
     <>
       <form className="formulario" onSubmit={enviar}>
-        <h2>Registrar ejercicio</h2>
+        <div className="encabezado-seccion">
+          <h2>Registrar ejercicio</h2>
+          <button type="button" className="enlace" onClick={() => setAbierto(false)}>Cerrar</button>
+        </div>
         <label>Ejercicio
           <input required maxLength={60} value={ejercicio} list="ejercicios" onChange={ev => elegirEjercicio(ev.target.value)}
             placeholder="Qué ejercicio hiciste" autoComplete="off" autoFocus={enfocar} />
           <small className="ayuda">Ej.: press banca, sentadilla, dominadas</small>
           <datalist id="ejercicios">{conocidos.map(e => <option key={e} value={e} />)}</datalist>
         </label>
+        {frecuentes.length > 0 && !ejercicio.trim() && (
+          <div className="sugeridos">
+            <span className="tenue">Usar otra vez (con tu última serie)</span>
+            <div className="chips">
+              {frecuentes.map(f => <button key={f.ejercicio} type="button" className="chip" onClick={() => elegirEjercicio(f.ejercicio)}>{f.ejercicio} · {serie(f)}</button>)}
+            </div>
+          </div>
+        )}
         <div className="campos">
           <label>Series
             <input required inputMode="numeric" maxLength={3} value={campos.series} placeholder="Cuántas series" aria-describedby="ayuda-serie"
@@ -205,23 +271,45 @@ function Gym({ idGym, registros, enfocar, alCambiar }: {
             <button type="button" className="chip" disabled={enviando} onClick={() => responder(pregunta.sugerido)}>Sí</button>
             <button type="button" className="chip" disabled={enviando} onClick={() => responder(pregunta.leido.ejercicio)}>No, es nuevo</button>
           </div>
-        ) : <button className="principal" disabled={enviando}>Guardar</button>}
+        ) : <button className="principal" disabled={enviando}>
+          Guardar {campos.series && campos.repeticiones ? `${campos.series} × ${campos.repeticiones}${campos.peso ? ` con ${campos.peso} kg` : ''}` : 'ejercicio'}
+        </button>}
         {aviso && <p role="status" className="aviso">{aviso}</p>}
         {error && <p role="alert" className="error">{error}</p>}
       </form>
-      <Constancia sesiones={sesiones} hoy={hoy} />
-      <Progreso sesiones={sesiones} ejercicios={datos.ejercicios.map(e => e.nombre).sort()} />
+      {loUltimo}
     </>
+  )
+}
+
+function CuerpoHoy({ medidas, registros, alVer }: { medidas: Seguimiento[]; registros: RegistroGuardado[]; alVer: () => void }) {
+  if (!medidas.length) return null
+  return (
+    <section>
+      <div className="bloque-pie"><h2>¿Cómo va mi cuerpo?</h2><button className="enlace" onClick={alVer}>Ver →</button></div>
+      <ul className="lista">
+        {medidas.map(m => {
+          const ultimo = registros.filter(r => r.id_seguimiento === m.id_seguimiento).sort((a, b) => b.fecha.localeCompare(a.fecha))[0]
+          return (
+            <li key={m.id_seguimiento} className="dos">
+              <span>{m.nombre}</span>
+              <strong>{ultimo ? formatoValor('numero', ultimo.valor, m.unidad) : <span className="tenue">sin registrar</span>}
+                {ultimo && <span className="tenue"> · {diaMes(ultimo.fecha)}</span>}</strong>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
   )
 }
 
 function Constancia({ sesiones, hoy }: { sesiones: Sesion[]; hoy: string }) {
   const semanas = useMemo(() => diasPorSemana(sesiones, hoy), [sesiones, hoy])
-  const series = useMemo(() => [{ nombre: 'Días', datos: semanas.map(s => s.dias), color: cssVar('--acento') }], [semanas])
+  const series = useMemo(() => [{ nombre: 'Días', datos: semanas.map(s => s.dias), color: cssVar('--c1') }], [semanas])
   return (
     <section>
       <h2>¿Estoy entrenando seguido?</h2>
-      <p><strong>{diasEntrenados(sesiones, hoy)}</strong> <span className="tenue">días entrenados en los últimos 30</span></p>
+      <p><strong className="cifra-media">{diasEntrenados(sesiones, hoy)}</strong> <span className="tenue">días entrenados en los últimos 30</span></p>
       <Barras etiquetas={semanas.map(s => diaMes(s.desde))} series={series} formato={v => `${Math.round(v)}`}
         colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')} descripcion="Días entrenados en cada una de las últimas 8 semanas" />
     </section>
@@ -271,6 +359,9 @@ function Medida({ medida, registros, alCambiar }: { medida: Seguimiento; registr
     evento.preventDefault()
     const n = leerNumero(valor)
     if (!Number.isFinite(n) || n < rango[0] || n > rango[1]) return setError(`Escribe ${nombre.toLowerCase()} en ${unidad ?? 'números'}, por ejemplo 78,5.`)
+    // un cambio de más del 10 % frente a la última suele ser un error de dedo
+    if (ultimo && Math.abs(n - ultimo.valor) > ultimo.valor * 0.1
+      && !confirm(`¿${formatoValor('numero', n, unidad)}? La última fue ${formatoValor('numero', ultimo.valor, unidad)}. ¿Guardar igual?`)) return
     if (ultimo?.fecha === hoy && !confirm(`Ya registraste ${nombre.toLowerCase()} hoy (${formatoValor('numero', ultimo.valor, unidad)}). ¿Guardar otro?`)) return
     setEnviando(true)
     try {
@@ -306,6 +397,14 @@ function Medida({ medida, registros, alCambiar }: { medida: Seguimiento; registr
         <Grafico puntos={puntos} meta={meta?.valor} color={cssVar('--acento')} colorMeta={cssVar('--tenue')}
           formato={v => formatoValor('numero', v, unidad)}
           descripcion={`${nombre} en los últimos 90 días${meta ? '; la línea punteada es la meta' : ''}`} />
+      )}
+      {registros.length > 0 && (
+        <ul className="lista">
+          {registros.slice(0, 3).map(r => (
+            <FilaSimple key={r.id_registro} fecha={r.fecha} titulo={formatoValor('numero', r.valor, unidad)} detalle={nombre}
+              alBorrar={() => eliminarRegistro(r.id_registro).then(alCambiar)} />
+          ))}
+        </ul>
       )}
       <MetaMedida medida={medida} alCambiar={alCambiar} />
     </section>

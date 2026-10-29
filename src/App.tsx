@@ -54,6 +54,14 @@ function textoMeta(s: Seguimiento) {
   return s.meta.direccion === 'menos_es_mejor' ? `Máximo ${cuanto} por ${por}` : `Meta: ${cuanto} por ${por}`
 }
 
+// datos de ejemplo para la pantalla de entrada (nunca de la persona: se ve antes de iniciar sesión)
+const MUESTRA = [
+  { modulo: 'Finanzas', color: 't1', dato: '$1.250.000', texto: 'te queda este mes', linea: '0,18 20,14 40,16 60,9 80,11 100,5' },
+  { modulo: 'Salud', color: 't2', dato: '3 días', texto: 'de gym esta semana', linea: '0,20 20,16 40,17 60,12 80,8 100,6' },
+  { modulo: 'Hábitos', color: 't5', dato: '12 días', texto: 'de racha', linea: '0,22 20,19 40,15 60,13 80,9 100,4' },
+  { modulo: 'Tareas', color: 't3', dato: '4 de 5', texto: 'hechas hoy', linea: '0,16 20,18 40,12 60,14 80,7 100,8' },
+]
+
 export default function App() {
   const [sesion, setSesion] = useState<Session | null | undefined>(undefined)
   // #privacidad abre la política directo: es el enlace de la pantalla de permiso de Google
@@ -84,15 +92,28 @@ function Entrar({ alPrivacidad, alInstalar }: { alPrivacidad: () => void; alInst
   }
   return (
     <div className="contenedor entrar">
-      <h1>seguiapp</h1>
-      <p className="lema">Lo que no se mide no se controla.</p>
-      <p>Mide tus gastos, tu entreno, tus hábitos o lo que quieras, y mira en gráficos cómo vas frente a tu meta.</p>
-      <button className="principal" onClick={entrar}>Entrar con Google</button>
+      <div className="entrar-texto">
+        <img className="logo" src={`${import.meta.env.BASE_URL}icono.svg`} alt="" width={72} height={72} />
+        <h1>seguiapp</h1>
+        <p className="lema">Lo que no se mide no se controla.</p>
+        <p>Mide tus gastos, tu entreno, tus hábitos o lo que quieras, y mira en gráficos cómo vas frente a tu meta.</p>
+        <button className="principal grande" onClick={entrar}>Entrar con Google</button>
       <p className="tenue">
         El acceso es solo por invitación. Al entrar aceptas la <button className="enlace" onClick={alPrivacidad}>política de privacidad</button>.
       </p>
       {!estaInstalada() && <p className="tenue"><button className="enlace" onClick={alInstalar}>Instalar la app</button> en tu celular o computador.</p>}
       {error && <p role="alert" className="error">{error}</p>}
+      </div>
+      <ul className="ejemplos" aria-label="Ejemplo de lo que verás">
+        {MUESTRA.map(m => (
+          <li key={m.modulo} className={`tarjeta ${m.color}`}>
+            <span className="ejemplos-modulo">{m.modulo}</span>
+            <strong>{m.dato}</strong>
+            <span>{m.texto}</span>
+            <svg viewBox="0 0 100 24" aria-hidden="true"><polyline points={m.linea} fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

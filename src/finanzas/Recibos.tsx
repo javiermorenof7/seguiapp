@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
-  aprenderCategoria, cambiarEstadoRecibo, crearRecibo, deshacerPago, marcarSinPago, obtenerRecibos, pagarRecibo, quitarRecibo, renombrarRecibo, verNumeroCuenta,
+  aprenderCategoria, cambiarDiaRecibo, cambiarEstadoRecibo, crearRecibo, deshacerPago, marcarSinPago, obtenerRecibos, pagarRecibo, quitarRecibo, renombrarRecibo, verNumeroCuenta,
 } from '../datos'
 import { formatoValor } from '../indicadores'
 import Grafico from '../Grafico'
 import { mesesAntes } from './calculos'
 import { categoriaDe, leerMonto, leidoDe, MONTO_INVALIDO, normalizar, type Categoria } from './parseo'
-import { diaAprendido, nombreRecibo, recibosDelMes, sinPagarMesAnterior, valoresEnElTiempo, type EstadoRecibo, type FilaRecibo } from './estadoRecibos'
+import { nombreRecibo, recibosDelMes, sinPagarMesAnterior, valoresEnElTiempo, type EstadoRecibo, type FilaRecibo } from './estadoRecibos'
 
 type Datos = Awaited<ReturnType<typeof obtenerRecibos>>
 
@@ -14,7 +14,6 @@ const pesos = (v: number) => formatoValor('dinero', v)
 const cssVar = (nombre: string) => getComputedStyle(document.documentElement).getPropertyValue(nombre).trim()
 const hoyIso = () => new Date().toLocaleDateString('en-CA')
 const nombreMes = (periodo: string) => new Date(`${periodo}T12:00`).toLocaleDateString('es-CO', { month: 'long' })
-const confirmaPago = (nombre: string, valor: number) => confirm(`¿Pagar ${nombre} por ${pesos(valor)}?`)
 const ESTADO: Record<EstadoRecibo, { texto: string; clase: string }> = {
   vencido: { texto: '✕ Vencido', clase: 'fuera' },
   por_pagar: { texto: '◐ Por pagar', clase: 'cerca' },
@@ -60,8 +59,8 @@ export default function Recibos({ idGastos, categorias, aprendido, abrirNueva, a
     const propuesta = categoriaDe(servicio, aprendido, categorias)
     await pagarRecibo({
       id_recibo: idRecibo, fecha_periodo: periodo ?? `${hoy.slice(0, 7)}-01`, valor, fecha_pago: hoy,
-      dia_pago: periodo ? null : diaAprendido([...(datos?.pagos.filter(p => p.id_recibo === idRecibo) ?? []),
-        { id_pago_recibo: '', id_recibo: idRecibo, id_registro: null, fecha_periodo: '', valor, fecha_pago: hoy, estado: 'pagado' }]),
+      // el día guardado es solo el que pone la persona; el aprendido se calcula al mostrar
+      dia_pago: null,
       gasto: {
         id_seguimiento: idGastos, nota: `Factura ${nombre}`,
         id_etiqueta: tipo === 'hogar' ? idHogar : categoria?.id_etiqueta ?? null,
@@ -109,8 +108,7 @@ export default function Recibos({ idGastos, categorias, aprendido, abrirNueva, a
             {atrasados.map(a => (
               <SinPagar key={a.recibo.id_recibo} nombre={a.nombre} valor={a.valor}
                 propuesta={a.recibo.tipo_recibo === 'personal' ? categoriaDe(a.recibo.nombre_servicio, aprendido, categorias) : null}
-                alPagar={valor => !confirmaPago(`${a.nombre} de ${nombreMes(a.periodo)}`, valor) ? Promise.resolve()
-                  : pagar(a.recibo.id_recibo, a.nombre, a.recibo.nombre_servicio, a.recibo.tipo_recibo, valor,
+                alPagar={valor => pagar(a.recibo.id_recibo, a.nombre, a.recibo.nombre_servicio, a.recibo.tipo_recibo, valor,
                     a.recibo.tipo_recibo === 'personal' ? categoriaDe(a.recibo.nombre_servicio, aprendido, categorias) : null, a.periodo)}
                 alDescartar={() => accion(() => marcarSinPago(a.recibo.id_recibo, a.periodo), `${a.nombre}: ${nombreMes(a.periodo)} quedó como no pagado.`)} />
             ))}
@@ -134,6 +132,7 @@ export default function Recibos({ idGastos, categorias, aprendido, abrirNueva, a
               alPagar={(valor, categoria) => pagar(f.recibo.id_recibo, f.nombre, f.recibo.nombre_servicio, f.recibo.tipo_recibo, valor, categoria)
                 .then(() => setError(''))}
               alDeshacer={() => accion(() => deshacerPago(f.pago!), `Deshecho el pago de ${f.nombre}.`)}
+              alCambiarDia={d => accion(() => cambiarDiaRecibo(f.recibo.id_recibo, d), d ? `${f.nombre} vence el día ${d}.` : `${f.nombre}: el día se vuelve a aprender de tus pagos.`)}
               alPausar={() => accion(() => cambiarEstadoRecibo(f.recibo.id_recibo, 'no_se_paga'), `${f.nombre} quedó en pausa.`)}
               alQuitar={() => confirm(`¿Quitar ${f.nombre}? Su historial de pagos se conserva.`) &&
                 accion(() => quitarRecibo(f.recibo.id_recibo), `${f.nombre} quitada.`)}
@@ -165,13 +164,14 @@ export default function Recibos({ idGastos, categorias, aprendido, abrirNueva, a
   )
 }
 
-function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alPausar, alQuitar, alRenombrar }: {
+function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alPausar, alQuitar, alRenombrar, alCambiarDia }: {
   fila: FilaRecibo
   categorias: Categoria[]
   propuesta: Categoria | null
   alPagar: (valor: number, categoria: Categoria | null) => Promise<void>
   alDeshacer: () => void
   alPausar: () => void
+  alCambiarDia: (dia: number | null) => void
   alQuitar: () => void
   alRenombrar: (nombres: { nombre_servicio: string; nombre_ubicacion: string | null }) => Promise<void>
 }) {
@@ -235,7 +235,7 @@ function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alPaus
     <li className="recibo">
       <span>
         {nombre}
-        <span className="tenue">{dia ? ` · día ${dia}` : ''}</span>
+        <span className="tenue">{dia ? `vence el día ${dia}` : ''}</span>
       </span>
       <strong>{valor !== null ? pesos(valor) : ''}</strong>
       <span className={`estado ${ESTADO[estado].clase}`}>{ESTADO[estado].texto}</span>
@@ -264,6 +264,12 @@ function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alPaus
           {recibo.numero_cuenta_enmascarado && (
             <button type="button" className="chip" onClick={alternarNumero}>{numero ? `Ocultar ${numero}` : `Ver número ${recibo.numero_cuenta_enmascarado}`}</button>
           )}
+          <label className="chip">¿Qué día vence?
+            <select value={recibo.dia_pago ?? ''} onChange={ev => alCambiarDia(ev.target.value ? Number(ev.target.value) : null)}>
+              <option value="">{dia && !recibo.dia_pago ? `Aprendido: ${dia}` : 'No sé'}</option>
+              {Array.from({ length: 31 }, (_, i) => i + 1).map(d => <option key={d} value={d}>Día {d}</option>)}
+            </select>
+          </label>
           {estado !== 'pagado' && <button type="button" className="chip" onClick={alPausar}>Pausar</button>}
           <button type="button" className="chip" onClick={alQuitar}>Quitar factura</button>
         </div>
@@ -377,16 +383,17 @@ function SinPagar({ nombre, valor, propuesta, alPagar, alDescartar }: {
   nombre: string; valor: number; propuesta: Categoria | null; alPagar: (valor: number) => Promise<unknown>; alDescartar: () => void
 }) {
   const [monto, setMonto] = useState(Math.round(valor).toLocaleString('es-CO'))
+  const [pagando, setPagando] = useState(false)
   const [mensaje, setMensaje] = useState('')
   const [enviando, setEnviando] = useState(false)
+  const leido = leerMonto(monto)
 
   async function pagar(evento: FormEvent) {
     evento.preventDefault()
-    const n = leerMonto(monto)
-    if (n === null) return setMensaje(MONTO_INVALIDO)
+    if (leido === null) return setMensaje(MONTO_INVALIDO)
     setEnviando(true)
     try {
-      await alPagar(n)
+      await alPagar(leido)
       setMensaje('')
     } catch (e) {
       setMensaje((e as Error).message)
@@ -397,15 +404,19 @@ function SinPagar({ nombre, valor, propuesta, alPagar, alDescartar }: {
 
   return (
     <li className="recibo">
-      <span>{nombre}{propuesta && <span className="tenue"> · {propuesta.nombre}</span>}</span>
+      <span>{nombre}{propuesta && <span className="tenue">{propuesta.nombre}</span>}</span>
       <strong>{pesos(valor)}</strong>
       <span className="estado fuera">✕ Sin pagar</span>
-      <form className="fila-presupuesto" onSubmit={pagar}>
-        <label htmlFor={`a-${nombre}`}>Valor real</label>
-        <input id={`a-${nombre}`} maxLength={16} value={monto} onChange={ev => setMonto(ev.target.value)} />
-        <button className="secundario" disabled={enviando}>Pagar</button>
-        <button type="button" className="enlace" onClick={alDescartar}>No se pagó ese mes</button>
-      </form>
+      <button className="principal" aria-expanded={pagando} onClick={() => { setPagando(!pagando); setMensaje('') }}>{pagando ? 'Cancelar' : 'Pagar'}</button>
+      {pagando ? (
+        <form className="fila-presupuesto" onSubmit={pagar}>
+          <label htmlFor={`a-${nombre}`}>Valor pagado</label>
+          <input id={`a-${nombre}`} maxLength={16} value={monto} onChange={ev => setMonto(ev.target.value)} autoFocus />
+          <button className="principal" disabled={enviando || leido === null}>Confirmar pago{leido !== null ? ` de ${pesos(leido)}` : ''}</button>
+        </form>
+      ) : (
+        <div className="acciones"><button type="button" className="enlace" onClick={alDescartar}>No se pagó ese mes</button></div>
+      )}
       {mensaje && <p role="alert" className="error">{mensaje}</p>}
     </li>
   )

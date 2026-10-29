@@ -5,7 +5,9 @@ import {
 import { formatoValor } from '../indicadores'
 import { normalizar } from '../finanzas/parseo'
 import Grafico from '../Grafico'
+import SinDatos from '../SinDatos'
 import Barras from '../finanzas/Barras'
+import { Avance } from '../finanzas/Medidas'
 import Historial, { FilaSimple } from '../historial/Historial'
 import { parecido, restarDias } from '../salud/calculos'
 import { dias, diasHechos, leerCantidad, mismoNombre, mejorRacha, racha, totalDelDia, ultimosDias, type Leido, type Marca } from './calculos'
@@ -42,7 +44,18 @@ export default function Habitos({ seguimientos, registros, enfocar, alVolver, al
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [confirmar, setConfirmar] = useState<string | null>(null)
-  const [pestana, setPestana] = useState<'hoy' | 'historial'>('hoy')
+  const [pestana, setPestana] = useState<'resumen' | 'habitos' | 'historial'>(enfocar ? 'habitos' : 'resumen')
+  const [registrando, setRegistrando] = useState(!!enfocar)
+  // el Resumen mira la última semana o el último mes, siempre hasta hoy
+  const [periodo, setPeriodo] = useState<7 | 30>(7)
+  // los que aún no se marcan hoy, primero los que más se marcan en este día de la semana
+  const sugeridosHoy = useMemo(() => {
+    const dia = new Date(`${hoy}T12:00`).getDay()
+    const veces = (id: string) => (marcas.get(id) ?? []).filter(m => new Date(`${m.fecha}T12:00`).getDay() === dia).length
+    return habitos.filter(h => !(marcas.get(h.id_seguimiento) ?? []).some(m => m.fecha === hoy))
+      .sort((a, b) => veces(b.id_seguimiento) - veces(a.id_seguimiento)).slice(0, 5).map(h => h.nombre)
+  }, [habitos, marcas, hoy])
+  const deHoy = registros.filter(r => r.fecha === hoy && habitos.some(h => h.id_seguimiento === r.id_seguimiento))
   const [renombrando, setRenombrando] = useState<{ id: string; nombre: string } | null>(null)
 
   useEffect(() => { obtenerAlias('habito').then(setAlias).catch(e => setError((e as Error).message)) }, [])
@@ -138,15 +151,35 @@ export default function Habitos({ seguimientos, registros, enfocar, alVolver, al
       <button className="volver" onClick={alVolver}>← Mi seguimiento</button>
       <header className="encabezado"><div><h1>Hábitos</h1></div></header>
       <div className="chips pestanas" role="radiogroup" aria-label="Sección de Hábitos">
-        {(['hoy', 'historial'] as const).map(p => (
+        {(['resumen', 'habitos', 'historial'] as const).map(p => (
           <button key={p} type="button" role="radio" aria-checked={pestana === p} className="chip" onClick={() => setPestana(p)}>
-            {p === 'hoy' ? 'Hoy' : 'Historial'}
+            {p === 'resumen' ? 'Resumen' : p === 'habitos' ? 'Mis hábitos' : 'Historial'}
           </button>
         ))}
       </div>
-      {pestana === 'hoy' && (
+      {pestana === 'resumen' && (habitos.length ? (
         <>
-      <Formulario habitos={habitos} hoy={hoy} enviando={enviando || !alias} enfocar={enfocar} alEnviar={enviar} />
+          <div className="panel-periodo">
+            <span className="etiqueta">Período</span>
+            <div className="chips segmentado" role="radiogroup" aria-label="Período">
+              {([[7, 'Última semana'], [30, 'Último mes']] as const).map(([n, texto]) => (
+                <button key={n} type="button" role="radio" aria-checked={periodo === n} className="chip" onClick={() => setPeriodo(n)}>{texto}</button>
+              ))}
+            </div>
+          </div>
+          <CumplidosHoy habitos={habitos} marcas={marcas} hoy={hoy} alVer={() => setPestana('habitos')} />
+          <Constancia habitos={habitos} marcas={marcas} hoy={hoy} dias={periodo} />
+          <Rachas habitos={habitos} marcas={marcas} hoy={hoy} />
+          <Detalle habitos={habitos} marcas={marcas} hoy={hoy} alCambiar={alCambiar} />
+        </>
+      ) : (
+        <p className="tenue">Aún no hay hábitos. <button className="enlace" onClick={() => { setPestana('habitos'); setRegistrando(true) }}>Registra el primero</button>.</p>
+      ))}
+      {pestana === 'habitos' && (
+        <>
+      {registrando
+        ? <Formulario habitos={habitos} sugeridos={sugeridosHoy} hoy={hoy} enviando={enviando || !alias} enfocar alEnviar={enviar} />
+        : <section><button className="principal registrar-uno" onClick={() => setRegistrando(true)}>+ Registrar hábito</button></section>}
       {pregunta && (
         <div className="chips" role="group" aria-label="¿Quisiste decir…?">
           <span>¿Quisiste decir <strong>{pregunta.sugerido}</strong>?</span>
@@ -160,7 +193,20 @@ export default function Habitos({ seguimientos, registros, enfocar, alVolver, al
       {habitos.length > 0 && (
         <>
           <section>
-            <h2>Hoy</h2>
+            <h2>Lo que marcaste hoy</h2>
+            {deHoy.length ? (
+              <ul className="lista">
+                {deHoy.map(r => {
+                  const h = habitos.find(x => x.id_seguimiento === r.id_seguimiento)!
+                  return <FilaSimple key={r.id_registro} fecha={r.fecha} titulo={h.nombre}
+                    detalle={h.tipo_medida === 'si_no' ? 'hecho' : formatoValor('numero', r.valor, h.unidad)}
+                    alBorrar={() => eliminarRegistro(r.id_registro).then(alCambiar)} />
+                })}
+              </ul>
+            ) : <p className="tenue">Aún no marcas nada hoy.</p>}
+          </section>
+          <section>
+            <h2>Mis hábitos hoy</h2>
             <ul className="lista">
               {habitos.map(h => {
                 const suyas = marcas.get(h.id_seguimiento) ?? []
@@ -195,8 +241,6 @@ export default function Habitos({ seguimientos, registros, enfocar, alVolver, al
               })}
             </ul>
           </section>
-          <Constancia habitos={habitos} marcas={marcas} hoy={hoy} />
-          <Detalle habitos={habitos} marcas={marcas} hoy={hoy} alCambiar={alCambiar} />
         </>
       )}
         </>
@@ -222,8 +266,8 @@ export default function Habitos({ seguimientos, registros, enfocar, alVolver, al
 
 // Registrar uno de los hábitos que ya existen: elegirlo, la cantidad si es de cantidad y el día.
 // Un campo por dato: hábito (de la lista o nuevo), cantidad si se mide así y el día.
-function Formulario({ habitos, hoy, enviando, enfocar, alEnviar }: {
-  habitos: Seguimiento[]; hoy: string; enviando: boolean; enfocar?: boolean; alEnviar: (l: Leido) => void
+function Formulario({ habitos, sugeridos = [], hoy, enviando, enfocar, alEnviar }: {
+  habitos: Seguimiento[]; sugeridos?: string[]; hoy: string; enviando: boolean; enfocar?: boolean; alEnviar: (l: Leido) => void
 }) {
   const [nombre, setNombre] = useState('')
   const [cantidad, setCantidad] = useState('')
@@ -255,6 +299,12 @@ function Formulario({ habitos, hoy, enviando, enfocar, alEnviar }: {
         <input required maxLength={60} value={nombre} list="habitos" onChange={ev => setNombre(ev.target.value)}
           placeholder="Qué hábito hiciste" autoComplete="off" autoFocus={enfocar} />
         <small className="ayuda">Ej.: agua, leer, meditar</small>
+        {sugeridos.length > 0 && !nombre.trim() && (
+          <span className="sugeridos">
+            <span className="tenue">Te falta hoy (los que más haces este día)</span>
+            <span className="chips">{sugeridos.map(n => <button key={n} type="button" className="chip" onClick={() => setNombre(n)}>{n}</button>)}</span>
+          </span>
+        )}
         <datalist id="habitos">{habitos.map(h => <option key={h.id_seguimiento} value={h.nombre} />)}</datalist>
       </label>
       {conCantidad && (
@@ -281,16 +331,53 @@ function Formulario({ habitos, hoy, enviando, enfocar, alEnviar }: {
   )
 }
 
-function Constancia({ habitos, marcas, hoy }: { habitos: Seguimiento[]; marcas: Map<string, Marca[]>; hoy: string }) {
-  const series = useMemo(() => [{
-    nombre: 'Días', color: cssVar('--acento'),
-    datos: habitos.map(h => diasHechos(marcas.get(h.id_seguimiento) ?? [], hoy, metaDe(h))),
-  }], [habitos, marcas, hoy])
+function Constancia({ habitos, marcas, hoy, dias: n }: { habitos: Seguimiento[]; marcas: Map<string, Marca[]>; hoy: string; dias: 7 | 30 }) {
+  const filas = useMemo(() => habitos.map(h => ({ nombre: h.nombre, dias: diasHechos(marcas.get(h.id_seguimiento) ?? [], hoy, metaDe(h), n) }))
+    .sort((a, b) => b.dias - a.dias), [habitos, marcas, hoy, n])
+  const series = useMemo(() => [{ nombre: 'Días', color: cssVar('--c1'), datos: filas.map(f => f.dias) }], [filas])
+  const etiquetas = useMemo(() => filas.map(f => f.nombre), [filas])
+  if (filas.every(f => !f.dias)) return (
+    <SinDatos titulo={`No cumpliste hábitos en los últimos ${n} días`} detalle="Marca uno hoy en Mis hábitos para empezar una racha." />
+  )
   return (
     <section>
       <h2>¿Cuántos días los cumplo?</h2>
-      <Barras horizontal etiquetas={habitos.map(h => h.nombre)} series={series} formato={v => `${Math.round(v)}`}
-        colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')} descripcion="Días cumplidos de cada hábito en los últimos 30" />
+      <p className="tenue">De los últimos {n} días</p>
+      <Barras horizontal etiquetas={etiquetas} series={series} formato={v => `${Math.round(v)} de ${n}`}
+        colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
+        descripcion={`Días cumplidos en los últimos ${n}: ${filas.map(f => `${f.nombre} ${f.dias}`).join(', ')}`} />
+    </section>
+  )
+}
+
+function CumplidosHoy({ habitos, marcas, hoy, alVer }: { habitos: Seguimiento[]; marcas: Map<string, Marca[]>; hoy: string; alVer: () => void }) {
+  const hechos = habitos.filter(h => diasHechos(marcas.get(h.id_seguimiento) ?? [], hoy, metaDe(h), 1) === 1).length
+  return (
+    <section>
+      <div className="bloque-pie"><h2>¿Cuántos cumplí hoy?</h2><button className="enlace" onClick={alVer}>Registrar →</button></div>
+      <p><strong className="cifra-media">{hechos} de {habitos.length}</strong> <span className="tenue">{hechos === habitos.length ? '✓ Todos hechos' : `faltan ${habitos.length - hechos}`}</span></p>
+      <Avance valor={hechos} tope={habitos.length} color={cssVar(hechos === habitos.length ? '--en-meta' : '--c1')} descripcion={`Hoy: ${hechos} de ${habitos.length} hábitos hechos`} />
+    </section>
+  )
+}
+
+function Rachas({ habitos, marcas, hoy }: { habitos: Seguimiento[]; marcas: Map<string, Marca[]>; hoy: string }) {
+  const filas = habitos.map(h => {
+    const suyas = marcas.get(h.id_seguimiento) ?? []
+    return { h, actual: racha(suyas, hoy, metaDe(h)), mejor: mejorRacha(suyas, metaDe(h)) }
+  }).sort((a, b) => b.actual - a.actual)
+  return (
+    <section>
+      <h2>¿Cómo van mis rachas?</h2>
+      <ul className="lista">
+        {filas.map(f => (
+          <li key={f.h.id_seguimiento} className="meta-avance">
+            <span>{f.h.nombre}</span>
+            <strong>{dias(f.actual)}<span className="tenue"> · mejor {dias(f.mejor)}</span></strong>
+            <Avance valor={f.actual} tope={Math.max(f.mejor, 1)} color={cssVar('--c2')} descripcion={`${f.h.nombre}: racha de ${dias(f.actual)}, la mejor fue ${dias(f.mejor)}`} />
+          </li>
+        ))}
+      </ul>
     </section>
   )
 }

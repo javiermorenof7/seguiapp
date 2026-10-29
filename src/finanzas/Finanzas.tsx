@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
-  aprenderCategoria, crearEtiqueta, guardarPresupuesto, obtenerFinanzas, obtenerMetasAhorro, obtenerPrestamos, obtenerRecibos, registrar, type RegistroGuardado, type Seguimiento,
+  aprenderCategoria, crearEtiqueta, guardarPresupuesto, obtenerFinanzas, obtenerMetasAhorro, obtenerPrestamos, obtenerRecibos, obtenerRegistros, registrar, type RegistroGuardado, type Seguimiento,
 } from '../datos'
 import { formatoValor } from '../indicadores'
 import { categoriaDe, leerMonto, leidoDe, MONTO_INVALIDO, normalizar, type Categoria } from './parseo'
@@ -10,6 +10,7 @@ import {
 } from './calculos'
 import Barras from './Barras'
 import Dona from './Dona'
+import SinDatos from '../SinDatos'
 import { Apilada, Avance } from './Medidas'
 import { recibosDelMes, totalesDelMes } from './estadoRecibos'
 import { avanceMeta } from './metas'
@@ -76,7 +77,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
   const prestamos = deudas?.prestamos ?? []
   useEffect(() => {
     obtenerPrestamos().then(setDeudas, () => {})
-    obtenerRecibos(`${mesesAntes(mes, 12)}-01`).then(setRecibosVer, () => {})
+    obtenerRecibos('2000-01-01').then(setRecibosVer, () => {})
   }, [mes, registros])
   // el filtro con que "Ver todos" abre el Historial
   const [tipoHistorial, setTipoHistorial] = useState(idGastos ?? '')
@@ -108,21 +109,50 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
     })
   }, [registros, seguimientos])
 
-  const cuentasDe = useCallback((mes: string): Cuentas | null => {
+  // la app carga el último año; para el Resumen se trae una vez lo anterior y se junta (lo reciente sigue viniendo de "registros")
+  const [antiguos, setAntiguos] = useState<Movimiento[]>([])
+  useEffect(() => {
+    const limite = new Date(); limite.setFullYear(limite.getFullYear() - 1)
+    const hasta = limite.toLocaleDateString('en-CA')
+    const tipoDe = new Map((['gasto', 'ingreso', 'ahorro'] as const).map(t => [id(t), t]))
+    obtenerRegistros('2000-01-01').then(lista => setAntiguos(lista.flatMap(r => {
+      const tipo = tipoDe.get(r.id_seguimiento)
+      return tipo && r.fecha < hasta ? [{ fecha: r.fecha, valor: r.valor, tipo, id_etiqueta: r.id_etiqueta, grupo: r.grupo, nota: r.nota }] : []
+    })), () => {})
+  }, [seguimientos])
+  const todos = useMemo(() => {
+    const desde = movimientos.reduce((m, x) => x.fecha < m ? x.fecha : m, '9999')
+    return [...movimientos, ...antiguos.filter(a => a.fecha < desde)]
+  }, [movimientos, antiguos])
+
+  // periodo "AAAA-MM" (un mes) o "AAAA" (el año: se junta en un solo mes para reutilizar las cuentas del mes)
+  const cuentasDe = useCallback((periodo: string): Cuentas | null => {
     if (!datos) return null
-    const presupuestos = new Map(datos.presupuestos.map(p => [p.id_etiqueta, Number(p.valor)]))
-    const pendientes = recibosPendientes(datos.recibos, datos.pagos, mes)
+    const esAno = periodo.length === 4
+    const mes = esAno ? `${periodo}-01` : periodo
+    const movs = esAno ? todos.filter(m => m.fecha.startsWith(periodo)).map(m => ({ ...m, fecha: `${periodo}-01-01` })) : todos
+    const meses = esAno ? (periodo === hoyIso().slice(0, 4) ? Number(hoyIso().slice(5, 7)) : 12) : 1
+    const presupuestos = new Map(datos.presupuestos.map(p => [p.id_etiqueta, Number(p.valor) * meses]))
+    const pendientes = esAno ? [] : recibosPendientes(datos.recibos, datos.pagos, mes)
     const idHogar = datos.categorias.find(c => normalizar(c.nombre).startsWith('hogar'))?.id_etiqueta ?? null
-    const filas = porCategoria(movimientos, mes, datos.categorias, presupuestos, pendientes, idHogar)
-    const delMes = resumenMes(movimientos, mes)
+    const filas = porCategoria(movs, mes, datos.categorias, presupuestos, pendientes, idHogar)
+    const delMes = resumenMes(movs, mes)
     return { presupuestos, pendientes, filas, delMes, despues: saldoDespues(delMes.saldo, filas, pendientes) }
-  }, [datos, movimientos])
+  }, [datos, todos])
   const cuentas = useMemo(() => cuentasDe(mes), [cuentasDe, mes])
   // el Resumen abre siempre en el mes actual; se puede ir hasta 11 meses atrás (lo que ya está cargado)
   const [mesVer, setMesVer] = useState(mes)
+  // meses con movimientos, del más reciente al más antiguo, agrupados por año
+  const periodosDisponibles = useMemo(() => {
+    const meses = [...new Set(todos.map(m => m.fecha.slice(0, 7)))].sort().reverse()
+    const porAno = new Map<string, string[]>()
+    for (const m of meses) porAno.set(m.slice(0, 4), [...(porAno.get(m.slice(0, 4)) ?? []), m])
+    return [...porAno.entries()]
+  }, [todos])
+  const primerMes = periodosDisponibles.at(-1)?.[1].at(-1) ?? mes
   const cuentasVer = useMemo(() => mesVer === mes ? cuentas : cuentasDe(mesVer), [cuentasDe, cuentas, mes, mesVer])
   const facturasVer = useMemo(() => recibosVer && totalesDelMes(recibosDelMes(recibosVer.recibos.filter(r => r.estado !== 'no_se_paga'), recibosVer.pagos,
-    mesVer === mes ? hoyIso() : finDeMes(mesVer))), [recibosVer, mes, mesVer])
+    mesVer === mes ? hoyIso() : finDeMes(mesVer.length === 4 ? `${mesVer}-12` : mesVer))), [recibosVer, mes, mesVer])
 
   // "+ Registrar …" de cada pestaña; al tocarlo se abre el formulario de ese tipo
   const registrar = (tipo: TipoMovimiento) => datos && cuentas && (registrando === tipo ? (
@@ -213,28 +243,66 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
           registros={registros.filter(r => r.id_seguimiento === idIngresos && r.fecha.startsWith(mes))}
           alCambiar={async () => { await Promise.all([alCambiar(), cargar()]) }} />
       </>)}
-      {datos && cuentasVer && pestana === 'resumen' && (
-        <>
-          <div className="periodo">
-            <button className="secundario" aria-label="Mes anterior" disabled={mesVer <= mesesAntes(mes, 11)} onClick={() => setMesVer(mesesAntes(mesVer, 1))}>◀</button>
-            <strong>{nombreMesLargo(mesVer)}</strong>
-            <button className="secundario" aria-label="Mes siguiente" disabled={mesVer >= mes} onClick={() => setMesVer(mesesAntes(mesVer, -1))}>▶</button>
-          </div>
-          {mesVer !== mes && (
-            <p role="status" className="aviso">Estás viendo {nombreMesLargo(mesVer)}. <button className="enlace" onClick={() => setMesVer(mes)}>Volver a este mes</button></p>
-          )}
-          <Resumen cuentas={cuentasVer} acumulado={acumuladoAno(movimientos, mesVer)} alVerRecibos={() => setPestana('recibos')} />
-          {facturasVer && <FacturasDelMes totales={facturasVer} alVer={() => setPestana('recibos')} />}
-          <EnQueSeVa filas={cuentasVer.filas} alVer={() => setPestana('gastos')} />
-          <PorCategoria filas={cuentasVer.filas} alVer={() => setPestana('gastos')} />
-          {idIngresos && <IngresosDelMes movimientos={movimientos} mes={mesVer} alVer={() => setPestana('ingresos')} />}
-          {metasAhorro && <MetasDelMes metas={metasAhorro.metas}
-            ahorros={metasAhorro.ahorros.map(r => ({ fecha: r.fecha, valor: r.valor, tipo: 'ahorro' as const, id_etiqueta: r.id_etiqueta }))} alVer={() => setPestana('ahorro')} />}
-          {deudas && <DeudasHoy deudas={deudas} alVer={() => setPestana('deudas')} />}
-          <Reparto movimientos={movimientos} mes={mesVer} categorias={datos.categorias} />
-          <MesAMes meses={mesAMes(movimientos, mesVer)} />
-        </>
-      )}
+      {datos && cuentasVer && pestana === 'resumen' && (() => {
+        const esAno = mesVer.length === 4
+        const ano = mesVer.slice(0, 4)
+        const anoActual = mes.slice(0, 4)
+        const finAno = ano === anoActual ? mes : `${ano}-12`
+        const nombre = esAno ? `todo ${ano}` : nombreMesLargo(mesVer)
+        const reparto = esAno ? todos.filter(m => m.fecha.startsWith(ano)).map(m => ({ ...m, fecha: `${ano}-01-01` })) : todos
+        const sinNada = !cuentasVer.delMes.ingresos && !cuentasVer.delMes.gastos && !cuentasVer.delMes.ahorro
+        const atajos: [string, string][] = [[mes, 'Este mes'], [mesesAntes(mes, 1), 'Mes pasado'], [anoActual, 'Este año'], [String(Number(anoActual) - 1), 'Año pasado']]
+        return (
+          <>
+            <div className="panel-periodo">
+            <span className="etiqueta">Período</span>
+            <div className="fila-filtros">
+            <div className="chips segmentado" role="radiogroup" aria-label="Período del resumen">
+              {atajos.map(([p, texto]) => (
+                <button key={texto} type="button" role="radio" aria-checked={mesVer === p} className="chip" onClick={() => setMesVer(p)}>{texto}</button>
+              ))}
+            </div>
+              <select aria-label="Elegir mes o año" value={atajos.some(([p]) => p === mesVer) ? '' : mesVer} onChange={ev => ev.target.value && setMesVer(ev.target.value)}>
+                <option value="">Elegir…</option>
+                {periodosDisponibles.map(([a, meses]) => (
+                  <optgroup key={a} label={a}>
+                    <option value={a}>Todo {a}</option>
+                    {meses.map(m => <option key={m} value={m}>{nombreMesLargo(m)}</option>)}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+            {!esAno && (
+              <div className="periodo">
+                <button className="secundario" aria-label="Mes anterior" disabled={mesVer <= primerMes} onClick={() => setMesVer(mesesAntes(mesVer, 1))}>◀</button>
+                <strong>{nombreMesLargo(mesVer)}</strong>
+                <button className="secundario" aria-label="Mes siguiente" disabled={mesVer >= mes} onClick={() => setMesVer(mesesAntes(mesVer, -1))}>▶</button>
+              </div>
+            )}
+            {mesVer !== mes && (
+              <p role="status" className="aviso">Estás viendo {nombre}. <button className="enlace" onClick={() => setMesVer(mes)}>Volver a este mes</button></p>
+            )}
+            </div>
+            {sinNada ? (
+              <SinDatos titulo={`No hay movimientos en ${nombre}`} detalle="No registraste gastos, ingresos ni ahorro en ese período."
+                acciones={[{ texto: 'Volver a este mes', hacer: () => setMesVer(mes) }, { texto: '+ Registrar gasto', hacer: () => { setPestana('gastos'); setRegistrando('gasto') } }]} />
+            ) : (
+              <>
+                <Resumen cuentas={cuentasVer} acumulado={acumuladoAno(todos, esAno ? finAno : mesVer)} alVerRecibos={() => setPestana('recibos')} />
+                {!esAno && facturasVer && <FacturasDelMes totales={facturasVer} alVer={() => setPestana('recibos')} />}
+                <EnQueSeVa filas={cuentasVer.filas} alVer={() => setPestana('gastos')} />
+                <PorCategoria filas={cuentasVer.filas} alVer={() => setPestana('gastos')} />
+                {!esAno && idIngresos && <IngresosDelMes movimientos={todos} mes={mesVer} alVer={() => setPestana('ingresos')} />}
+                {metasAhorro && <MetasDelMes metas={metasAhorro.metas}
+                  ahorros={metasAhorro.ahorros.map(r => ({ fecha: r.fecha, valor: r.valor, tipo: 'ahorro' as const, id_etiqueta: r.id_etiqueta }))} alVer={() => setPestana('ahorro')} />}
+                {deudas && <DeudasHoy deudas={deudas} alVer={() => setPestana('deudas')} />}
+                <Reparto movimientos={reparto} mes={esAno ? `${ano}-01` : mesVer} categorias={datos.categorias} />
+                <MesAMes meses={mesAMes(todos, esAno ? finAno : mesVer)} />
+              </>
+            )}
+          </>
+        )
+      })()}
       {datos && cuentas && pestana === 'gastos' && (
         <>
           {registrar('gasto')}

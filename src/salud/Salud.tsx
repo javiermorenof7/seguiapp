@@ -632,30 +632,50 @@ function MetaGym({ idGym, meta, alCambiar }: { idGym: string; meta?: number; alC
   )
 }
 
+const TODOS = '*'
 function Progreso({ sesiones, hoy, ejercicios, ventana, alVer }: { sesiones: Sesion[]; hoy: string; ejercicios: string[]; ventana: Ventana; alVer: () => void }) {
   const r = rangoDe(ventana.escala, ventana.ancla)
   const [elegido, setElegido] = useState('')
   // abre en el último ejercicio entrenado (las sesiones llegan de la más reciente a la más antigua)
+  const todos = elegido === TODOS
   const actual = ejercicios.includes(elegido) ? elegido : sesiones.find(s => ejercicios.includes(s.ejercicio))?.ejercicio ?? ejercicios[0]
   const p = useMemo(() => actual ? progreso(sesiones, actual) : null, [sesiones, actual])
   const puntos = useMemo(() => actual ? pesoPorDia(sesiones, actual, r.desde).filter(p => p.fecha <= r.hasta) : [], [sesiones, actual, r.desde, r.hasta])
   const records = useMemo(() => ({ indices: indicesRecord(puntos), texto: 'récord' }), [puntos])
+  // Todos: cambio de cada ejercicio con 2 días o más con peso en el período, de mayor a menor
+  const cambios = useMemo(() => !todos ? [] : ejercicios
+    .map(e => ({ ejercicio: e, cambio: cambioPeso(pesoPorDia(sesiones, e, r.desde).filter(p => p.fecha <= r.hasta)) }))
+    .filter((c): c is { ejercicio: string; cambio: number } => c.cambio !== null).sort((a, b) => b.cambio - a.cambio), [todos, ejercicios, sesiones, r.desde, r.hasta])
+  const seriesTodos = useMemo(() => [{ nombre: 'Cambio de peso', datos: cambios.map(c => c.cambio), color: cssVar('--c1') }], [cambios])
   if (!actual || !p) return null
   const cambio = cambioPeso(puntos)
   const cuando = enPeriodo(ventana, hoy)
   const record = p.record !== null ? ` · récord ${kg(p.record)}` : ''
+  const subieron = cambios.filter(c => c.cambio > 0).length
   return (
     <section>
       <div className="bloque-pie"><h2>¿Estoy subiendo de peso?</h2><button className="enlace" onClick={alVer}>Ver →</button></div>
-      <Selector id="filtro-ejercicio" titulo="Ejercicio" icono="🏋️" valor={actual} alCambiar={setElegido}>
+      <Selector id="filtro-ejercicio" titulo="Ejercicio" icono="🏋️" valor={todos ? TODOS : actual} alCambiar={setElegido}>
+        <option value={TODOS}>Todos</option>
         {ejercicios.map(e => <option key={e}>{e}</option>)}
       </Selector>
-      {cambio !== null
-        ? <p><strong className="cifra-media">{conSigno(cambio, 'kg')}</strong> <span className="tenue">{cuando}{record}</span></p>
-        : <p className="tenue">Pocos registros con peso {cuando}{record}.</p>}
-      {puntos.length > 0 && (
-        <Grafico puntos={puntos} color={cssVar('--c1')} colorMeta={cssVar('--tenue')} formato={kg} destacados={records} desde={r.desde} hasta={r.hasta}
-          descripcion={`Mayor peso de cada día en ${actual}; los puntos grandes son cada récord nuevo`} />
+      {todos ? (cambios.length ? (
+        <>
+          <p>Subiste en <strong className="cifra-media">{subieron}</strong> <span className="tenue">de {cambios.length} {cambios.length === 1 ? 'ejercicio' : 'ejercicios'} {cuando}</span></p>
+          <Barras etiquetas={cambios.map(c => c.ejercicio)} series={seriesTodos} horizontal leyenda={false}
+            formato={v => conSigno(v, 'kg')} formatoEje={v => `${v}`} colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
+            descripcion={`Cambio del mejor peso ${cuando}: ${cambios.map(c => `${c.ejercicio} ${conSigno(c.cambio, 'kg')}`).join(', ')}`} />
+        </>
+      ) : <p className="tenue">Pocos registros con peso {cuando}: hacen falta 2 días con peso en un mismo ejercicio.</p>) : (
+        <>
+          {cambio !== null
+            ? <p><strong className="cifra-media">{conSigno(cambio, 'kg')}</strong> <span className="tenue">{cuando}{record}</span></p>
+            : <p className="tenue">Pocos registros con peso {cuando}{record}.</p>}
+          {puntos.length > 0 && (
+            <Grafico puntos={puntos} color={cssVar('--c1')} colorMeta={cssVar('--tenue')} formato={kg} destacados={records} desde={r.desde} hasta={r.hasta}
+              descripcion={`Mayor peso de cada día en ${actual}; los puntos grandes son cada récord nuevo`} />
+          )}
+        </>
       )}
     </section>
   )

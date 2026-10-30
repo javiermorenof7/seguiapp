@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  anteriorDe, comparar, constancia, seriesPorDia, diasEntrenados, faltaParaMeta, estadoSemana, leerSerie, parecido, pesoPorDia, progreso, seriesDeUltima, sesionesPorDia, sugerencia, textoSerie, type Sesion,
+  anteriorDe, cambioPeso, comparar, fechasDeRecord, recordsSegunMeta, constancia, seriesPorDia, diasEntrenados, faltaParaMeta, estadoSemana, leerSerie, parecido, pesoPorDia, progreso, seriesDeUltima, sesionesPorDia, sugerencia, textoSerie, type Sesion,
 } from './calculos'
 
 const s = (fecha: string, ejercicio: string, series: number, repeticiones: number, peso: number | null): Sesion =>
@@ -27,6 +27,19 @@ describe('leerSerie', () => {
 })
 
 describe('gym', () => {
+  it('récords por semana cuando se cumple la meta y cuando no', () => {
+    expect(fechasDeRecord(sesiones)).toEqual(['2026-10-08', '2026-10-15'])
+    // semanas cerradas antes del 20/10: la del 5/10 tiene 2 días y un récord; la del 12/10, 1 día y un récord
+    const r = recordsSegunMeta(sesiones, '2026-10-20', 2)
+    expect(r.cumplidas).toEqual({ semanas: 1, promedio: 1 })
+    expect(r.otras.semanas).toBe(11)
+    expect(r.otras.promedio).toBeCloseTo(1 / 11)
+    expect(recordsSegunMeta(sesiones, '2026-10-20', null).umbral).toBe(1)
+  })
+  it('cambio de peso del primer al último día del período; null con un solo día', () => {
+    expect(cambioPeso(pesoPorDia(sesiones, 'press banca'))).toBe(7.5)
+    expect(cambioPeso(pesoPorDia(sesiones, 'press banca', '2026-10-15'))).toBeNull()
+  })
   it('la vez anterior es la más reciente del ejercicio', () => expect(anteriorDe(sesiones, 'press banca')?.fecha).toBe('2026-10-15'))
   it('sugiere subir tras dos sesiones iguales', () => {
     expect(sugerencia({ ejercicio: 'press banca', series: 3, repeticiones: 8, peso: 62.5 }, sesiones)).toContain('65 kg')

@@ -6,7 +6,7 @@ import { Avance } from '../finanzas/Medidas'
 import Barras from '../finanzas/Barras'
 import {
   aTiempoPorSemana, aTiempoSemana,
-  despuesDeListo, deHoy, fechaColombia, proximoEnvio, sumarDias, type Recordatorio, type Repeticion, type Tarea,
+  despuesDeListo, deHoy, fechaColombia, fechaCorta, hora12, proximoEnvio, sumarDias, type Recordatorio, type Repeticion, type Tarea,
 } from './calculos'
 
 type Datos = Awaited<ReturnType<typeof obtenerTareas>>
@@ -35,8 +35,6 @@ const MAX_DESCRIPCION = 300
 const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 const REPETICION: Record<Repeticion, string> = { unico: 'Una vez', diario: 'Cada día', habiles: 'Lunes a viernes', semanal: 'Cada semana', mensual: 'Cada mes' }
 const hoyColombia = () => fechaColombia(new Date())
-const fechaCorta = (f: string) => new Date(`${f}T12:00`).toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })
-const hora12 = (h: string) => new Date(`2000-01-01T${h.slice(0, 5)}`).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' })
 
 function textoRepeticion(r: Recordatorio) {
   if (r.tipo_repeticion === 'semanal') return `Cada ${(r.dias_semana ?? []).map(d => DIAS[d - 1].toLowerCase()).join(', ')}`

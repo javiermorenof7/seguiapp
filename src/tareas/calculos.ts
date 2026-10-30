@@ -17,6 +17,8 @@ export interface Recordatorio {
   dias_semana: number[] | null
   dia_mes: number | null
   fecha_proximo_envio: string | null
+  // cuándo salió el último aviso al celular; solo lo usa la función de avisos
+  fecha_ultimo_aviso?: string | null
   estado: 'activo' | 'pausado' | 'terminado'
 }
 
@@ -27,6 +29,8 @@ const MAX_DIAS = 400
 export const fechaColombia = (instante: string | Date) => new Date(new Date(instante).getTime() - DESFASE).toISOString().slice(0, 10)
 export const instanteColombia = (fecha: string, hora: string) => new Date(`${fecha}T${hora.slice(0, 5)}:00-05:00`).toISOString()
 export const sumarDias = (fecha: string, n: number) => new Date(Date.parse(`${fecha}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10)
+export const fechaCorta = (f: string) => new Date(`${f}T12:00`).toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'short' })
+export const hora12 = (h: string) => new Date(`2000-01-01T${h.slice(0, 5)}`).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' })
 // 1 = lunes … 7 = domingo (ISO), como dias_semana
 export const diaSemana = (fecha: string) => new Date(`${fecha}T12:00:00Z`).getUTCDay() || 7
 
@@ -65,6 +69,11 @@ export function proximoEnvio(r: Pick<Recordatorio, 'tipo_repeticion' | 'dias_sem
   const otra = siguienteFecha(r, sumarDias(primera, 1))
   return otra ? instanteColombia(otra, r.hora_envio) : null
 }
+
+// El aviso sale una vez por envío: llegó su hora y aún no se avisó. No mueve la fecha; eso lo hace "Listo".
+export const tocaAvisar = (r: Pick<Recordatorio, 'fecha_proximo_envio' | 'fecha_ultimo_aviso'>, ahora: Date) =>
+  !!r.fecha_proximo_envio && Date.parse(r.fecha_proximo_envio) <= ahora.getTime()
+  && (!r.fecha_ultimo_aviso || Date.parse(r.fecha_ultimo_aviso) < Date.parse(r.fecha_proximo_envio))
 
 // "Listo": pasa al día siguiente que toque después del envío actual (o de hoy, si estaba atrasado). El único termina.
 export function despuesDeListo(r: Recordatorio, ahora: Date): { fecha_proximo_envio: string | null; estado: Recordatorio['estado'] } {

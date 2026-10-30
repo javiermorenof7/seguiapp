@@ -105,6 +105,32 @@ export function pesoPorDia(sesiones: Sesion[], ejercicio: string, desde = ''): M
 export const indicesRecord = (puntos: Medicion[]) =>
   puntos.flatMap((p, i) => i && p.valor > Math.max(...puntos.slice(0, i).map(x => x.valor)) ? [i] : [])
 
+// Cuánto cambió el mejor peso del primer al último día del período; null con menos de 2 días.
+export const cambioPeso = (puntos: Medicion[]) => puntos.length > 1 ? puntos[puntos.length - 1].valor - puntos[0].valor : null
+
+// Días con récord nuevo de cada ejercicio (un día puede repetirse si dos ejercicios marcan récord).
+export function fechasDeRecord(sesiones: Sesion[]) {
+  return [...new Set(sesiones.map(s => s.ejercicio))].flatMap(e => {
+    const puntos = pesoPorDia(sesiones, e)
+    return indicesRecord(puntos).map(i => puntos[i].fecha)
+  })
+}
+
+// Últimas n semanas cerradas (lunes a domingo): récords por semana cuando se llegó a la meta de días y cuando no.
+// Sin meta, el umbral es el promedio de días por semana de esas semanas.
+export function recordsSegunMeta(sesiones: Sesion[], hoy: string, meta: number | null, n = 12) {
+  const lunes = restarDias(hoy, (new Date(`${hoy}T12:00:00Z`).getUTCDay() || 7) - 1)
+  const semanas = constancia(sesiones, 'mes', restarDias(lunes, 7 * n), restarDias(lunes, 1), hoy)
+  const umbral = meta ?? Math.max(1, Math.round(semanas.reduce((t, g) => t + g.dias, 0) / semanas.length))
+  const records = fechasDeRecord(sesiones)
+  const grupo = (cumple: boolean) => {
+    const elegidas = semanas.filter(g => (g.dias >= umbral) === cumple)
+    const total = elegidas.reduce((t, g) => t + records.filter(f => f >= g.desde && f <= g.hasta).length, 0)
+    return { semanas: elegidas.length, promedio: elegidas.length ? total / elegidas.length : 0 }
+  }
+  return { umbral, cumplidas: grupo(true), otras: grupo(false) }
+}
+
 export const diasEntrenados = (sesiones: Sesion[], hoy: string, dias = 30) =>
   new Set(sesiones.filter(s => diasEntre(s.fecha, hoy) < dias && s.fecha <= hoy).map(s => s.fecha)).size
 

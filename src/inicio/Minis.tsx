@@ -31,6 +31,25 @@ export function HabitosHoy({ lista }: { lista: { nombre: string; hecho: boolean 
   )
 }
 
+// marca: hora del recordatorio o fecha de la vencida; paso: el recordatorio ya llegó a su hora
+export interface ItemAgenda { marca: string; tipo: 'recordatorio' | 'vencida' | 'hoy'; texto: string; paso?: boolean }
+const ICONO_AGENDA = { recordatorio: '◷', vencida: '✕', hoy: '○' }
+
+export function AgendaHoy({ items, mas }: { items: ItemAgenda[]; mas: number }) {
+  return (
+    <ul className="mini mini-agenda">
+      {items.map((it, i) => (
+        <li key={i} className={it.paso ? 'paso' : undefined}>
+          <span className="marca">{it.marca}</span>
+          <span aria-hidden="true">{ICONO_AGENDA[it.tipo]}</span>
+          <span className="texto">{it.texto}{it.tipo === 'vencida' && <span className="oculto"> (vencida)</span>}{it.paso && <span className="oculto"> (ya pasó)</span>}</span>
+        </li>
+      ))}
+      {mas > 0 && <li className="mas">y {mas} más</li>}
+    </ul>
+  )
+}
+
 export function TareasHoy({ hechas, total }: { hechas: number; total: number }) {
   return (
     <span className="mini mini-barra" role="img" aria-label={`${hechas} de ${total} tareas de hoy hechas`}>

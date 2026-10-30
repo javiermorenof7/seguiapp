@@ -347,7 +347,9 @@ export async function obtenerAvisos() {
 
 // Las fechas del último envío las lleva la función que envía; aquí no se tocan.
 export async function guardarPreferenciaAviso(p: Omit<PreferenciaAviso, `fecha_ultimo_${string}`>) {
-  revisar(await supabase.from('preferencia_aviso').upsert(p, { onConflict: 'id_usuario' }))
+  // la primera vez la pantalla parte de PREFERENCIA_INICIAL, que trae esas fechas: sin quitarlas la base responde 403
+  const datos = Object.fromEntries(Object.entries(p).filter(([campo]) => !campo.startsWith('fecha_ultimo_'))) as typeof p
+  revisar(await supabase.from('preferencia_aviso').upsert(datos, { onConflict: 'id_usuario' }))
 }
 
 export async function guardarSuscripcion(s: { endpoint: string; llave_p256dh: string; llave_auth: string; nombre_equipo: string }) {
@@ -368,7 +370,7 @@ export async function quitarSuscripcion(endpoint: string) {
 // Recibos activos (número siempre enmascarado) y sus pagos del último año, para el día aprendido y el gráfico.
 export async function obtenerRecibos(desde: string) {
   const [recibos, pagos] = await Promise.all([
-    supabase.from('recibo_visible').select('id_recibo, nombre_servicio, nombre_ubicacion, tipo_recibo, dia_pago, numero_cuenta_enmascarado, estado')
+    supabase.from('recibo_visible').select('id_recibo, nombre_servicio, nombre_ubicacion, tipo_recibo, dia_pago, numero_cuenta_enmascarado, requiere_numero_pago, estado')
       .in('estado', ['activo', 'no_se_paga']).order('nombre_servicio'),
     supabase.from('pago_recibo').select('id_pago_recibo, id_recibo, id_registro, fecha_periodo, valor, fecha_pago, estado')
       .gte('fecha_periodo', desde),
@@ -383,7 +385,8 @@ export async function verNumeroCuenta(idRecibo: string): Promise<string | null> 
 
 // Si ya existe en pausa o quitada, la vuelve a usar con el estado pedido en vez de fallar.
 export async function crearRecibo(datos: {
-  nombre_servicio: string; tipo_recibo: 'hogar' | 'personal'; nombre_ubicacion: string | null; numero_cuenta: string | null; estado: 'activo' | 'no_se_paga'
+  nombre_servicio: string; tipo_recibo: 'hogar' | 'personal'; nombre_ubicacion: string | null; numero_cuenta: string | null; requiere_numero_pago: boolean
+  estado: 'activo' | 'no_se_paga'
 }) {
   const { error, data } = await supabase.from('recibo').insert(datos).select('id_recibo').single()
   if (error?.code !== '23505') return revisar({ data, error }).id_recibo as string
@@ -406,12 +409,12 @@ export async function marcarSinPago(idRecibo: string, fechaPeriodo: string) {
     { onConflict: 'id_usuario,id_recibo,fecha_periodo' }))
 }
 
-export async function cambiarDiaRecibo(idRecibo: string, dia: number | null) {
-  revisar(await supabase.from('recibo').update({ dia_pago: dia }).eq('id_recibo', idRecibo))
-}
-
-export async function renombrarRecibo(idRecibo: string, nombres: { nombre_servicio: string; nombre_ubicacion: string | null }) {
-  const { error } = await supabase.from('recibo').update(nombres).eq('id_recibo', idRecibo)
+// Sin número nuevo se conserva el que tenía (la pantalla solo conoce el enmascarado).
+export async function editarRecibo(idRecibo: string, cambios: {
+  nombre_servicio: string; nombre_ubicacion: string | null; tipo_recibo: 'hogar' | 'personal'; dia_pago: number | null
+  requiere_numero_pago: boolean; numero_cuenta?: string
+}) {
+  const { error } = await supabase.from('recibo').update(cambios).eq('id_recibo', idRecibo)
   if (error?.code === '23505') throw new ErrorDatos('Ya tienes una factura con ese servicio y ubicación.')
   revisar({ data: null, error })
 }

@@ -327,3 +327,15 @@ section:not([class]) + form.formulario { margin-top: 40px; }
 .sin-datos { display: grid; gap: 8px; justify-items: start; margin: 24px 0; padding: 20px; border: 1px dashed var(--linea); border-radius: var(--radio); }
 .sin-datos strong { font-size: 18px; }
 .sin-datos .tenue { margin: 0; }
+
+/* Filtro de ubicación de facturas: una línea aunque haya muchas; la lista la abre el celular */
+.filtro-ubicacion { display: grid; gap: 6px; margin-top: 20px; max-width: 520px; }
+.filtro-ubicacion .etiqueta { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--tenue); }
+.filtro-ubicacion .selector { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 4px 0 14px; background: var(--fondo); border: 1px solid var(--linea); border-radius: 12px; }
+.filtro-ubicacion .selector.elegido { border-color: var(--acento); }
+.filtro-ubicacion .selector:has(select:focus-visible) { outline: 3px solid var(--acento); outline-offset: 2px; }
+.filtro-ubicacion select:focus-visible { outline: none; }
+.filtro-ubicacion select { flex: 1; min-width: 0; font: inherit; font-weight: 600; color: var(--tinta); background: transparent; border: 0; padding: 12px 0; }
+.filtro-ubicacion .quitar { background: none; color: var(--tenue); min-width: 44px; min-height: 44px; border-radius: 999px; }
+.editar-factura { border-top: 1px solid var(--linea); padding-top: 14px; }
+.editar-factura h3 { margin: 0; }

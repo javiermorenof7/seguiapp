@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
-  aprenderCategoria, cambiarDiaRecibo, cambiarEstadoRecibo, crearRecibo, deshacerPago, marcarSinPago, obtenerRecibos, pagarRecibo, quitarRecibo, renombrarRecibo, verNumeroCuenta,
+  aprenderCategoria, cambiarEstadoRecibo, crearRecibo, deshacerPago, editarRecibo, marcarSinPago, obtenerRecibos, pagarRecibo, quitarRecibo, verNumeroCuenta,
 } from '../datos'
 import { formatoValor } from '../indicadores'
 import Grafico from '../Grafico'
 import { mesesAntes } from './calculos'
 import { categoriaDe, leerMonto, leidoDe, MONTO_INVALIDO, normalizar, type Categoria } from './parseo'
-import { nombreRecibo, recibosDelMes, sinPagarMesAnterior, valoresEnElTiempo, type EstadoRecibo, type FilaRecibo } from './estadoRecibos'
+import {
+  nombreRecibo, recibosDelMes, sinPagarMesAnterior, ubicacionDe, ubicacionesConConteo, valoresEnElTiempo, type EstadoRecibo, type FilaRecibo, type ReciboVisible,
+} from './estadoRecibos'
 
 type Datos = Awaited<ReturnType<typeof obtenerRecibos>>
 
@@ -43,11 +45,19 @@ export default function Recibos({ idGastos, categorias, aprendido, abrirNueva, a
   useEffect(() => { cargar() }, [cargar])
 
   const activos = useMemo(() => datos?.recibos.filter(r => r.estado !== 'no_se_paga') ?? [], [datos])
-  const pausados = datos?.recibos.filter(r => r.estado === 'no_se_paga') ?? []
   const filas = useMemo(() => datos ? recibosDelMes(activos, datos.pagos, hoy) : [], [datos, activos, hoy])
   const [grupo, setGrupo] = useState<'por_pagar' | 'pagadas' | 'pausa'>('por_pagar')
-  const porPagar = filas.filter(f => f.estado === 'vencido' || f.estado === 'por_pagar')
-  const pagadas = filas.filter(f => f.estado === 'pagado' || f.estado === 'sin_pendiente')
+  // '' = todas las ubicaciones
+  const [lugar, setLugar] = useState('')
+  const enLugar = (r: ReciboVisible) => !lugar || ubicacionDe(r) === lugar
+  const todosPausados = datos?.recibos.filter(r => r.estado === 'no_se_paga') ?? []
+  const todasPorPagar = filas.filter(f => f.estado === 'vencido' || f.estado === 'por_pagar')
+  const todasPagadas = filas.filter(f => f.estado === 'pagado' || f.estado === 'sin_pendiente')
+  const delGrupo = grupo === 'pausa' ? todosPausados : (grupo === 'pagadas' ? todasPagadas : todasPorPagar).map(f => f.recibo)
+  const ubicaciones = ubicacionesConConteo(datos?.recibos ?? [], delGrupo)
+  const pausados = todosPausados.filter(enLugar)
+  const porPagar = todasPorPagar.filter(f => enLugar(f.recibo))
+  const pagadas = todasPagadas.filter(f => enLugar(f.recibo))
   const visibles = grupo === 'pagadas' ? pagadas : porPagar
   const atrasados = useMemo(() => datos ? sinPagarMesAnterior(activos, datos.pagos, hoy) : [], [datos, activos, hoy])
   const idHogar = categorias.find(c => normalizar(c.nombre).startsWith('hogar'))?.id_etiqueta ?? null
@@ -83,6 +93,13 @@ export default function Recibos({ idGastos, categorias, aprendido, abrirNueva, a
     } catch (e) {
       setError((e as Error).message)
     }
+  }
+
+  async function editar(recibo: ReciboVisible, cambios: Parameters<typeof editarRecibo>[1]) {
+    await editarRecibo(recibo.id_recibo, cambios)
+    setAviso(`${nombreRecibo({ ...recibo, ...cambios })} quedó guardada.`)
+    setError('')
+    await Promise.all([cargar(), alCambiar()])
   }
 
   if (!datos) return error ? <p role="alert" className="error">{error}</p> : <p className="tenue">Cargando…</p>
@@ -122,39 +139,49 @@ export default function Recibos({ idGastos, categorias, aprendido, abrirNueva, a
             <button key={g} type="button" role="radio" aria-checked={grupo === g} className="chip" onClick={() => setGrupo(g)}>{texto} ({n})</button>
           ))}
         </div>
+        {ubicaciones.length > 1 && (
+          <div className="filtro-ubicacion">
+            <label htmlFor="filtro-ubicacion" className="etiqueta">Ubicación</label>
+            <div className={lugar ? 'selector elegido' : 'selector'}>
+              <span aria-hidden="true">📍</span>
+              <select id="filtro-ubicacion" value={lugar} onChange={ev => setLugar(ev.target.value)}>
+                <option value="">Todas · {delGrupo.length} {delGrupo.length === 1 ? 'factura' : 'facturas'}</option>
+                {ubicaciones.filter(u => u.facturas).map(u => <option key={u.ubicacion} value={u.ubicacion}>{u.ubicacion} · {u.facturas}</option>)}
+                {ubicaciones.some(u => !u.facturas) && (
+                  <optgroup label={`Sin facturas ${grupo === 'pausa' ? 'en pausa' : grupo === 'pagadas' ? 'pagadas' : 'por pagar'}`}>
+                    {ubicaciones.filter(u => !u.facturas).map(u => <option key={u.ubicacion} value={u.ubicacion}>{u.ubicacion} · 0</option>)}
+                  </optgroup>
+                )}
+              </select>
+              {lugar && <button type="button" className="quitar" aria-label="Ver todas las ubicaciones" onClick={() => setLugar('')}>✕</button>}
+            </div>
+          </div>
+        )}
       </section>
       {grupo !== 'pausa' && (
         <ul className="lista">
-          {!visibles.length && <li className="tenue">{grupo === 'por_pagar' ? 'No tienes facturas por pagar este mes.' : 'Aún no has pagado facturas este mes.'}</li>}
+          {!visibles.length && <li className="tenue">{grupo === 'por_pagar' ? 'No tienes facturas por pagar este mes' : 'Aún no has pagado facturas este mes'}{lugar ? ` en ${lugar}.` : '.'}</li>}
           {visibles.map(f => (
             <FilaDeRecibo key={f.recibo.id_recibo} fila={f} categorias={categorias}
               propuesta={f.recibo.tipo_recibo === 'personal' ? categoriaDe(f.recibo.nombre_servicio, aprendido, categorias) : null}
               alPagar={(valor, categoria) => pagar(f.recibo.id_recibo, f.nombre, f.recibo.nombre_servicio, f.recibo.tipo_recibo, valor, categoria)
                 .then(() => setError(''))}
               alDeshacer={() => accion(() => deshacerPago(f.pago!), `Deshecho el pago de ${f.nombre}.`)}
-              alCambiarDia={d => accion(() => cambiarDiaRecibo(f.recibo.id_recibo, d), d ? `${f.nombre} vence el día ${d}.` : `${f.nombre}: el día se vuelve a aprender de tus pagos.`)}
               alPausar={() => accion(() => cambiarEstadoRecibo(f.recibo.id_recibo, 'no_se_paga'), `${f.nombre} quedó en pausa.`)}
               alQuitar={() => confirm(`¿Quitar ${f.nombre}? Su historial de pagos se conserva.`) &&
                 accion(() => quitarRecibo(f.recibo.id_recibo), `${f.nombre} quitada.`)}
-              alRenombrar={async nombres => {
-                await renombrarRecibo(f.recibo.id_recibo, nombres)
-                setAviso(`${f.nombre} ahora se llama ${nombreRecibo({ ...f.recibo, ...nombres })}.`)
-                setError('')
-                await Promise.all([cargar(), alCambiar()])
-              }} />
+              alEditar={cambios => editar(f.recibo, cambios)} />
           ))}
         </ul>
       )}
       {grupo === 'pausa' && (
         <>
           <p className="tenue">No cuentan en el mes ni en los avisos. Actívalas cuando vuelvas a pagarlas.</p>
-          {!pausados.length && <p className="tenue">No tienes facturas en pausa.</p>}
+          {!pausados.length && <p className="tenue">No tienes facturas en pausa{lugar ? ` en ${lugar}` : ''}.</p>}
           <ul className="lista">
             {pausados.map(r => (
-              <li key={r.id_recibo} className="dos">
-                <span>{nombreRecibo(r)}</span>
-                <button className="secundario" onClick={() => accion(() => cambiarEstadoRecibo(r.id_recibo, 'activo'), `${nombreRecibo(r)} está activa.`)}>Activar</button>
-              </li>
+              <FilaPausada key={r.id_recibo} recibo={r} alEditar={cambios => editar(r, cambios)}
+                alActivar={() => accion(() => cambiarEstadoRecibo(r.id_recibo, 'activo'), `${nombreRecibo(r)} está activa.`)} />
             ))}
           </ul>
         </>
@@ -164,16 +191,15 @@ export default function Recibos({ idGastos, categorias, aprendido, abrirNueva, a
   )
 }
 
-function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alPausar, alQuitar, alRenombrar, alCambiarDia }: {
+function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alPausar, alQuitar, alEditar }: {
   fila: FilaRecibo
   categorias: Categoria[]
   propuesta: Categoria | null
   alPagar: (valor: number, categoria: Categoria | null) => Promise<void>
   alDeshacer: () => void
   alPausar: () => void
-  alCambiarDia: (dia: number | null) => void
   alQuitar: () => void
-  alRenombrar: (nombres: { nombre_servicio: string; nombre_ubicacion: string | null }) => Promise<void>
+  alEditar: (cambios: Parameters<typeof editarRecibo>[1]) => Promise<void>
 }) {
   const { recibo, nombre, estado, valor, dia } = fila
   const [monto, setMonto] = useState(valor ? Math.round(valor).toLocaleString('es-CO') : '')
@@ -181,7 +207,7 @@ function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alPaus
   const [numero, setNumero] = useState<string | null>(null)
   const [mensaje, setMensaje] = useState('')
   const [enviando, setEnviando] = useState(false)
-  const [renombrando, setRenombrando] = useState<{ servicio: string; ubicacion: string } | null>(null)
+  const [editando, setEditando] = useState(false)
   const pideCategoria = recibo.tipo_recibo === 'personal'
   const [pagando, setPagando] = useState(false)
 
@@ -195,26 +221,6 @@ function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alPaus
       await alPagar(n, categorias.find(c => c.id_etiqueta === elegida) ?? null)
       setMensaje('')
       setPagando(false)
-    } catch (e) {
-      setMensaje((e as Error).message)
-    } finally {
-      setEnviando(false)
-    }
-  }
-
-  async function renombrar(evento: FormEvent) {
-    evento.preventDefault()
-    const limpio = (t: string) => t.replace(/\s+/g, ' ').trim()
-    const servicio = limpio(renombrando?.servicio ?? '')
-    const ubicacion = recibo.tipo_recibo === 'hogar' ? limpio(renombrando?.ubicacion ?? '') : ''
-    if (!servicio || servicio.length > 60) return setMensaje('Escribe el servicio, de 1 a 60 letras.')
-    if (recibo.tipo_recibo === 'hogar' && (!ubicacion || ubicacion.length > 60)) return setMensaje('Escribe la ubicación, de 1 a 60 letras.')
-    if (servicio === recibo.nombre_servicio && (ubicacion || null) === recibo.nombre_ubicacion) return setRenombrando(null)
-    setEnviando(true)
-    try {
-      await alRenombrar({ nombre_servicio: servicio, nombre_ubicacion: ubicacion || null })
-      setRenombrando(null)
-      setMensaje('')
     } catch (e) {
       setMensaje((e as Error).message)
     } finally {
@@ -236,6 +242,9 @@ function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alPaus
       <span>
         {nombre}
         <span className="tenue">{dia ? `vence el día ${dia}` : ''}</span>
+        {recibo.requiere_numero_pago && !recibo.numero_cuenta_enmascarado && (
+          <button type="button" className="enlace" onClick={() => setEditando(true)}>Sin número de pago · Agregar</button>
+        )}
       </span>
       <strong>{valor !== null ? pesos(valor) : ''}</strong>
       <span className={`estado ${ESTADO[estado].clase}`}>{ESTADO[estado].texto}</span>
@@ -258,40 +267,110 @@ function FilaDeRecibo({ fila, categorias, propuesta, alPagar, alDeshacer, alPaus
       <details className="mas">
         <summary>Más</summary>
         <div className="chips">
-          <button type="button" className="chip" onClick={() => {
-            setRenombrando(renombrando ? null : { servicio: recibo.nombre_servicio, ubicacion: recibo.nombre_ubicacion ?? '' }); setMensaje('')
-          }}>Renombrar</button>
+          <button type="button" className="chip" aria-expanded={editando} onClick={() => { setEditando(!editando); setMensaje('') }}>Editar</button>
           {recibo.numero_cuenta_enmascarado && (
             <button type="button" className="chip" onClick={alternarNumero}>{numero ? `Ocultar ${numero}` : `Ver número ${recibo.numero_cuenta_enmascarado}`}</button>
           )}
-          <label className="chip">¿Qué día vence?
-            <select value={recibo.dia_pago ?? ''} onChange={ev => alCambiarDia(ev.target.value ? Number(ev.target.value) : null)}>
-              <option value="">{dia && !recibo.dia_pago ? `Aprendido: ${dia}` : 'No sé'}</option>
-              {Array.from({ length: 31 }, (_, i) => i + 1).map(d => <option key={d} value={d}>Día {d}</option>)}
-            </select>
-          </label>
           {estado !== 'pagado' && <button type="button" className="chip" onClick={alPausar}>Pausar</button>}
           <button type="button" className="chip" onClick={alQuitar}>Quitar factura</button>
         </div>
       </details>
-      {renombrando && (
-        <form className="chips" onSubmit={renombrar}>
-          <label>Servicio
-            <input required maxLength={60} value={renombrando.servicio} autoComplete="off"
-              onChange={ev => setRenombrando({ ...renombrando, servicio: ev.target.value })} />
-          </label>
-          {recibo.tipo_recibo === 'hogar' && (
-            <label>Ubicación
-              <input required maxLength={60} value={renombrando.ubicacion} autoComplete="off"
-                onChange={ev => setRenombrando({ ...renombrando, ubicacion: ev.target.value })} />
-            </label>
-          )}
-          <button className="chip" disabled={enviando}>Guardar</button>
-          <button type="button" className="chip" onClick={() => { setRenombrando(null); setMensaje('') }}>Cancelar</button>
-        </form>
-      )}
+      {editando && <EditarRecibo recibo={recibo} aprendido={recibo.dia_pago ? null : dia} alGuardar={alEditar} alCerrar={() => setEditando(false)} />}
       {mensaje && <p role="alert" className="error">{mensaje}</p>}
     </li>
+  )
+}
+
+function FilaPausada({ recibo, alEditar, alActivar }: {
+  recibo: ReciboVisible
+  alEditar: (cambios: Parameters<typeof editarRecibo>[1]) => Promise<void>
+  alActivar: () => void
+}) {
+  const [editando, setEditando] = useState(false)
+  return (
+    <li className="recibo">
+      <span>{nombreRecibo(recibo)}</span>
+      <button className="secundario" aria-expanded={editando} onClick={() => setEditando(!editando)}>{editando ? 'Cancelar' : 'Editar'}</button>
+      <button className="principal" onClick={alActivar}>Activar</button>
+      {editando && <EditarRecibo recibo={recibo} aprendido={null} alGuardar={alEditar} alCerrar={() => setEditando(false)} />}
+    </li>
+  )
+}
+
+// Todo lo de la factura en un solo formulario; el número completo nunca llega a la pantalla: vacío conserva el que tiene.
+function EditarRecibo({ recibo, aprendido, alGuardar, alCerrar }: {
+  recibo: ReciboVisible
+  aprendido: number | null
+  alGuardar: (cambios: Parameters<typeof editarRecibo>[1]) => Promise<void>
+  alCerrar: () => void
+}) {
+  const [servicio, setServicio] = useState(recibo.nombre_servicio)
+  const [tipo, setTipo] = useState(recibo.tipo_recibo)
+  const [ubicacion, setUbicacion] = useState(recibo.nombre_ubicacion ?? '')
+  const [requiere, setRequiere] = useState(!!recibo.requiere_numero_pago)
+  const [numero, setNumero] = useState('')
+  const [dia, setDia] = useState(recibo.dia_pago ? String(recibo.dia_pago) : '')
+  const [error, setError] = useState('')
+  const [enviando, setEnviando] = useState(false)
+
+  async function guardar(evento: FormEvent) {
+    evento.preventDefault()
+    const limpio = (t: string) => t.replace(/\s+/g, ' ').trim()
+    if (!limpio(servicio)) return setError('Escribe el servicio, por ejemplo "Luz".')
+    if (tipo === 'hogar' && !limpio(ubicacion)) return setError('Escribe la ubicación del hogar.')
+    setEnviando(true)
+    try {
+      await alGuardar({
+        nombre_servicio: limpio(servicio), tipo_recibo: tipo, nombre_ubicacion: tipo === 'hogar' ? limpio(ubicacion) : null,
+        dia_pago: dia ? Number(dia) : null, requiere_numero_pago: requiere,
+        ...(requiere && numero.trim() ? { numero_cuenta: numero.trim() } : {}),
+      })
+      alCerrar()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <form className="formulario editar-factura" onSubmit={guardar}>
+      <h3>Editar factura</h3>
+      <div className="chips" role="radiogroup" aria-label="Tipo de factura">
+        {(['hogar', 'personal'] as const).map(t => (
+          <button key={t} type="button" role="radio" aria-checked={tipo === t} className="chip" onClick={() => setTipo(t)}>
+            {t === 'hogar' ? 'Hogar' : 'Personal'}
+          </button>
+        ))}
+      </div>
+      <label>Servicio<input required maxLength={60} value={servicio} onChange={ev => setServicio(ev.target.value)} autoComplete="off" /></label>
+      {tipo === 'hogar' && (
+        <label>Ubicación<input required maxLength={60} value={ubicacion} onChange={ev => setUbicacion(ev.target.value)} autoComplete="off" /></label>
+      )}
+      <label>¿Qué día vence?
+        <select value={dia} onChange={ev => setDia(ev.target.value)}>
+          <option value="">{aprendido ? `Aprendido de tus pagos: ${aprendido}` : 'No sé'}</option>
+          {Array.from({ length: 31 }, (_, i) => i + 1).map(d => <option key={d} value={d}>Día {d}</option>)}
+        </select>
+      </label>
+      <div className="chips" role="radiogroup" aria-label="¿Requiere número de pago?">
+        <span className="tenue">¿Requiere número de pago?</span>
+        <button type="button" role="radio" aria-checked={requiere} className="chip" onClick={() => setRequiere(true)}>Sí</button>
+        <button type="button" role="radio" aria-checked={!requiere} className="chip" onClick={() => setRequiere(false)}>No</button>
+      </div>
+      {requiere && (
+        <label>Número de pago
+          <input maxLength={40} value={numero} onChange={ev => setNumero(ev.target.value)} autoComplete="off"
+            placeholder={recibo.numero_cuenta_enmascarado ? `Guardado: ${recibo.numero_cuenta_enmascarado}` : 'El de la factura'} />
+          <small className="ayuda">{recibo.numero_cuenta_enmascarado ? 'Déjalo vacío para conservar el que tiene.' : 'Se muestra oculto (****1234).'}</small>
+        </label>
+      )}
+      <div className="chips">
+        <button className="principal" disabled={enviando}>Guardar</button>
+        <button type="button" className="secundario" onClick={alCerrar}>Cancelar</button>
+      </div>
+      {error && <p role="alert" className="error">{error}</p>}
+    </form>
   )
 }
 
@@ -305,6 +384,7 @@ function NuevoRecibo({ inicial, categorias, alGuardar }: {
   const [servicio, setServicio] = useState('')
   const [tipo, setTipo] = useState<'hogar' | 'personal'>('hogar')
   const [ubicacion, setUbicacion] = useState('')
+  const [requiere, setRequiere] = useState(false)
   const [numero, setNumero] = useState('')
   const [monto, setMonto] = useState('')
   const [elegida, setElegida] = useState('')
@@ -322,9 +402,9 @@ function NuevoRecibo({ inicial, categorias, alGuardar }: {
     try {
       if (await alGuardar({
         nombre_servicio: servicio.trim(), tipo_recibo: tipo,
-        nombre_ubicacion: tipo === 'hogar' ? ubicacion.trim() : null, numero_cuenta: numero.trim() || null,
+        nombre_ubicacion: tipo === 'hogar' ? ubicacion.trim() : null, numero_cuenta: requiere ? numero.trim() || null : null, requiere_numero_pago: requiere,
       }, valor, categorias.find(c => c.id_etiqueta === elegida) ?? null) === false) return
-      setServicio(''); setUbicacion(''); setNumero(''); setMonto(''); setElegida(''); setError(''); setAbierto(false)
+      setServicio(''); setUbicacion(''); setRequiere(false); setNumero(''); setMonto(''); setElegida(''); setError(''); setAbierto(false)
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -358,10 +438,17 @@ function NuevoRecibo({ inicial, categorias, alGuardar }: {
               </select>
             </label>
           )}
-          <label>Número de cuenta (opcional)
-            <input maxLength={40} value={numero} onChange={ev => setNumero(ev.target.value)} autoComplete="off" />
-            <small className="ayuda">El de la factura; se muestra oculto (****1234)</small>
-          </label>
+          <div className="chips" role="radiogroup" aria-label="¿Requiere número de pago?">
+            <span className="tenue">¿Requiere número de pago?</span>
+            <button type="button" role="radio" aria-checked={requiere} className="chip" onClick={() => setRequiere(true)}>Sí</button>
+            <button type="button" role="radio" aria-checked={!requiere} className="chip" onClick={() => setRequiere(false)}>No</button>
+          </div>
+          {requiere && (
+            <label>Número de pago
+              <input maxLength={40} value={numero} onChange={ev => setNumero(ev.target.value)} autoComplete="off" />
+              <small className="ayuda">El de la factura; se muestra oculto (****1234). Puedes agregarlo después.</small>
+            </label>
+          )}
           <div className="chips" role="radiogroup" aria-label="¿La pagas ahora?">
             <span className="tenue">¿La pagas ahora?</span>
             <button type="button" role="radio" aria-checked={pagarAhora} className="chip" onClick={() => setPagarAhora(true)}>Sí, la pago ahora</button>

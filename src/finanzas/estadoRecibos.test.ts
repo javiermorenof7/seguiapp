@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { diaAprendido, recibosDelMes, sinPagarMesAnterior, totalesDelMes, valoresEnElTiempo, type PagoGuardado, type ReciboVisible } from './estadoRecibos'
+import { diaAprendido, recibosDelMes, sinPagarMesAnterior, totalesDelMes, ubicacionDe, ubicacionesConConteo, ubicacionesDe, valoresEnElTiempo, type PagoGuardado, type ReciboVisible } from './estadoRecibos'
 
 const r = (id: string, extra: Partial<ReciboVisible> = {}): ReciboVisible => ({
   id_recibo: id, nombre_servicio: id, nombre_ubicacion: null, tipo_recibo: 'personal', dia_pago: null, numero_cuenta_enmascarado: null, ...extra,
@@ -74,4 +74,24 @@ it('no aprende el día de los pagos cargados de la hoja (pago = inicio del perí
   const cargado = { ...p('a', '2026-08', 1), fecha_pago: '2026-08-01' }
   expect(diaAprendido([cargado, { ...p('a', '2026-09', 1), fecha_pago: '2026-09-01' }])).toBeNull()
   expect(recibosDelMes([r('a', { dia_pago: 20 })], [p('a', '2026-09', 1, 5)], '2026-10-15')[0]).toMatchObject({ dia: 20, estado: 'por_pagar' })
+})
+
+describe('ubicaciones del filtro', () => {
+  it('las personales van como Personal y no se repiten', () => {
+    const recibos = [r('luz', { tipo_recibo: 'hogar', nombre_ubicacion: 'Casa' }), r('agua', { tipo_recibo: 'hogar', nombre_ubicacion: 'Casa' }),
+      r('gas', { tipo_recibo: 'hogar', nombre_ubicacion: 'Apto' }), r('celular')]
+    expect(ubicacionesDe(recibos)).toEqual(['Apto', 'Casa', 'Personal'])
+    expect(recibos.filter(x => ubicacionDe(x) === 'Casa').map(x => x.id_recibo)).toEqual(['luz', 'agua'])
+    expect(ubicacionesDe([])).toEqual([])
+    expect(ubicacionesDe([r('x'), r('y', { tipo_recibo: 'hogar', nombre_ubicacion: 'Zona' })])).toEqual(['Zona', 'Personal'])
+  })
+
+  it('el selector pone primero las ubicaciones con facturas en el grupo y conserva las demás en 0', () => {
+    const casa = r('luz', { tipo_recibo: 'hogar', nombre_ubicacion: 'Casa' })
+    const apto = r('gas', { tipo_recibo: 'hogar', nombre_ubicacion: 'Apto' })
+    const celular = r('celular')
+    expect(ubicacionesConConteo([casa, apto, celular], [casa, celular])).toEqual([
+      { ubicacion: 'Casa', facturas: 1 }, { ubicacion: 'Personal', facturas: 1 }, { ubicacion: 'Apto', facturas: 0 },
+    ])
+  })
 })

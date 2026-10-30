@@ -249,7 +249,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
         <Ahorro idAhorro={idAhorro} metas={metasAhorro.metas} ahorros={metasAhorro.ahorros} alCambiar={alCambiar} />
       </>)}
       {datos && pestana === 'categorias' && (
-        <Categorias idGastos={idGastos} idIngresos={idIngresos ?? null} categorias={datos.categorias} fuentes={datos.fuentes}
+        <Categorias idGastos={idGastos} idIngresos={idIngresos ?? null} idAhorro={idAhorro ?? null} categorias={datos.categorias} fuentes={datos.fuentes}
           metas={metasAhorro?.metas ?? []} aprendido={datos.aprendido} alIrAhorro={() => setPestana('ahorro')}
           alCambiar={async () => { await Promise.all([alCambiar(), cargar()]) }} />
       )}

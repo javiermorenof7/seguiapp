@@ -114,7 +114,7 @@ function FilaMeta({ meta, avance, alEditar, alQuitar }: {
   )
 }
 
-function FormularioMeta({ titulo, inicial, alGuardar }: {
+export function FormularioMeta({ titulo, inicial, alGuardar }: {
   titulo?: string
   inicial?: MetaAhorro
   alGuardar: (meta: { nombre: string; valor: number; fecha_fin: string | null }) => Promise<void>

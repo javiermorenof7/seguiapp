@@ -543,6 +543,15 @@ export async function crearCategoria(idSeguimiento: string, nombre: string, grup
   return fila.id_etiqueta as string
 }
 
+// Corrige nombre y grupo; lo aprendido con el nombre viejo pasa al nuevo (como al renombrar hábitos).
+export async function editarCategoria(idEtiqueta: string, viejo: string, cambios: { nombre: string; grupo: 'basico' | 'personal' | null }) {
+  const { error } = await supabase.from('etiqueta').update(cambios).eq('id_etiqueta', idEtiqueta)
+  if (error?.code === '23505') throw new ErrorDatos(`Ya tienes una categoría llamada ${cambios.nombre} (o la tuviste antes).`)
+  revisar({ data: null, error })
+  if (cambios.nombre !== viejo)
+    revisar(await supabase.from('alias').update({ texto_correcto: cambios.nombre }).eq('tipo', 'categoria').eq('texto_correcto', viejo))
+}
+
 // Borrado lógico: sus registros pasan a la categoría elegida (o quedan sin categoría); montos y fechas no se tocan.
 export async function quitarCategoria(idEtiqueta: string, idDestino: string | null) {
   revisar(await supabase.from('registro').update({ id_etiqueta: idDestino }).eq('id_etiqueta', idEtiqueta))

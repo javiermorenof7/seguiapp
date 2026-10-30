@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { aprenderCategoria, categorizar, crearCategoria, obtenerSinCategoria, quitarCategoria } from '../datos'
+import { aprenderCategoria, categorizar, crearCategoria, editarCategoria, editarMetaAhorro, obtenerSinCategoria, quitarCategoria, quitarMetaAhorro } from '../datos'
+import { FormularioMeta } from './Ahorro'
+import type { MetaAhorro } from './metas'
 import { puedeCrear, sugerirNuevas, TOPE, yaExiste, type Sugerencia, type TipoCategoria } from './reglasCategorias'
 import { normalizar, type Categoria } from './parseo'
 
@@ -11,12 +13,13 @@ const TEXTO = {
 }
 
 // Un solo lugar para las categorías de Finanzas, por tipo y con tope: la app sugiere, nunca crea sola.
-export default function Categorias({ idGastos, idIngresos, categorias, fuentes, metas, aprendido, alIrAhorro, alCambiar }: {
+export default function Categorias({ idGastos, idIngresos, idAhorro, categorias, fuentes, metas, aprendido, alIrAhorro, alCambiar }: {
   idGastos: string
   idIngresos: string | null
+  idAhorro: string | null
   categorias: Categoria[]
   fuentes: Categoria[]
-  metas: { nombre: string }[]
+  metas: MetaAhorro[]
   aprendido: Map<string, string>
   alIrAhorro: () => void
   alCambiar: () => Promise<void>
@@ -39,8 +42,9 @@ export default function Categorias({ idGastos, idIngresos, categorias, fuentes, 
       {tipo === 'ahorro' ? (
         <section>
           <h2>Metas de ahorro</h2>
-          <p className="tenue">En Ahorro cada meta es su categoría. Tienes {metas.length} de {TOPE.ahorro}{metas.length ? `: ${metas.map(m => m.nombre).join(', ')}` : ''}.</p>
-          <button className="secundario" onClick={alIrAhorro}>Ver y crear metas en Ahorro</button>
+          <p className="tenue">En Ahorro cada meta es su categoría ({metas.length} de {TOPE.ahorro}). Aquí las corriges o quitas; se crean en la pestaña Ahorro.</p>
+          {idAhorro && <Metas idAhorro={idAhorro} metas={metas} alCambiar={alCambiar} />}
+          <button className="secundario" onClick={alIrAhorro}>Ir a Ahorro</button>
         </section>
       ) : (
         <Lista key={tipo} tipo={tipo} idSeguimiento={tipo === 'gasto' ? idGastos : idIngresos!} lista={tipo === 'gasto' ? categorias : fuentes}
@@ -61,6 +65,7 @@ function Lista({ tipo, idSeguimiento, lista, aprendido, texto: t, alCambiar }: {
   const [nombre, setNombre] = useState('')
   const [grupo, setGrupo] = useState<'basico' | 'personal'>('personal')
   const [quitando, setQuitando] = useState<Categoria | null>(null)
+  const [editando, setEditando] = useState<{ categoria: Categoria; nombre: string; grupo: 'basico' | 'personal' } | null>(null)
   const [destino, setDestino] = useState('')
   const [sugerencias, setSugerencias] = useState<Sugerencia[]>([])
   const [aviso, setAviso] = useState('')
@@ -148,7 +153,31 @@ function Lista({ tipo, idSeguimiento, lista, aprendido, texto: t, alCambiar }: {
             <li key={c.id_etiqueta} className="categoria">
               <span>{c.nombre}</span>
               {tipo === 'gasto' && <span className="tenue">{c.grupo === 'basico' ? 'Básico' : 'Personal'}</span>}
-              {quitando?.id_etiqueta === c.id_etiqueta ? (
+              {editando?.categoria === c ? (
+                <form className="confirmar-quitar" onSubmit={ev => {
+                  ev.preventDefault()
+                  const limpio = editando.nombre.replace(/\s+/g, ' ').trim()
+                  if (!limpio || limpio.length > 60) return setError(`Escribe el nombre de la ${t.una}, de 1 a 60 letras.`)
+                  if (yaExiste(limpio, lista.filter(x => x !== c))) return setError(`Ya tienes una ${t.una} llamada ${limpio}.`)
+                  hacer(() => editarCategoria(c.id_etiqueta, c.nombre, { nombre: limpio, grupo: tipo === 'gasto' ? editando.grupo : null }),
+                    `${limpio} quedó guardada.`).then(() => setEditando(null))
+                }}>
+                  <label>Nombre<input required maxLength={60} value={editando.nombre} autoComplete="off" autoFocus
+                    onChange={ev => setEditando({ ...editando, nombre: ev.target.value })} /></label>
+                  {tipo === 'gasto' && (
+                    <div className="chips" role="radiogroup" aria-label="Tipo de gasto">
+                      {(['basico', 'personal'] as const).map(g => (
+                        <button key={g} type="button" role="radio" aria-checked={editando.grupo === g} className="chip"
+                          onClick={() => setEditando({ ...editando, grupo: g })}>{g === 'basico' ? 'Básico' : 'Personal'}</button>
+                      ))}
+                    </div>
+                  )}
+                  <span className="chips">
+                    <button className="principal" disabled={enviando}>Guardar</button>
+                    <button type="button" className="secundario" onClick={() => setEditando(null)}>Cancelar</button>
+                  </span>
+                </form>
+              ) : quitando?.id_etiqueta === c.id_etiqueta ? (
                 <span className="confirmar-quitar">
                   <label>¿A dónde pasan sus {t.registros}?
                     <select value={destino} onChange={ev => setDestino(ev.target.value)}>
@@ -163,7 +192,10 @@ function Lista({ tipo, idSeguimiento, lista, aprendido, texto: t, alCambiar }: {
                   </span>
                 </span>
               ) : (
-                <button className="secundario" onClick={() => { setQuitando(c); setDestino('') }}>Quitar</button>
+                <span className="chips acciones-categoria">
+                  <button className="secundario" onClick={() => { setEditando({ categoria: c, nombre: c.nombre, grupo: c.grupo ?? 'personal' }); setQuitando(null); setError('') }}>Editar</button>
+                  <button className="secundario" onClick={() => { setQuitando(c); setDestino(''); setEditando(null) }}>Quitar</button>
+                </span>
               )}
             </li>
           ))}
@@ -188,6 +220,44 @@ function Lista({ tipo, idSeguimiento, lista, aprendido, texto: t, alCambiar }: {
           </form>
         )}
       </section>
+    </>
+  )
+}
+
+// Metas de ahorro: corregir nombre, valor o fecha, o quitarla (sus ahorros quedan como ahorro libre).
+function Metas({ idAhorro, metas, alCambiar }: { idAhorro: string; metas: MetaAhorro[]; alCambiar: () => Promise<void> }) {
+  const [editando, setEditando] = useState<string | null>(null)
+  const [aviso, setAviso] = useState('')
+  const [error, setError] = useState('')
+  if (!metas.length) return <p className="tenue">Aún no tienes metas.</p>
+  return (
+    <>
+      {aviso && <p role="status" className="aviso">{aviso}</p>}
+      {error && <p role="alert" className="error">{error}</p>}
+      <ul className="lista">
+        {metas.map(m => (
+          <li key={m.id_meta} className="categoria">
+            <span>{m.nombre}</span>
+            <span />
+            {editando === m.id_meta ? (
+              <span className="confirmar-quitar">
+                <FormularioMeta inicial={m} alGuardar={async c => {
+                  await editarMetaAhorro(m, c)
+                  setAviso(`${c.nombre} quedó guardada.`); setError(''); setEditando(null)
+                  await alCambiar()
+                }} />
+                <button className="secundario" onClick={() => setEditando(null)}>Cancelar</button>
+              </span>
+            ) : (
+              <span className="chips acciones-categoria">
+                <button className="secundario" onClick={() => setEditando(m.id_meta)}>Editar</button>
+                <button className="secundario" onClick={() => confirm(`¿Quitar la meta ${m.nombre}? Sus ahorros se conservan como ahorro libre.`) &&
+                  quitarMetaAhorro(idAhorro, m).then(() => { setAviso(`${m.nombre} quitada.`); return alCambiar() }, e => setError((e as Error).message))}>Quitar</button>
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
     </>
   )
 }

@@ -254,6 +254,7 @@ export default function Habitos({ seguimientos, registros, enfocar, alVolver, al
           registros={registros}
           filtros={[{ nombre: 'Hábito', opciones: habitos.map(h => [h.id_seguimiento, h.nombre] as [string, string]), de: r => r.id_seguimiento }]}
           suma={false}
+          vista={elegidos => ({ modo: 'conteo', pregunta: '¿Cuántos hábitos cumpliste cada día?', maximoDia: elegidos['Hábito'] ? 1 : habitos.length })}
           total={lista => `${new Set(lista.map(r => r.fecha)).size} días con hábitos`}
           fila={r => {
             const h = habitos.find(x => x.id_seguimiento === r.id_seguimiento)!
@@ -419,7 +420,7 @@ function Detalle({ habitos, marcas, hoy, alCambiar }: {
       {h.tipo_medida === 'numero' && (
         <>
           <Periodo valor={rango} alCambiar={setRango} />
-          <Grafico puntos={enRango} meta={meta} color={cssVar('--acento')} colorMeta={cssVar('--tenue')}
+          <Grafico puntos={enRango} meta={meta} color={cssVar('--c1')} colorMeta={cssVar('--tenue')}
             formato={v => formatoValor('numero', v, h.unidad)} etiquetaMeta={meta ? `Meta ${formatoValor('numero', meta, h.unidad)}` : undefined}
             descripcion={`${h.nombre} por día ${rango ? `en los últimos ${rango} días` : 'en todo el historial'}${meta ? '; la línea punteada es la meta diaria' : ''}`} />
         </>

@@ -13,6 +13,7 @@ import { recibosDelMes, type PagoGuardado, type ReciboVisible } from '../../../s
 import { avanceMeta, type MetaAhorro } from '../../../src/finanzas/metas'
 import { mesesAntes } from '../../../src/finanzas/calculos'
 import { LLAVE_PUBLICA_VAPID } from '../../../src/avisos/llave'
+import { avisoInactividad, avisoRegistro, enSilencio, horaColombia, inactivo, moduloDe, MODULOS, ritmo, sinUso, tocaInactividad, tocaRecordatorio, type Marca, type Modulo } from '../../../src/avisos/ritmo'
 
 declare const Deno: { serve: (h: (r: Request) => Promise<Response>) => void; env: { get: (k: string) => string | undefined } }
 
@@ -94,6 +95,53 @@ async function avisarMensajesNuevos() {
   return entregados ? 1 : 0
 }
 
+// Recordatorios de lo que no ha registrado e inactividad, con el ritmo aprendido de sus registros (reglas en src/avisos/ritmo.ts).
+// Respeta el silencio y el máximo diario; cada envío queda en aviso_enviado (único por día y código).
+async function recordatoriosDeRegistro(p: PreferenciaAviso & { id_usuario: string }, suyas: Suscripcion[], m: ReturnType<typeof momentoColombia>) {
+  if (!p.recibir_recordatorio_no_registrado && !p.recibir_aviso_inactividad) return 0
+  if (enSilencio(m, p.hora_inicio_silencio, p.hora_fin_silencio)) return 0
+  const desde = new Date(Date.parse(m.fecha) - 60 * 864e5).toISOString().slice(0, 10)
+  const [seguimientos, registros, enviadosBd] = await Promise.all([
+    base.from('seguimiento').select('id_seguimiento, codigo_plantilla, nombre').eq('id_usuario', p.id_usuario).eq('estado', 'activo'),
+    base.from('registro').select('id_seguimiento, fecha_registro, fecha_creacion').eq('id_usuario', p.id_usuario).eq('estado', 'activo').gte('fecha_registro', desde),
+    base.from('aviso_enviado').select('codigo_aviso, fecha_aviso').eq('id_usuario', p.id_usuario).gte('fecha_aviso', desde),
+  ])
+  const deSeguimiento = new Map((revisar(seguimientos) as { id_seguimiento: string; codigo_plantilla: string | null; nombre: string }[]).map(s => [s.id_seguimiento, moduloDe(s)]))
+  const lista = revisar(registros) as { id_seguimiento: string; fecha_registro: string; fecha_creacion: string }[]
+  const marcas = Object.fromEntries(MODULOS.map(x => [x, [] as Marca[]])) as Record<Modulo, Marca[]>
+  for (const r of lista) {
+    const x = deSeguimiento.get(r.id_seguimiento)
+    if (x) marcas[x].push({ fecha: r.fecha_registro, hora: horaColombia(r.fecha_creacion) })
+  }
+  const enviados = revisar(enviadosBd) as { codigo_aviso: string; fecha_aviso: string }[]
+  const de = (codigo: string) => enviados.filter(e => e.codigo_aviso === codigo).map(e => e.fecha_aviso)
+  const cupo = p.cantidad_maxima_recordatorios_dia - enviados.filter(e => e.fecha_aviso === m.fecha).length
+  if (cupo <= 0) return 0
+  const guardar = (codigos: string[]) => base.from('aviso_enviado')
+    .upsert(codigos.map(codigo_aviso => ({ id_usuario: p.id_usuario, codigo_aviso, fecha_aviso: m.fecha })), { onConflict: 'id_usuario,codigo_aviso,fecha_aviso', ignoreDuplicates: true })
+
+  // Mientras no use la app, solo la escalera de inactividad (no se juntan avisos de cada módulo).
+  const todas = lista.map(r => r.fecha_registro)
+  if (inactivo(todas, m.fecha)) {
+    const t = p.recibir_aviso_inactividad ? tocaInactividad(todas, de('inactividad'), m.fecha) : null
+    if (!t) return 0
+    const entregados = await enviar(suyas, avisoInactividad(t.paso, t.dias))
+    revisar(await guardar(['inactividad']))
+    return entregados ? 1 : 0
+  }
+  if (!p.recibir_recordatorio_no_registrado) return 0
+  const habitos = [...deSeguimiento.values()].filter(x => x === 'habitos').length
+  const hechoHoy = (x: Modulo) => x === 'habitos'
+    ? marcas.habitos.filter(r => r.fecha === m.fecha).length >= habitos
+    : marcas[x].some(r => r.fecha === m.fecha)
+  const pendientes = MODULOS.filter(x => [...deSeguimiento.values()].includes(x) && !p.modulos_recordatorio_apagados.includes(x) && !sinUso(marcas[x], m.fecha)
+    && tocaRecordatorio(ritmo(x, marcas[x], m.fecha), m, hechoHoy(x), de(`registro_${x}`), new Set(marcas[x].map(r => r.fecha)))).slice(0, cupo)
+  if (!pendientes.length) return 0
+  const entregados = await enviar(suyas, avisoRegistro(pendientes))
+  revisar(await guardar(pendientes.map(x => `registro_${x}`)))
+  return entregados ? 1 : 0
+}
+
 async function tareaProgramada() {
   const ahora = new Date()
   const m = momentoColombia(ahora)
@@ -111,6 +159,7 @@ async function tareaProgramada() {
     const semanal = tocaResumenSemanal(p, m)
     const cierre = tocaCierreMes(p, m)
     const descarga = tocaAvisoDescarga(p, m)
+    enviados += await recordatoriosDeRegistro(p, suyas, m)
 
     if (diario || semanal || p.recibir_recordatorios) {
       const [tareas, recordatorios] = await Promise.all([

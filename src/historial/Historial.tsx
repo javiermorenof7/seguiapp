@@ -1,12 +1,24 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { obtenerRegistros, type RegistroGuardado } from '../datos'
 import Barras from '../finanzas/Barras'
+import Grafico from '../Grafico'
 import SinDatos from '../SinDatos'
 import { normalizar } from '../finanzas/parseo'
-import { agrupar, mover, rango, type Escala } from './periodo'
+import { agrupar, mover, porSemanas, rango, type Escala, type Modo } from './periodo'
 import Selector from '../Selector'
 
 export interface Filtro { nombre: string; opciones: [string, string][]; de: (r: RegistroGuardado) => string; inicial?: string }
+// Qué dibuja el gráfico con los filtros elegidos: la pregunta que responde, cómo junta cada día y, si van separadas, sus series.
+export interface Vista {
+  modo: Modo
+  pregunta: string
+  formato?: (valor: number) => string
+  formatoEje?: (valor: number) => string
+  cuanto?: (r: RegistroGuardado) => number
+  series?: { nombre: string; color: string; de: (r: RegistroGuardado) => boolean }[]
+  // tope de cada día (p. ej. cuántos hábitos hay); en el año se muestra como % del mes
+  maximoDia?: number
+}
 
 const ESCALAS: [Escala, string][] = [['semana', 'Semana'], ['mes', 'Mes'], ['ano', 'Año']]
 const hoyIso = () => new Date().toLocaleDateString('en-CA')
@@ -19,12 +31,15 @@ const etiqueta = (escala: Escala, fecha: string) => {
   return escala === 'semana' ? ['lu', 'ma', 'mi', 'ju', 'vi', 'sá', 'do'][(new Date(`${fecha}T12:00:00Z`).getUTCDay() + 6) % 7] : dia === 1 || dia % 5 === 0 ? String(dia) : ''
 }
 const cssVar = (nombre: string) => getComputedStyle(document.documentElement).getPropertyValue(nombre).trim()
+const fechaLarga = (escala: Escala, fecha: string) => new Date(`${fecha}T12:00:00Z`).toLocaleDateString('es-CO',
+  escala === 'ano' ? { month: 'long', year: 'numeric', timeZone: 'UTC' } : { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' })
+const diasDelMes = (fecha: string) => new Date(Date.UTC(Number(fecha.slice(0, 4)), Number(fecha.slice(5, 7)), 0)).getUTCDate()
 
 // Todos los registros del módulo por semana, mes o año, con sus filtros, totales y un gráfico del período.
 // Un ícono por lo que filtra; los demás llevan la etiqueta.
 const ICONOS: Record<string, string> = { Tipo: '🗂️', 'Categoría o fuente': '🏷️', Origen: '✍️', Ejercicio: '🏋️', Hábito: '🎯' }
 
-export default function Historial({ ids, registros, filtros, buscar, suma, formato = v => Number.isInteger(v) ? String(v) : '', total, fila }: {
+export default function Historial({ ids, registros, filtros, buscar, suma, formato = v => Number.isInteger(v) ? String(v) : '', total, fila, vista }: {
   ids: string[]
   registros: RegistroGuardado[]
   filtros: Filtro[]
@@ -33,6 +48,7 @@ export default function Historial({ ids, registros, filtros, buscar, suma, forma
   formato?: (valor: number) => string
   total: (lista: RegistroGuardado[]) => string
   fila: (r: RegistroGuardado) => ReactNode
+  vista?: (elegidos: Record<string, string>) => Vista
 }) {
   const hoy = hoyIso()
   const [escala, setEscala] = useState<Escala>('mes')
@@ -60,7 +76,23 @@ export default function Historial({ ids, registros, filtros, buscar, suma, forma
       .sort((a, b) => b.fecha.localeCompare(a.fecha))
   }, [antiguos, registros, ids, r.desde, r.hasta, filtros, elegidos, texto, buscar])
 
-  const puntos = agrupar(escala, r, delPeriodo, suma)
+  const v = vista?.(elegidos) ?? { modo: suma ? 'suma' : 'conteo', pregunta: suma ? 'Total de cada día' : 'Registros de cada día' }
+  const fmt = v.formato ?? formato
+  const series = (v.series ?? [{ nombre: v.pregunta, color: cssVar('--c1'), de: () => true }]).filter(s => delPeriodo.some(s.de))
+  // en el celular, varias series en un mes no caben por día: van por semana
+  const porSemana = escala === 'mes' && series.length > 1 && matchMedia('(max-width: 560px)').matches
+  const enPorcentaje = escala === 'ano' && !!v.maximoDia
+  const datos = series.map(s => {
+    const p = agrupar(escala, r, delPeriodo.filter(s.de), v.modo, v.cuanto)
+    if (porSemana) return porSemanas(p, v.modo)
+    return enPorcentaje ? p.map(x => ({ ...x, valor: x.valor === null ? null : Math.round(x.valor / (v.maximoDia! * diasDelMes(x.fecha)) * 100) })) : p
+  })
+  const base = datos[0] ?? []
+  const etiquetas = base.map(p => 'etiqueta' in p ? String(p.etiqueta) : escala === 'mes' ? String(Number(p.fecha.slice(8))) : etiqueta(escala, p.fecha))
+  const titulos = base.map(p => 'etiqueta' in p ? `Días ${p.etiqueta}` : fechaLarga(escala, p.fecha))
+  const pregunta = `${v.pregunta}${porSemana ? ' (por semana)' : escala === 'ano' ? ' (por mes)' : ''} · ${r.titulo}`
+  const mayor = (i: number) => datos[i].reduce<{ valor: number; titulo: string } | null>((m, p, j) => p.valor !== null && p.valor > (m?.valor ?? -Infinity) ? { valor: p.valor, titulo: titulos[j] } : m, null)
+  const descripcion = series.map((s, i) => { const m = mayor(i); return `${s.nombre}${m ? `: el mayor, ${m.titulo} con ${enPorcentaje ? `${m.valor} %` : fmt(m.valor)}` : ''}` }).join('; ')
 
   return (
     <section>
@@ -98,10 +130,17 @@ export default function Historial({ ids, registros, filtros, buscar, suma, forma
       </div>
       {error && <p role="alert" className="error">{error}</p>}
       <p className="aviso" aria-live="polite">{total(delPeriodo)} · {delPeriodo.length} {delPeriodo.length === 1 ? 'registro' : 'registros'}</p>
-      {delPeriodo.length > 0 && (
-        <Barras etiquetas={puntos.map(p => etiqueta(escala, p.fecha))} series={[{ nombre: r.titulo, color: cssVar('--acento'), datos: puntos.map(p => p.valor) }]}
-          formato={formato} colorTexto={cssVar('--tenue')} colorLinea={cssVar('--linea')} descripcion={`${suma ? 'Total' : 'Registros'} por ${escala === 'ano' ? 'mes' : 'día'} de ${r.titulo}`} />
-      )}
+      {delPeriodo.length > 0 && series.length > 0 && <h3 className="pregunta-grafico">{pregunta}</h3>}
+      {delPeriodo.length > 0 && series.length > 0 && (v.modo === 'maximo' && series.length === 1 && !porSemana ? (
+        // valores como el peso o la cintura: una línea, sin los días vacíos (en barras 74 y 75 kg se verían iguales)
+        <Grafico puntos={base.flatMap(p => p.valor === null ? [] : [{ fecha: p.fecha, valor: p.valor }])} color={series[0].color}
+          colorMeta={cssVar('--tenue')} formato={fmt} descripcion={descripcion} desde={r.desde} hasta={r.hasta} />
+      ) : (
+        <Barras etiquetas={etiquetas} series={series.map((s, i) => ({ nombre: s.nombre, color: s.color, datos: datos[i].map(p => p.valor) }))}
+          formato={enPorcentaje ? x => `${x} %` : fmt} formatoEje={enPorcentaje ? x => `${x} %` : v.formatoEje ?? fmt}
+          maximo={enPorcentaje ? 100 : v.maximoDia && !porSemana ? v.maximoDia : undefined}
+          colorTexto={cssVar('--tenue')} colorLinea={cssVar('--linea')} descripcion={descripcion} dias={{ titulos }} />
+      ))}
       {delPeriodo.length === 0 ? (() => {
         const conFiltros = !!texto.trim() || Object.values(elegidos).some(Boolean)
         return <SinDatos titulo={conFiltros ? 'No encontramos registros con estos filtros' : `No hay registros en ${r.titulo.toLowerCase()}`}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agrupar, mover, rango } from './periodo'
+import { agrupar, mover, porSemanas, rango } from './periodo'
 
 describe('rango', () => {
   it('semana de lunes a domingo, mes completo y año', () => {
@@ -31,5 +31,24 @@ describe('agrupar', () => {
     expect(p).toHaveLength(12)
     expect(p[9]).toEqual({ fecha: '2026-10-01', valor: 3 })
     expect(p[10].valor).toBe(1)
+  })
+})
+
+describe('agrupar por máximo y por semanas', () => {
+  const r = rango('mes', '2026-10-15')
+  const registros = [{ fecha: '2026-10-02', valor: 60 }, { fecha: '2026-10-02', valor: 70 }, { fecha: '2026-10-09', valor: 65 }]
+  it('máximo deja vacíos los días sin registro', () => {
+    const p = agrupar('mes', r, registros, 'maximo')
+    expect(p.find(x => x.fecha === '2026-10-02')!.valor).toBe(70)
+    expect(p.find(x => x.fecha === '2026-10-03')!.valor).toBeNull()
+  })
+  it('conteo con cuánto vale cada registro (p. ej. series)', () => {
+    expect(agrupar('mes', r, registros, 'conteo', () => 3).find(x => x.fecha === '2026-10-02')!.valor).toBe(6)
+  })
+  it('junta el mes en bloques de 7 días', () => {
+    const s = porSemanas(agrupar('mes', r, registros, 'suma'), 'suma')
+    expect(s.map(x => x.etiqueta)).toEqual(['1–7', '8–14', '15–21', '22–28', '29–31'])
+    expect(s.map(x => x.valor)).toEqual([130, 65, 0, 0, 0])
+    expect(porSemanas(agrupar('mes', r, registros, 'maximo'), 'maximo')[2].valor).toBeNull()
   })
 })

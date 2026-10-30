@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  anteriorDe, comparar, diasEntrenados, faltaParaMeta, estadoSemana, metaSemanal, diasPorSemana, leerSerie, parecido, pesoPorDia, progreso, sugerencia, type Sesion,
+  anteriorDe, comparar, constancia, seriesPorDia, diasEntrenados, faltaParaMeta, estadoSemana, leerSerie, parecido, pesoPorDia, progreso, seriesDeUltima, sesionesPorDia, sugerencia, textoSerie, type Sesion,
 } from './calculos'
 
 const s = (fecha: string, ejercicio: string, series: number, repeticiones: number, peso: number | null): Sesion =>
@@ -49,11 +49,6 @@ describe('gym', () => {
   })
   it('mayor peso por día', () => expect(pesoPorDia(sesiones, 'press banca').map(p => p.valor)).toEqual([55, 57.5, 62.5]))
   it('días entrenados en 30 días', () => expect(diasEntrenados(sesiones, '2026-10-20')).toBe(4))
-  it('días por semana de lunes a domingo, la más antigua primero y la última la que va', () => {
-    const semanas = diasPorSemana(sesiones, '2026-10-21', 3)
-    expect(semanas.map(w => w.dias)).toEqual([2, 1, 0])
-    expect(semanas.map(w => w.desde)).toEqual(['2026-10-05', '2026-10-12', '2026-10-19'])
-  })
 })
 
 it('lo que falta para la meta según la dirección', () => {
@@ -68,15 +63,55 @@ it('comparar frente al último y a hace 30 días', () => {
     ultimo: { fecha: '2026-10-18', cambio: -0.5 }, hace30: { fecha: '2026-09-20', cambio: -1.5 },
   })
   expect(comparar(80, [], '2026-10-20')).toEqual({ ultimo: null, hace30: null })
+  // desde la fecha del último pesaje, no desde hoy: si no se pesa hace meses no se compara consigo mismo
+  expect(comparar(78, pesos, '2026-10-18').hace30).toEqual({ fecha: '2026-09-10', cambio: -2 })
 })
 
 describe('meta semanal del gym', () => {
-  it('usa la meta propia o, sin ella, el promedio redondeado', () => {
-    expect(metaSemanal([{ dias: 3 }, { dias: 4 }], 5)).toEqual({ valor: 5, propia: true })
-    expect(metaSemanal([{ dias: 3 }, { dias: 4 }, { dias: 4 }])).toEqual({ valor: 4, propia: false })
-    expect(metaSemanal([{ dias: 0 }])).toBeNull()
-  })
   it('estado de cada semana frente a la meta', () => {
     expect([estadoSemana(4, 4), estadoSemana(3, 4), estadoSemana(1, 4)]).toEqual(['en_meta', 'cerca', 'fuera'])
+    // el lunes sin entrenar todavía se puede llegar
+    expect([estadoSemana(0, 4, 6), estadoSemana(0, 4, 2)]).toEqual(['cerca', 'fuera'])
+  })
+  it('series de cada día del mes, nada en los que no han llegado', () => {
+    const ses = (fecha: string, series: number) => ({ fecha, ejercicio: 'x', series, repeticiones: 10, peso: null })
+    const dias = seriesPorDia([ses('2026-10-02', 1), ses('2026-10-02', 1), ses('2026-10-03', 4)], '2026-10-01', '2026-10-05', '2026-10-03')
+    expect(dias.map(d => d.series)).toEqual([0, 2, 4, null, null])
+  })
+  it('constancia por día, por semana del mes y por mes del año', () => {
+    const s = ['2026-10-05', '2026-10-06', '2026-10-21', '2026-10-21', '2026-11-02'].map(fecha => ({ fecha, ejercicio: 'x', series: 1, repeticiones: 1, peso: null }))
+    const semana = constancia(s, 'semana', '2026-10-19', '2026-10-25', '2026-10-21')
+    expect(semana.map(g => g.dias)).toEqual([0, 0, 1, 0, 0, 0, 0])
+    expect(semana[3].futuro).toBe(true)
+    const mes = constancia(s, 'mes', '2026-10-01', '2026-10-31', '2026-10-21')
+    expect(mes.map(g => g.desde)).toEqual(['2026-09-28', '2026-10-05', '2026-10-12', '2026-10-19', '2026-10-26'])
+    expect(mes.map(g => g.dias)).toEqual([0, 2, 0, 1, 0])
+    const ano = constancia(s, 'ano', '2026-01-01', '2026-12-31', '2026-10-21')
+    expect(ano[9]).toMatchObject({ desde: '2026-10-01', hasta: '2026-10-31', dias: 3 })
+    expect(ano[10]).toMatchObject({ dias: 0, futuro: true })
+  })
+})
+
+describe('series individuales', () => {
+  const ses = (fecha: string, series: number, repeticiones: number, peso: number | null) => ({ fecha, ejercicio: 'press banca', series, repeticiones, peso })
+  // llegan de la más reciente a la más antigua: dentro del día, la última serie primero
+  const sesiones = [ses('2026-10-29', 1, 6, 70), ses('2026-10-29', 1, 8, 65), ses('2026-10-29', 1, 10, 60), ses('2026-10-20', 4, 10, 60)]
+
+  it('agrupa por día con las series en el orden en que se hicieron', () => {
+    const dias = sesionesPorDia(sesiones, 'press banca')
+    expect(dias.map(d => d.fecha)).toEqual(['2026-10-29', '2026-10-20'])
+    expect(dias[0].series.map(s => s.peso)).toEqual([60, 65, 70])
+  })
+
+  it('precarga la última sesión serie por serie y abre las viejas', () => {
+    expect(seriesDeUltima(sesiones, 'press banca')).toEqual([{ repeticiones: 10, peso: 60 }, { repeticiones: 8, peso: 65 }, { repeticiones: 6, peso: 70 }])
+    expect(seriesDeUltima(sesiones.slice(3), 'press banca')).toHaveLength(4)
+    expect(seriesDeUltima(sesiones, 'sentadilla')).toEqual([])
+  })
+
+  it('escribe cada serie como en el gimnasio', () => {
+    expect(textoSerie({ series: 1, repeticiones: 10, peso: 60 })).toBe('60 kg × 10')
+    expect(textoSerie({ series: 1, repeticiones: 12, peso: null })).toBe('Tu cuerpo × 12')
+    expect(textoSerie({ series: 4, repeticiones: 10, peso: 60 })).toBe('4 × 10 · 60 kg')
   })
 })

@@ -48,16 +48,20 @@ export function resumenSalud(seguimientos: Seguimiento[], registros: RegistroGua
   const pesos = de(registros, peso)
   const ultimoPeso = ultimo(pesos)
   const ultimaCintura = ultimo(de(registros, cintura))
+  // 30 días antes del último pesaje, no de hoy: si no se pesa hace meses no se compara consigo mismo
+  const hace30 = ultimoPeso && comparar(ultimoPeso.valor, pesos, ultimoPeso.fecha).hace30
+  const semana = [0, 1, 2, 3, 4, 5, 6].map(n => restarDias(lunes, -n)).map(fecha => fecha > hoy ? null : de(registros, gym).some(r => r.fecha === fecha))
   return {
     diasGym: new Set(de(registros, gym).filter(r => r.fecha >= lunes && r.fecha <= hoy).map(r => r.fecha)).size,
     peso: ultimoPeso && {
       valor: ultimoPeso.valor, unidad: peso!.unidad, estado: estado(ultimoPeso.valor, peso!.meta),
-      cambio30: comparar(ultimoPeso.valor, pesos, hoy).hace30?.cambio ?? null,
+      cambio30: hace30?.cambio ?? null, fecha30: hace30?.fecha ?? null,
     },
     cintura: ultimaCintura && { valor: ultimaCintura.valor, unidad: cintura!.unidad, estado: estado(ultimaCintura.valor, cintura!.meta) },
     hayDatos: de(registros, gym).length + pesos.length > 0 || !!ultimaCintura,
     // de lunes a domingo: entrenó, no entrenó o null si el día no ha llegado
-    semana: [0, 1, 2, 3, 4, 5, 6].map(n => restarDias(lunes, -n)).map(fecha => fecha > hoy ? null : de(registros, gym).some(r => r.fecha === fecha)),
+    semana,
+    quedanGym: semana.filter(d => d === null).length,
     metaGym: gym?.meta?.valor ?? null,
   }
 }

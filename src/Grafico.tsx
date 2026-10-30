@@ -18,6 +18,9 @@ interface Props {
   etiquetaMeta?: string
   // puntos marcados más grandes, con su texto en el tooltip (p. ej. cada récord)
   destacados?: { indices: number[]; texto: string }
+  // el eje de fechas cubre todo el período elegido, aunque haya pocos puntos
+  desde?: string
+  hasta?: string
 }
 
 // transparencia solo si viene en hex de 6 dígitos
@@ -29,7 +32,7 @@ const aDia = (fecha: string) => Date.parse(fecha) / 864e5
 const deDia = (dia: number) => diaMes(new Date(dia * 864e5).toISOString().slice(0, 10))
 
 // Línea recta de lo medido y la meta punteada; el último punto (el registro nuevo) va resaltado.
-export default function Grafico({ puntos, meta, color, colorMeta, descripcion, compacto, formato, formatoEje, etiquetaMeta, destacados }: Props) {
+export default function Grafico({ puntos, meta, color, colorMeta, descripcion, compacto, formato, formatoEje, etiquetaMeta, destacados, desde, hasta }: Props) {
   const lienzo = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -38,6 +41,12 @@ export default function Grafico({ puntos, meta, color, colorMeta, descripcion, c
     const colorLinea = compacto ? colorMeta : getComputedStyle(document.documentElement).getPropertyValue('--tinta').trim() || colorMeta
     const ultimo = puntos.length - 1
     const marcado = new Set(destacados?.indices)
+    // la meta va de lado a lado del eje, no solo entre el primer y el último punto
+    const [inicio, fin] = desde && hasta ? [aDia(desde), aDia(hasta)] : [aDia(puntos[0]?.fecha), aDia(puntos[ultimo]?.fecha)]
+    // rango mínimo en Y (5 % del valor, mínimo 2): con pocos puntos 0,3 kg no ocupa toda la altura
+    const valores = [...puntos.map(p => p.valor), ...(meta != null ? [meta] : [])]
+    const [bajo, alto] = [Math.min(...valores), Math.max(...valores)]
+    const margen = Math.max(2, Math.abs((bajo + alto) / 2) * 0.05) / 2
     const radio = (i: number) => i === ultimo ? (compacto ? 3 : 6) : compacto ? 0 : marcado.has(i) ? 5 : puntos.length > 60 ? 0 : 3
     const rotulo: Plugin<'line'> = {
       id: 'rotulo',
@@ -67,7 +76,7 @@ export default function Grafico({ puntos, meta, color, colorMeta, descripcion, c
             pointRadius: puntos.map((_, i) => radio(i)),
           },
           ...(meta != null
-            ? [{ data: [puntos[0], puntos[ultimo]].map(p => ({ x: aDia(p.fecha), y: meta })), borderColor: colorLinea, borderDash: [6, 5], borderWidth: 1.5, pointRadius: 0 }]
+            ? [{ data: [inicio, fin].map(x => ({ x, y: meta })), borderColor: colorLinea, borderDash: [6, 5], borderWidth: 1.5, pointRadius: 0 }]
             : []),
         ],
       },
@@ -85,14 +94,14 @@ export default function Grafico({ puntos, meta, color, colorMeta, descripcion, c
           },
         },
         scales: {
-          x: { type: 'linear', display: !compacto, ticks: { color: colorMeta, maxTicksLimit: 6, precision: 0, callback: v => deDia(Number(v)) }, grid: { display: false } },
-          y: { display: !compacto, ticks: { color: colorMeta, maxTicksLimit: 5, ...(formato ? { callback: v => (formatoEje ?? formato)(Number(v)) } : {}) },
+          x: { type: 'linear', display: !compacto, ...(desde && hasta ? { min: aDia(desde), max: aDia(hasta) } : {}), ticks: { color: colorMeta, maxTicksLimit: 6, precision: 0, callback: v => deDia(Number(v)) }, grid: { display: false } },
+          y: { display: !compacto, suggestedMin: (bajo + alto) / 2 - margen, suggestedMax: (bajo + alto) / 2 + margen, ticks: { color: colorMeta, maxTicksLimit: 5, ...(formato ? { callback: v => (formatoEje ?? formato)(Number(v)) } : {}) },
             grid: { color: conAlfa(colorMeta, '33') } },
         },
       },
     })
     return () => grafico.destroy()
-  }, [puntos, meta, color, colorMeta, compacto, formato, formatoEje, etiquetaMeta, destacados])
+  }, [puntos, meta, color, colorMeta, compacto, formato, formatoEje, etiquetaMeta, destacados, desde, hasta])
 
   return (
     <div className={compacto ? 'grafico compacto' : 'grafico'}>

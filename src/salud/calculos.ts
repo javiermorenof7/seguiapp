@@ -73,6 +73,27 @@ export function progreso(sesiones: Sesion[], ejercicio: string) {
   }
 }
 
+// Una serie como se lee en el gimnasio: "60 kg × 10"; las viejas que juntaban varias series, "4 × 10 · 60 kg".
+export const textoSerie = (s: Omit<Sesion, 'fecha' | 'ejercicio'>) => s.series === 1
+  ? `${s.peso === null ? 'Tu cuerpo' : kg(s.peso)} × ${s.repeticiones}`
+  : `${s.series} × ${s.repeticiones}${s.peso === null ? '' : ` · ${kg(s.peso)}`}`
+
+// Las últimas n sesiones (días) de un ejercicio, la más reciente primero; las series de cada día en el orden en que se hicieron.
+export function sesionesPorDia(sesiones: Sesion[], ejercicio: string, n = 3) {
+  const dias = new Map<string, Sesion[]>()
+  for (const s of sesiones.filter(x => x.ejercicio === ejercicio).sort(masReciente)) {
+    if (!dias.has(s.fecha)) dias.set(s.fecha, [])
+    dias.get(s.fecha)!.push(s)
+  }
+  return [...dias].slice(0, n).map(([fecha, lista]) => ({ fecha, series: [...lista].reverse() }))
+}
+
+// La última sesión serie por serie, para precargar el formulario (las viejas "4 × 10" se abren en 4 series iguales).
+export function seriesDeUltima(sesiones: Sesion[], ejercicio: string) {
+  const [dia] = sesionesPorDia(sesiones, ejercicio, 1)
+  return dia ? dia.series.flatMap(s => Array.from({ length: s.series }, () => ({ repeticiones: s.repeticiones, peso: s.peso }))) : []
+}
+
 // Mayor peso de cada día en un ejercicio desde una fecha.
 export function pesoPorDia(sesiones: Sesion[], ejercicio: string, desde = ''): Medicion[] {
   const maximo = new Map<string, number>()
@@ -87,15 +108,6 @@ export const indicesRecord = (puntos: Medicion[]) =>
 export const diasEntrenados = (sesiones: Sesion[], hoy: string, dias = 30) =>
   new Set(sesiones.filter(s => diasEntre(s.fecha, hoy) < dias && s.fecha <= hoy).map(s => s.fecha)).size
 
-// Días entrenados en cada una de las últimas n semanas de lunes a domingo, la más antigua primero; la última es la que va.
-export function diasPorSemana(sesiones: Sesion[], hoy: string, n = 8) {
-  const lunes = restarDias(hoy, (new Date(`${hoy}T12:00:00Z`).getUTCDay() || 7) - 1)
-  return Array.from({ length: n }, (_, i) => {
-    const desde = restarDias(lunes, 7 * (n - 1 - i)), hasta = restarDias(desde, -6)
-    return { desde, dias: new Set(sesiones.filter(s => s.fecha >= desde && s.fecha <= hasta).map(s => s.fecha)).size }
-  })
-}
-
 // Medida nueva frente al último registro y al más reciente de hace 30 días o más.
 export function comparar(valor: number, anteriores: Medicion[], hoy: string) {
   const orden = [...anteriores].sort(masReciente)
@@ -106,15 +118,30 @@ export function comparar(valor: number, anteriores: Medicion[], hoy: string) {
   }
 }
 
-// Meta de días por semana: la que puso la persona o, sin meta, su promedio de las semanas dadas (null si no entrenó).
-export function metaSemanal(semanas: { dias: number }[], meta?: number | null) {
-  if (meta) return { valor: meta, propia: true }
-  const promedio = Math.round(semanas.reduce((t, s) => t + s.dias, 0) / (semanas.length || 1))
-  return promedio ? { valor: promedio, propia: false } : null
-}
-
 // Cuánto falta para la meta en la dirección que se busca; 0 si ya se cumplió.
 export const faltaParaMeta = (valor: number, meta: number, direccion: 'menos_es_mejor' | 'mas_es_mejor') =>
   Math.max(0, Math.round((direccion === 'menos_es_mejor' ? valor - meta : meta - valor) * 100) / 100)
 
-export const estadoSemana = (dias: number, meta: number) => dias >= meta ? 'en_meta' : dias >= meta - 1 ? 'cerca' : 'fuera'
+// quedan: días que faltan del período sin contar hoy; mientras se pueda llegar a la meta no sale "fuera".
+export const estadoSemana = (dias: number, meta: number, quedan = 0) => dias >= meta ? 'en_meta' : dias + quedan >= meta - 1 ? 'cerca' : 'fuera'
+
+// Series hechas cada día del período (las viejas "4 × 10" cuentan 4); null en los días que no han llegado.
+export function seriesPorDia(sesiones: Sesion[], desde: string, hasta: string, hoy: string) {
+  const total = new Map<string, number>()
+  for (const s of sesiones) total.set(s.fecha, (total.get(s.fecha) ?? 0) + s.series)
+  return Array.from({ length: diasEntre(desde, hasta) + 1 }, (_, i) => restarDias(desde, -i))
+    .map(fecha => ({ fecha, series: fecha > hoy ? null : total.get(fecha) ?? 0 }))
+}
+
+// Constancia de un período: por día (semana), por semana de lunes a domingo (mes) o por mes (año); futuro: el grupo aún no empieza.
+export function constancia(sesiones: Sesion[], escala: 'semana' | 'mes' | 'ano', desde: string, hasta: string, hoy: string) {
+  const dias = new Set(sesiones.map(s => s.fecha).filter(f => f <= hoy))
+  const grupo = (d: string, h: string) => ({ desde: d, hasta: h, dias: [...dias].filter(f => f >= d && f <= h).length, futuro: d > hoy })
+  if (escala === 'semana') return Array.from({ length: 7 }, (_, i) => restarDias(desde, -i)).map(d => grupo(d, d))
+  if (escala === 'ano') return Array.from({ length: 12 }, (_, i) => {
+    const d = `${desde.slice(0, 4)}-${String(i + 1).padStart(2, '0')}-01`
+    return grupo(d, new Date(Date.UTC(Number(desde.slice(0, 4)), i + 1, 0)).toISOString().slice(0, 10))
+  })
+  const lunes = restarDias(desde, (new Date(`${desde}T12:00:00Z`).getUTCDay() || 7) - 1)
+  return Array.from({ length: Math.ceil((diasEntre(lunes, hasta) + 1) / 7) }, (_, i) => restarDias(lunes, -7 * i)).map(d => grupo(d, restarDias(d, -6)))
+}

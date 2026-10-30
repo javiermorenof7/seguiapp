@@ -125,6 +125,9 @@ type Vista = { tipo: 'inicio' } | { tipo: 'crear'; modulo?: Modulo } | Destino |
 function vistaInicial(): Vista {
   const ir = new URLSearchParams(location.search).get('ir')
   if (ir) history.replaceState(null, '', location.pathname)
+  if (ir === 'gasto') return { tipo: 'finanzas', abrir: 'gasto' }
+  if (ir === 'gym') return { tipo: 'salud', abrir: 'ejercicio' }
+  if (ir === 'habitos') return { tipo: 'habitos', enfocar: true }
   return ir === 'tareas' ? { tipo: 'tareas' } : ir === 'finanzas' ? { tipo: 'finanzas' }
     : ir === 'misdatos' ? { tipo: 'misdatos' } : ir === 'administrar' ? { tipo: 'administrar' } : { tipo: 'inicio' }
 }
@@ -301,11 +304,14 @@ function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, al
   const chapaFinanzas = avisos.find(d => d && d.estado === 'fuera') ?? avisos.find(d => d && d.estado === 'cerca') ?? saldo
   const datosFinanzas = [saldo, ...avisos, ahorro].filter((d): d is Dato => !!d && d !== chapaFinanzas)
   const montos = finanzas ? [['Gastos', finanzas.gastos], ['Ingresos', finanzas.ingresos], ['Ahorro', finanzas.ahorro]] as [string, number][] : undefined
+  // solo las medidas que la persona eligió medir
+  const mide = (nombre: string) => !!seguimientos?.some(s => s.codigo_plantilla === 'cuerpo' && s.nombre === nombre)
+  const estadoGym = salud?.metaGym ? estadoSemana(salud.diasGym, salud.metaGym, salud.quedanGym) : null
   const datosSalud: Dato[] = salud ? [
-    { texto: salud.peso
-      ? `Peso ${formatoValor('numero', salud.peso.valor, salud.peso.unidad)}${salud.peso.cambio30 === null ? '' : ` · ${conSigno(salud.peso.cambio30, salud.peso.unidad)} en 30 días`}`
-      : 'Peso: sin registrar', estado: salud.peso?.estado },
-    { texto: salud.cintura ? `Cintura ${formatoValor('numero', salud.cintura.valor, salud.cintura.unidad)}` : 'Cintura: sin registrar', estado: salud.cintura?.estado },
+    ...(!mide('Peso') ? [] : [{ texto: salud.peso
+      ? `Peso ${formatoValor('numero', salud.peso.valor, salud.peso.unidad)}${salud.peso.cambio30 === null ? '' : ` · ${conSigno(salud.peso.cambio30, salud.peso.unidad)} desde el ${new Date(`${salud.peso.fecha30}T12:00:00Z`).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', timeZone: 'UTC' })}`}`
+      : 'Peso: sin registrar', estado: salud.peso?.estado }]),
+    ...(!mide('Cintura') ? [] : [{ texto: salud.cintura ? `Cintura ${formatoValor('numero', salud.cintura.valor, salud.cintura.unidad)}` : 'Cintura: sin registrar', estado: salud.cintura?.estado }]),
   ] : []
   const chapaHabitos: Dato | null = habitos && (habitos.hechos === habitos.total ? { texto: 'Todo hecho hoy', estado: 'en_meta' }
     : habitos.hechos ? { texto: `Te ${habitos.total - habitos.hechos === 1 ? 'falta 1' : `faltan ${habitos.total - habitos.hechos}`}`, estado: 'cerca' }
@@ -334,7 +340,7 @@ function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, al
         )}
         {activos.includes('salud') && (
           <Bloque modulo="salud" vacio={!salud?.hayDatos} cifra={salud?.metaGym ? `${salud.diasGym} de ${salud.metaGym}` : dias(salud?.diasGym ?? 0)} sub={salud?.metaGym ? 'días de gym esta semana' : 'de gym esta semana'}
-            chapa={salud?.metaGym ? { texto: TEXTO_GYM[estadoSemana(salud.diasGym, salud.metaGym)], estado: estadoSemana(salud.diasGym, salud.metaGym) } : null} datos={datosSalud}
+            chapa={estadoGym ? { texto: TEXTO_GYM[estadoGym], estado: estadoGym } : null} datos={datosSalud}
             mini={salud && <SemanaGym semana={salud.semana} meta={salud.metaGym} />}
             alAbrir={() => alIr({ tipo: 'salud' })} alRegistrar={() => alIr({ tipo: 'salud', abrir: 'ejercicio' })} alCrear={() => alCrear('salud')} />
         )}

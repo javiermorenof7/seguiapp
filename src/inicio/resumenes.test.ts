@@ -39,11 +39,12 @@ describe('resumenSalud', () => {
       r('gym', '2026-10-26', 60), r('gym', '2026-10-26', 40), r('gym', '2026-10-25', 60),
       r('p', '2026-09-20', 80), r('p', '2026-10-20', 78.5), r('c', '2026-10-10', 90),
     ], HOY)
-    expect(x).toMatchObject({ diasGym: 1, peso: { valor: 78.5, cambio30: -1.5 }, cintura: { valor: 90 }, hayDatos: true })
+    expect(x).toMatchObject({ diasGym: 1, peso: { valor: 78.5, cambio30: -1.5, fecha30: '2026-09-20' }, cintura: { valor: 90 }, hayDatos: true })
   })
   it('la semana de gym de lunes a domingo, sin los días que no han llegado', () => {
     const x = resumenSalud(lista, [r('gym', '2026-10-21', 60), r('gym', '2026-10-23', 60), r('gym', '2026-10-19', 60)], '2026-10-23')
     expect(x.semana).toEqual([true, false, true, false, true, null, null])
+    expect(x.quedanGym).toBe(2)
     expect(x.metaGym).toBeNull()
   })
   it('sin datos', () => expect(resumenSalud(lista, [], HOY)).toMatchObject({ diasGym: 0, peso: null, cintura: null, hayDatos: false }))

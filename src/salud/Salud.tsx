@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import Selector from '../Selector'
 import {
-  aprenderNombre, crearEjercicio, crearSeguimiento, eliminarRegistro, guardarMeta, obtenerSalud, registrar, registrarSerie, renombrarEjercicio, renombrarMedida, corregirSerie,
+  aprenderNombre, crearEjercicio, crearMedida, crearSeguimiento, eliminarRegistro, guardarMeta, obtenerSalud, quitarSeguimiento, registrar, registrarSerie, renombrarEjercicio, renombrarMedida, corregirSerie,
   type RegistroGuardado, type Seguimiento,
 } from '../datos'
 import { formatoValor, type Direccion } from '../indicadores'
@@ -31,6 +32,8 @@ export const INICIALES = [
   { nombre: 'Peso', unidad: 'kg', codigo_plantilla: 'cuerpo' },
   { nombre: 'Cintura', unidad: 'cm', codigo_plantilla: 'cuerpo' },
 ]
+// Gym y Peso se recrean si faltan (el inicio los usa); Cintura se puede dejar de medir.
+const SIEMPRE = INICIALES.filter(i => i.nombre !== 'Cintura')
 
 export default function Salud({ seguimientos, registros, abrir, alVolver, alCambiar }: {
   seguimientos: Seguimiento[]
@@ -46,7 +49,7 @@ export default function Salud({ seguimientos, registros, abrir, alVolver, alCamb
   const medidas = seguimientos.filter(s => s.codigo_plantilla === 'cuerpo')
 
   useEffect(() => {
-    const faltan = INICIALES.filter(i => !seguimientos.some(s => s.codigo_plantilla === i.codigo_plantilla && s.nombre === i.nombre))
+    const faltan = SIEMPRE.filter(i => !seguimientos.some(s => s.codigo_plantilla === i.codigo_plantilla && s.nombre === i.nombre))
     if (!faltan.length || creando.current) return
     creando.current = true
     Promise.all(faltan.map(f => crearSeguimiento({ ...f, tipo_medida: 'numero', frecuencia: 'registro' }, null)))
@@ -82,7 +85,7 @@ export default function Salud({ seguimientos, registros, abrir, alVolver, alCamb
             <Medida key={m.id_seguimiento} medida={m} registros={registros.filter(r => r.id_seguimiento === m.id_seguimiento)} alCambiar={alCambiar} />
           ))}
           <NuevaMedida inicial={abrir === 'medida'} alCrear={async (nombre, unidad) => {
-            await crearSeguimiento({ nombre, unidad, tipo_medida: 'numero', frecuencia: 'registro', codigo_plantilla: 'cuerpo' }, null)
+            await crearMedida(nombre, unidad)
             await alCambiar()
           }} />
         </>
@@ -477,13 +480,9 @@ function Progreso({ sesiones, ejercicios, hoy, rango, alCambiarRango }: {
   return (
     <section>
       <h2>¿Cómo voy en cada ejercicio?</h2>
-      <div className="formulario">
-        <label>Ejercicio
-          <select value={actual} onChange={ev => setElegido(ev.target.value)}>
-            {ejercicios.map(e => <option key={e}>{e}</option>)}
-          </select>
-        </label>
-      </div>
+      <Selector id="filtro-ejercicio" titulo="Ejercicio" icono="🏋️" valor={actual} alCambiar={setElegido}>
+        {ejercicios.map(e => <option key={e}>{e}</option>)}
+      </Selector>
       <ul className="lista">
         {p.ultimas.map((s, i) => <li key={i} className="dos"><span>{diaMes(s.fecha)}</span><strong>{serie(s)}</strong></li>)}
       </ul>
@@ -507,8 +506,8 @@ function Medida({ medida, registros, alCambiar }: { medida: Seguimiento; registr
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [renombrando, setRenombrando] = useState(false)
-  // Peso y Cintura no se renombran: el módulo las recrea y el inicio las busca por nombre
-  const fija = INICIALES.some(i => i.codigo_plantilla === 'cuerpo' && i.nombre === nombre)
+  // Peso no se renombra ni se quita: el módulo lo recrea y el inicio lo busca por nombre
+  const fija = SIEMPRE.some(i => i.codigo_plantilla === 'cuerpo' && i.nombre === nombre)
   const rango = normalizar(nombre) === 'peso' ? [20, 400] : [0.1, 1000]
   const puntos = useMemo(() => historial.filter(r => r.fecha >= desdeRango(ventana, hoy)).slice().reverse(), [historial, ventana, hoy])
   const ultimo = registros[0]
@@ -543,7 +542,11 @@ function Medida({ medida, registros, alCambiar }: { medida: Seguimiento; registr
   return (
     <section>
       <div className="bloque-pie"><h2>{nombre}</h2>
-        {!fija && <button className="enlace" aria-expanded={renombrando} onClick={() => setRenombrando(!renombrando)}>Renombrar</button>}</div>
+        {!fija && <span className="chips">
+          <button className="enlace" aria-expanded={renombrando} onClick={() => setRenombrando(!renombrando)}>Renombrar</button>
+          <button className="enlace" onClick={() => confirm(`¿Dejar de medir ${nombre}? Desaparece de Cuerpo, pero sus registros se conservan.`) &&
+            quitarSeguimiento(medida.id_seguimiento).then(alCambiar, e => setError((e as Error).message))}>Ya no medir</button>
+        </span>}</div>
       {renombrando && (
         <CambiarNombre inicial={nombre} alCancelar={() => setRenombrando(false)}
           alGuardar={async nuevo => { await renombrarMedida(medida.id_seguimiento, nuevo); setRenombrando(false); await alCambiar() }} />

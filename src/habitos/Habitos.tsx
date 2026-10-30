@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import Selector from '../Selector'
 import {
   aprenderNombre, crearHabito, eliminarRegistro, guardarMeta, obtenerAlias, quitarSeguimiento, registrar, renombrarHabito, type RegistroGuardado, type Seguimiento,
 } from '../datos'
@@ -406,13 +407,9 @@ function Detalle({ habitos, marcas, hoy, alCambiar }: {
   return (
     <section>
       <h2>¿Cómo voy en cada hábito?</h2>
-      <div className="formulario">
-        <label>Hábito
-          <select value={h.id_seguimiento} onChange={ev => setElegido(ev.target.value)}>
-            {habitos.map(x => <option key={x.id_seguimiento} value={x.id_seguimiento}>{x.nombre}</option>)}
-          </select>
-        </label>
-      </div>
+      <Selector id="filtro-habito" titulo="Hábito" icono="🎯" valor={h.id_seguimiento} alCambiar={setElegido}>
+        {habitos.map(x => <option key={x.id_seguimiento} value={x.id_seguimiento}>{x.nombre}</option>)}
+      </Selector>
       <p><strong>Racha: {dias(racha(suyas, hoy, meta))}</strong> <span className="tenue">· mejor {dias(mejorRacha(suyas, meta))}</span></p>
       <h3>Últimas 12 semanas</h3>
       <MapaSemanas dias={calendario} hoy={hoy}

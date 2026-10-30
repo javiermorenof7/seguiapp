@@ -4,6 +4,7 @@ import {
 } from '../datos'
 import { formatoValor } from '../indicadores'
 import Grafico from '../Grafico'
+import Selector from '../Selector'
 import { mesesAntes } from './calculos'
 import { categoriaDe, leerMonto, leidoDe, MONTO_INVALIDO, normalizar, type Categoria } from './parseo'
 import {
@@ -140,22 +141,15 @@ export default function Recibos({ idGastos, categorias, aprendido, abrirNueva, a
           ))}
         </div>
         {ubicaciones.length > 1 && (
-          <div className="filtro-ubicacion">
-            <label htmlFor="filtro-ubicacion" className="etiqueta">Ubicación</label>
-            <div className={lugar ? 'selector elegido' : 'selector'}>
-              <span aria-hidden="true">📍</span>
-              <select id="filtro-ubicacion" value={lugar} onChange={ev => setLugar(ev.target.value)}>
-                <option value="">Todas · {delGrupo.length} {delGrupo.length === 1 ? 'factura' : 'facturas'}</option>
-                {ubicaciones.filter(u => u.facturas).map(u => <option key={u.ubicacion} value={u.ubicacion}>{u.ubicacion} · {u.facturas}</option>)}
-                {ubicaciones.some(u => !u.facturas) && (
-                  <optgroup label={`Sin facturas ${grupo === 'pausa' ? 'en pausa' : grupo === 'pagadas' ? 'pagadas' : 'por pagar'}`}>
-                    {ubicaciones.filter(u => !u.facturas).map(u => <option key={u.ubicacion} value={u.ubicacion}>{u.ubicacion} · 0</option>)}
-                  </optgroup>
-                )}
-              </select>
-              {lugar && <button type="button" className="quitar" aria-label="Ver todas las ubicaciones" onClick={() => setLugar('')}>✕</button>}
-            </div>
-          </div>
+          <Selector id="filtro-ubicacion" titulo="Ubicación" icono="📍" valor={lugar} alCambiar={setLugar} alLimpiar={() => setLugar('')}>
+            <option value="">Todas · {delGrupo.length} {delGrupo.length === 1 ? 'factura' : 'facturas'}</option>
+            {ubicaciones.filter(u => u.facturas).map(u => <option key={u.ubicacion} value={u.ubicacion}>{u.ubicacion} · {u.facturas}</option>)}
+            {ubicaciones.some(u => !u.facturas) && (
+              <optgroup label={`Sin facturas ${grupo === 'pausa' ? 'en pausa' : grupo === 'pagadas' ? 'pagadas' : 'por pagar'}`}>
+                {ubicaciones.filter(u => !u.facturas).map(u => <option key={u.ubicacion} value={u.ubicacion}>{u.ubicacion} · 0</option>)}
+              </optgroup>
+            )}
+          </Selector>
         )}
       </section>
       {grupo !== 'pausa' && (

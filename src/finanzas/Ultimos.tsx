@@ -53,14 +53,16 @@ export default function Ultimos({ registros, tipos, idGastos, categorias, origen
 }
 
 // Un movimiento con "Corregir"; también lo usa el historial (tipo = Ingreso o Ahorro cuando van mezclados).
-export function FilaMovimiento({ registro: r, idGastos, categorias, tipo, origen, alCambiar }: {
-  registro: RegistroGuardado; idGastos: string; categorias: Categoria[]; tipo?: string; origen?: Origen; alCambiar: () => Promise<void>
+// Con "que", el ingreso o el ahorro también eligen su fuente o meta al corregir (opcional: vacío = sin fuente o libre).
+export interface QueEtiqueta { nombre: string; vacio: string; aprende: boolean }
+export function FilaMovimiento({ registro: r, idGastos, categorias, tipo, origen, que, alCambiar }: {
+  registro: RegistroGuardado; idGastos: string; categorias: Categoria[]; tipo?: string; origen?: Origen; que?: QueEtiqueta; alCambiar: () => Promise<void>
 }) {
   const [abierto, setAbierto] = useState(false)
   const [confirmar, setConfirmar] = useState(false)
   const [error, setError] = useState('')
   if (abierto) return (
-    <Corregir registro={r} esGasto={r.id_seguimiento === idGastos} categorias={categorias}
+    <Corregir registro={r} esGasto={r.id_seguimiento === idGastos} categorias={categorias} que={que}
       alTerminar={async cambio => { if (cambio) await alCambiar(); setAbierto(false) }} />
   )
   return (
@@ -87,10 +89,11 @@ export function FilaMovimiento({ registro: r, idGastos, categorias, tipo, origen
   )
 }
 
-function Corregir({ registro: r, esGasto, categorias, alTerminar }: {
+function Corregir({ registro: r, esGasto, categorias, que, alTerminar }: {
   registro: RegistroGuardado
   esGasto: boolean
   categorias: Categoria[]
+  que?: QueEtiqueta
   alTerminar: (cambio: boolean) => Promise<void>
 }) {
   const [valor, setValor] = useState(Math.round(r.valor).toLocaleString('es-CO'))
@@ -108,10 +111,10 @@ function Corregir({ registro: r, esGasto, categorias, alTerminar }: {
     setEnviando(true)
     try {
       const descripcion = nota.trim() || null
-      await corregirRegistro(r.id_registro, { valor: numero, nota: descripcion, ...(esGasto ? { id_etiqueta: idEtiqueta } : {}) })
+      await corregirRegistro(r.id_registro, { valor: numero, nota: descripcion, ...(esGasto || que ? { id_etiqueta: idEtiqueta || null } : {}) })
       const categoria = categorias.find(c => c.id_etiqueta === idEtiqueta)
-      // cambiar la categoría la aprende para esa descripción
-      if (esGasto && descripcion && categoria && idEtiqueta !== r.id_etiqueta)
+      // cambiar la categoría (o la fuente) la aprende para esa descripción
+      if ((esGasto || que?.aprende) && descripcion && categoria && idEtiqueta !== r.id_etiqueta)
         await aprenderCategoria(normalizar(descripcion), categoria.nombre).catch(() => {})
       await alTerminar(true)
     } catch (err) {
@@ -130,10 +133,10 @@ function Corregir({ registro: r, esGasto, categorias, alTerminar }: {
         <label>Descripción
           <input maxLength={MAX_DESCRIPCION} value={nota} onChange={ev => setNota(ev.target.value)} />
         </label>
-        {esGasto && (
-          <label>Categoría
+        {(esGasto || que) && (
+          <label>{esGasto ? 'Categoría' : que!.nombre}
             <select value={idEtiqueta} onChange={ev => setIdEtiqueta(ev.target.value)}>
-              <option value="" disabled>Elige una</option>
+              {esGasto ? <option value="" disabled>Elige una</option> : <option value="">{que!.vacio}</option>}
               {categorias.map(c => <option key={c.id_etiqueta} value={c.id_etiqueta}>{c.nombre}</option>)}
             </select>
           </label>

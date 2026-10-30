@@ -4,6 +4,7 @@ import Barras from '../finanzas/Barras'
 import SinDatos from '../SinDatos'
 import { normalizar } from '../finanzas/parseo'
 import { agrupar, mover, rango, type Escala } from './periodo'
+import Selector from '../Selector'
 
 export interface Filtro { nombre: string; opciones: [string, string][]; de: (r: RegistroGuardado) => string; inicial?: string }
 
@@ -74,12 +75,11 @@ export default function Historial({ ids, registros, filtros, buscar, suma, forma
       </div>
       <div className="filtros">
         {filtros.map(f => (
-          <label key={f.nombre}>{f.nombre}
-            <select value={elegidos[f.nombre]} onChange={ev => setElegidos({ ...elegidos, [f.nombre]: ev.target.value })}>
-              <option value="">Todos</option>
-              {f.opciones.map(([valor, t]) => <option key={valor} value={valor}>{t}</option>)}
-            </select>
-          </label>
+          <Selector key={f.nombre} id={`filtro-${f.nombre}`} titulo={f.nombre} icono="🏷️" valor={elegidos[f.nombre]}
+            alCambiar={v => setElegidos({ ...elegidos, [f.nombre]: v })} alLimpiar={() => setElegidos({ ...elegidos, [f.nombre]: '' })}>
+            <option value="">Todos</option>
+            {f.opciones.map(([valor, t]) => <option key={valor} value={valor}>{t}</option>)}
+          </Selector>
         ))}
         {buscar && (
           <label>Buscar

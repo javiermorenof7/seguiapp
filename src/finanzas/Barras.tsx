@@ -35,7 +35,9 @@ export default function Barras({ etiquetas, series, formato, descripcion, colorT
   useEffect(() => {
     if (!lienzo.current) return
     // precision 0: todos los valores son pesos o conteos, sin marcas decimales que se repitan al redondear
-    const eje = { stacked: apilado, max: maximo, ticks: { color: colorTexto, callback: (v: string | number) => formatoEje(Number(v)), maxTicksLimit: maximo && maximo <= 10 ? maximo + 1 : 5, precision: 0 }, grid: { color: `${colorLinea}` } }
+    const eje = { stacked: apilado, max: maximo, ticks: { color: colorTexto, // con escalas cortas (0 a 7 días) solo se rotulan el inicio, la mitad y el tope: a 390 px los rótulos se montan
+      callback: (v: string | number) => maximo && maximo <= 10 && ![0, Math.round(maximo / 2), maximo].includes(Number(v)) ? '' : formatoEje(Number(v)),
+      maxTicksLimit: maximo && maximo <= 10 ? maximo + 1 : 5, precision: 0 }, grid: { color: `${colorLinea}` } }
     const corto = (i: number) => etiquetas[i].length > 16 ? `${etiquetas[i].slice(0, 15)}…` : etiquetas[i]
     const categorias = { stacked: apilado, ticks: { color: colorTexto, autoSkip: false, ...(horizontal ? { callback: (_: unknown, i: number) => corto(i) } : {}) }, grid: { display: false } }
     const grafico = new Chart(lienzo.current, {

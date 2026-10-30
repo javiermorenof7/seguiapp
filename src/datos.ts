@@ -105,6 +105,17 @@ export async function crearHabito(datos: Pick<Seguimiento, 'nombre' | 'tipo_medi
   return vuelto[0].id_seguimiento as string
 }
 
+// Igual que los hábitos: una medida que se dejó de medir vuelve con sus registros si se crea con el mismo nombre.
+export async function crearMedida(nombre: string, unidad: string) {
+  const { data, error } = await supabase.from('seguimiento')
+    .insert({ nombre, unidad, tipo_medida: 'numero', frecuencia: 'registro', codigo_plantilla: 'cuerpo' }).select('id_seguimiento').single()
+  if (!error) return data.id_seguimiento as string
+  const vuelta = revisar(await supabase.from('seguimiento').update({ estado: 'activo' })
+    .eq('nombre', nombre).eq('codigo_plantilla', 'cuerpo').eq('estado', 'eliminado').select('id_seguimiento'))
+  if (!vuelta.length) revisar({ data: null, error })
+  return vuelta[0].id_seguimiento as string
+}
+
 // 23505: el nombre ya existe, también entre los quitados.
 async function cambiarNombre(tabla: 'seguimiento' | 'etiqueta', id: string, nuevo: string, repetido: string) {
   const { error } = await supabase.from(tabla).update({ nombre: nuevo }).eq(`id_${tabla}`, id)
@@ -232,8 +243,8 @@ export async function corregirRegistro(id: string, cambios: { valor: number; not
 
 // shortcut: trae hasta 1.000 gastos sin categoría de todos los años; paginar si alguien tiene más.
 export async function obtenerSinCategoria(idGastos: string) {
-  return revisar(await supabase.from('registro').select('id_registro, nota, valor')
-    .eq('id_seguimiento', idGastos).eq('estado', 'activo').is('id_etiqueta', null)) as { id_registro: string; nota: string | null; valor: number }[]
+  return revisar(await supabase.from('registro').select('id_registro, nota, valor, fecha_registro')
+    .eq('id_seguimiento', idGastos).eq('estado', 'activo').is('id_etiqueta', null)) as { id_registro: string; nota: string | null; valor: number; fecha_registro: string }[]
 }
 
 // Solo cambia la categoría, nunca montos ni fechas. En tandas de 100 para no alargar la URL.
@@ -521,6 +532,22 @@ export async function crearEtiqueta(idSeguimiento: string, nombre: string) {
   return revisar(await supabase.from('etiqueta').insert({ id_seguimiento: idSeguimiento, nombre }).select('id_etiqueta').single()).id_etiqueta as string
 }
 export const crearEjercicio = crearEtiqueta
+
+// Categoría de gastos o fuente de ingresos. Si existió y se quitó, vuelve con su nombre (el nombre es único en el seguimiento).
+export async function crearCategoria(idSeguimiento: string, nombre: string, grupo: 'basico' | 'personal' | null) {
+  const { data, error } = await supabase.from('etiqueta').insert({ id_seguimiento: idSeguimiento, nombre, grupo }).select('id_etiqueta').single()
+  if (error?.code !== '23505') return revisar({ data, error }).id_etiqueta as string
+  const [fila] = revisar(await supabase.from('etiqueta').update({ estado: 'activo', grupo })
+    .eq('id_seguimiento', idSeguimiento).eq('nombre', nombre).eq('estado', 'eliminado').select('id_etiqueta'))
+  if (!fila) throw new ErrorDatos(`Ya tienes una categoría llamada ${nombre}.`)
+  return fila.id_etiqueta as string
+}
+
+// Borrado lógico: sus registros pasan a la categoría elegida (o quedan sin categoría); montos y fechas no se tocan.
+export async function quitarCategoria(idEtiqueta: string, idDestino: string | null) {
+  revisar(await supabase.from('registro').update({ id_etiqueta: idDestino }).eq('id_etiqueta', idEtiqueta))
+  revisar(await supabase.from('etiqueta').update({ estado: 'eliminado' }).eq('id_etiqueta', idEtiqueta))
+}
 
 // El registro guarda el peso (o las repeticiones si es sin peso) para la tendencia; la serie, el detalle.
 // shortcut: dos llamadas sin transacción y sin cola; pasar a una función SQL si un fallo entre las dos deja huérfanos.

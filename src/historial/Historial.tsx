@@ -4,6 +4,7 @@ import Barras from '../finanzas/Barras'
 import SinDatos from '../SinDatos'
 import { normalizar } from '../finanzas/parseo'
 import { agrupar, mover, rango, type Escala } from './periodo'
+import Selector from '../Selector'
 
 export interface Filtro { nombre: string; opciones: [string, string][]; de: (r: RegistroGuardado) => string; inicial?: string }
 
@@ -20,6 +21,9 @@ const etiqueta = (escala: Escala, fecha: string) => {
 const cssVar = (nombre: string) => getComputedStyle(document.documentElement).getPropertyValue(nombre).trim()
 
 // Todos los registros del módulo por semana, mes o año, con sus filtros, totales y un gráfico del período.
+// Un ícono por lo que filtra; los demás llevan la etiqueta.
+const ICONOS: Record<string, string> = { Tipo: '🗂️', 'Categoría o fuente': '🏷️', Origen: '✍️', Ejercicio: '🏋️', Hábito: '🎯' }
+
 export default function Historial({ ids, registros, filtros, buscar, suma, formato = v => Number.isInteger(v) ? String(v) : '', total, fila }: {
   ids: string[]
   registros: RegistroGuardado[]
@@ -74,18 +78,21 @@ export default function Historial({ ids, registros, filtros, buscar, suma, forma
       </div>
       <div className="filtros">
         {filtros.map(f => (
-          <label key={f.nombre}>{f.nombre}
-            <select value={elegidos[f.nombre]} onChange={ev => setElegidos({ ...elegidos, [f.nombre]: ev.target.value })}>
-              <option value="">Todos</option>
-              {f.opciones.map(([valor, t]) => <option key={valor} value={valor}>{t}</option>)}
-            </select>
-          </label>
+          <Selector key={f.nombre} id={`filtro-${f.nombre}`} titulo={f.nombre} icono={ICONOS[f.nombre] ?? '🏷️'} valor={elegidos[f.nombre]}
+            alCambiar={v => setElegidos({ ...elegidos, [f.nombre]: v })} alLimpiar={() => setElegidos({ ...elegidos, [f.nombre]: '' })}>
+            <option value="">Todos</option>
+            {f.opciones.map(([valor, t]) => <option key={valor} value={valor}>{t}</option>)}
+          </Selector>
         ))}
         {buscar && (
-          <label>Buscar
-            <input value={texto} maxLength={60} onChange={ev => setTexto(ev.target.value)} placeholder="Palabra a buscar" autoComplete="off" />
-            <small className="ayuda">Ej.: almuerzo, taxi</small>
-          </label>
+          <div className="filtro">
+            <label htmlFor="filtro-buscar" className="etiqueta">Buscar</label>
+            <div className={texto ? 'selector elegido' : 'selector'}>
+              <span aria-hidden="true">🔎</span>
+              <input id="filtro-buscar" value={texto} maxLength={60} onChange={ev => setTexto(ev.target.value)} placeholder="Ej.: almuerzo, taxi" autoComplete="off" />
+              {texto && <button type="button" className="quitar" aria-label="Borrar la búsqueda" onClick={() => setTexto('')}>✕</button>}
+            </div>
+          </div>
         )}
       </div>
       </div>

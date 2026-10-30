@@ -154,9 +154,12 @@ button:disabled { opacity: .6; cursor: default; }
 .segmentado { display: inline-flex; flex-wrap: wrap; gap: 0; padding: 3px; border-radius: 12px; background: var(--fondo); border: 1px solid var(--linea); width: fit-content; }
 .segmentado .chip { border: 0; border-radius: 9px; padding: 6px 12px; font-size: 14px; }
 .segmentado .chip[aria-checked="true"] { background: var(--tinta); color: var(--fondo); }
-.segmentado + select, .panel-periodo .fila-filtros select { padding: 6px 10px; border-radius: 10px; }
 .panel-periodo .fila-filtros { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-@media (max-width: 560px) { .segmentado { display: grid; grid-template-columns: repeat(2, 1fr); width: 100%; } }
+@media (max-width: 560px) {
+  .segmentado { display: grid; grid-template-columns: repeat(2, 1fr); width: 100%; }
+  /* con 3 opciones (Semana, Mes, Año) van en una sola fila */
+  .segmentado:not(:has(> :nth-child(4))) { grid-template-columns: repeat(3, 1fr); }
+}
 .lista li.recibo { grid-template-columns: 1fr auto auto auto; }
 .lista li.recibo > button { justify-self: end; }
 @media (max-width: 560px) { .lista li.recibo { grid-template-columns: 1fr auto; } .lista li.recibo > button { grid-column: 1 / -1; justify-self: stretch; } }
@@ -327,3 +330,75 @@ section:not([class]) + form.formulario { margin-top: 40px; }
 .sin-datos { display: grid; gap: 8px; justify-items: start; margin: 24px 0; padding: 20px; border: 1px dashed var(--linea); border-radius: var(--radio); }
 .sin-datos strong { font-size: 18px; }
 .sin-datos .tenue { margin: 0; }
+
+/* Filtros desplegables (Selector): una línea aunque haya muchas opciones; la lista la abre el celular */
+.filtro { display: grid; gap: 6px; margin-top: 20px; max-width: 520px; }
+.filtro + .filtro { margin-top: 12px; }
+.filtro .etiqueta { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--tenue); }
+.filtro .selector { display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 4px 0 14px; background: var(--fondo); border: 1px solid var(--linea); border-radius: 12px; }
+.filtro .selector.elegido { border-color: var(--acento); }
+.filtro .selector:has(select:focus-visible) { outline: 3px solid var(--acento); outline-offset: 2px; }
+.filtro select:focus-visible { outline: none; }
+.filtro select { flex: 1; min-width: 0; font: inherit; font-weight: 600; color: var(--tinta); background: transparent; border: 0; padding: 12px 0; }
+.filtro .quitar { background: none; color: var(--tenue); min-width: 44px; min-height: 44px; border-radius: 999px; }
+.editar-factura { border-top: 1px solid var(--linea); padding-top: 14px; }
+.editar-factura h3 { margin: 0; }
+
+/* Categorías de Finanzas: nombre, tipo y Quitar en una fila; al quitar, la confirmación ocupa toda la fila */
+.lista li.categoria { grid-template-columns: minmax(0, 1fr) auto auto; }
+.lista li.categoria > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lista li.categoria .confirmar-quitar { grid-column: 1 / -1; display: grid; gap: 8px; }
+.confirmar-quitar label { display: grid; gap: 6px; font-weight: 600; }
+.confirmar-quitar select, .sugerencia select { font: inherit; color: var(--tinta); background: var(--fondo); border: 1px solid var(--linea); border-radius: 12px; padding: 10px 12px; width: 100%; }
+.sugerencia { border: 1px solid var(--linea); border-radius: 16px; padding: 14px; display: grid; gap: 10px; max-width: 520px; }
+.sugerencia h2, .sugerencia p { margin: 0; }
+.sugerencia label { display: grid; gap: 6px; }
+.fila-filtros .filtro { flex: 1 1 100%; margin-top: 4px; }
+.filtros .filtro { margin-top: 0; }
+
+/* Celular: botones de 44 px y filas de movimientos en dos líneas */
+.chip { min-height: 44px; }
+.lista li:has(> form.corregir) { display: block; }
+.lista li.recibo .estado { justify-self: start; }
+@media (max-width: 420px) {
+  .lista li.ultimo { grid-template-columns: minmax(0, 1fr) auto; row-gap: 6px; }
+  .lista li.ultimo > span:first-child { grid-column: 1; grid-row: 1; }
+  .lista li.ultimo > strong { grid-column: 2; grid-row: 1; text-align: right; }
+  .lista li.ultimo > .tenue { grid-column: 1; grid-row: 2; }
+  .lista li.ultimo > .chips { grid-column: 2; grid-row: 2; flex-wrap: nowrap; gap: 6px; }
+  .lista li.ultimo > .chips:has(> .tenue) { grid-column: 1 / -1; grid-row: 3; flex-wrap: wrap; justify-content: start; }
+  .lista li.ultimo > .chips .secundario { min-height: 44px; padding: 0 12px; }
+  .lista li.ultimo > .error { grid-column: 1 / -1; }
+}
+.filtro { min-width: 0; }
+@media (max-width: 420px) { .filtros { grid-template-columns: minmax(0, 1fr); } }
+
+/* Descripción de los movimientos: hasta 2 líneas antes de cortarse */
+.lista li.ultimo > .tenue { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pestanas.hay-mas { --hasta: transparent; }
+.pestanas.hay-antes { --inicio: transparent; }
+.pestanas.hay-mas, .pestanas.hay-antes {
+  -webkit-mask-image: linear-gradient(to right, var(--inicio, #000), #000 40px, #000 calc(100% - 40px), var(--hasta, #000));
+  mask-image: linear-gradient(to right, var(--inicio, #000), #000 40px, #000 calc(100% - 40px), var(--hasta, #000));
+}
+
+/* Panel de filtros igual en toda la app */
+.filtro input { flex: 1; min-width: 0; font: inherit; font-weight: 600; color: var(--tinta); background: transparent; border: 0; padding: 12px 0; }
+.filtro .selector:has(input:focus-visible) { outline: 3px solid var(--acento); outline-offset: 2px; }
+.filtro input:focus-visible { outline: none; }
+.filtro .selector { min-width: 0; }
+.panel-periodo .filtro { margin-top: 0; }
+.filtros { gap: 12px; align-items: end; }
+@media (min-width: 421px) { .filtros { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); } }
+.panel-periodo .periodo { width: 100%; max-width: 520px; justify-self: start; }
+.panel-periodo .filtros { max-width: none; }
+@media (min-width: 700px) {
+  .panel-periodo .fila-filtros { align-items: end; }
+  .panel-periodo .fila-filtros .filtro { flex: 1 1 260px; max-width: 420px; }
+}
+/* Medida de hoy en computador: el campo con ancho cómodo junto a Guardar */
+@media (min-width: 421px) {
+  .fila-presupuesto:has(> input[inputmode="decimal"]) { grid-template-columns: auto minmax(0, 320px) auto; justify-content: start; }
+}
+.segmentado .chip { white-space: nowrap; }
+@media (max-width: 420px) { .segmentado .chip { padding: 6px 4px; font-size: 13px; } }

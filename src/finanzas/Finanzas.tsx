@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import Selector from '../Selector'
 import {
   aprenderCategoria, crearEtiqueta, guardarPresupuesto, obtenerFinanzas, obtenerMetasAhorro, obtenerPrestamos, obtenerRecibos, obtenerRegistros, registrar, type RegistroGuardado, type Seguimiento,
 } from '../datos'
@@ -21,6 +22,8 @@ import Asistente from './Asistente'
 import Recibos from './Recibos'
 import Deudas from './Deudas'
 import Ahorro from './Ahorro'
+import Categorias from './Categorias'
+import { puedeCrear, TOPE } from './reglasCategorias'
 import type { MetaAhorro } from './metas'
 import { cincuentaTreintaVeinte, facturaParecida, gastoInusual, posibleRepetido, sugeridos } from './aprende'
 import { esperadoVsRecibido, estadoFijo, fijos, porFuente, type EstadoFijo } from './ingresos'
@@ -51,7 +54,7 @@ const nombreMes = (mes: string) => new Date(`${mes}-15T12:00`).toLocaleDateStrin
 const ESTADO_FIJO: Record<EstadoFijo, { texto: string; clase: string }> = {
   recibido: { texto: '✓ Recibido', clase: 'en-meta' }, pendiente: { texto: '◐ Pendiente', clase: 'cerca' }, atrasado: { texto: '✕ Atrasado', clase: 'fuera' },
 }
-const PESTANAS = { resumen: 'Resumen', gastos: 'Gastos', ingresos: 'Ingresos', ahorro: 'Ahorro', recibos: 'Facturas', deudas: 'Deudas', historial: 'Historial' }
+const PESTANAS = { resumen: 'Resumen', gastos: 'Gastos', ingresos: 'Ingresos', ahorro: 'Ahorro', recibos: 'Facturas', deudas: 'Deudas', categorias: 'Categorías', historial: 'Historial' }
 
 export default function Finanzas({ seguimientos, registros, abrir, alVolver, alCambiar }: {
   seguimientos: Seguimiento[]
@@ -69,6 +72,16 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
   const idIngresos = id('ingreso')
   const [pestana, setPestana] = useState<keyof typeof PESTANAS>(abrir === 'factura' ? 'recibos' : abrir === 'gasto' || abrir === 'presupuesto' ? 'gastos'
     : abrir === 'ingreso' ? 'ingresos' : abrir === 'ahorro' ? 'ahorro' : 'resumen')
+  // Una fila que se desliza: cada borde se desvanece mientras queden pestañas escondidas de ese lado y la elegida siempre queda a la vista.
+  const filaPestanas = useRef<HTMLDivElement>(null)
+  const [ocultas, setOcultas] = useState('')
+  const revisarFila = (el: HTMLElement) => setOcultas([el.scrollLeft > 4 && 'hay-antes', el.scrollLeft + el.clientWidth < el.scrollWidth - 4 && 'hay-mas'].filter(Boolean).join(' '))
+  useEffect(() => {
+    const fila = filaPestanas.current
+    if (!fila) return
+    fila.querySelector('[aria-checked="true"]')?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+    revisarFila(fila)
+  }, [pestana])
   const [registrando, setRegistrando] = useState<TipoMovimiento | null>(abrir === 'gasto' || abrir === 'ingreso' || abrir === 'ahorro' ? abrir : null)
   const [registrado, setRegistrado] = useState('')
   // préstamos y facturas para el Resumen y el aviso "¿es la cuota de…?"; si fallan, esos bloques no salen
@@ -198,7 +211,8 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
         </div>
       </header>
       {error && <p role="alert" className="error">{error}</p>}
-      <div className="chips pestanas" role="radiogroup" aria-label="Sección de Finanzas">
+      <div ref={filaPestanas} className={`chips pestanas ${ocultas}`} role="radiogroup" aria-label="Sección de Finanzas"
+        onScroll={ev => revisarFila(ev.currentTarget)}>
         {(Object.keys(PESTANAS) as (keyof typeof PESTANAS)[]).filter(p => (p !== 'ingresos' || idIngresos) && (p !== 'ahorro' || idAhorro)).map(p => (
           <button key={p} type="button" role="radio" aria-checked={pestana === p} className="chip" onClick={() => setPestana(p)}>{PESTANAS[p]}</button>
         ))}
@@ -234,6 +248,11 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
         {registrar('ahorro')}
         <Ahorro idAhorro={idAhorro} metas={metasAhorro.metas} ahorros={metasAhorro.ahorros} alCambiar={alCambiar} />
       </>)}
+      {datos && pestana === 'categorias' && (
+        <Categorias idGastos={idGastos} idIngresos={idIngresos ?? null} categorias={datos.categorias} fuentes={datos.fuentes}
+          metas={metasAhorro?.metas ?? []} aprendido={datos.aprendido} alIrAhorro={() => setPestana('ahorro')}
+          alCambiar={async () => { await Promise.all([alCambiar(), cargar()]) }} />
+      )}
       {datos && pestana === 'deudas' && (
         <Deudas idGastos={idGastos} categorias={datos.categorias} alCambiar={alCambiar} />
       )}
@@ -262,7 +281,8 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
                 <button key={texto} type="button" role="radio" aria-checked={mesVer === p} className="chip" onClick={() => setMesVer(p)}>{texto}</button>
               ))}
             </div>
-              <select aria-label="Elegir mes o año" value={atajos.some(([p]) => p === mesVer) ? '' : mesVer} onChange={ev => ev.target.value && setMesVer(ev.target.value)}>
+              <Selector id="filtro-mes" titulo="Otro mes o año" icono="📅" valor={atajos.some(([p]) => p === mesVer) ? '' : mesVer}
+                alCambiar={v => v && setMesVer(v)}>
                 <option value="">Elegir…</option>
                 {periodosDisponibles.map(([a, meses]) => (
                   <optgroup key={a} label={a}>
@@ -270,7 +290,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
                     {meses.map(m => <option key={m} value={m}>{nombreMesLargo(m)}</option>)}
                   </optgroup>
                 ))}
-              </select>
+              </Selector>
             </div>
             {!esAno && (
               <div className="periodo">
@@ -375,7 +395,8 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe
       ?? (categoria && normalizar(categoria.nombre).startsWith('deuda') ? prestamos[0] : undefined)
     return p ? [p.nombre_entidad, p.nombre_prestamo].filter(Boolean).join(' · ') : null
   })()
-  const fuenteNueva = tipo === 'ingreso' && !categoria ? descripcion.replace(/\s+/g, ' ').trim().slice(0, 60) : ''
+  const hayCupo = puedeCrear('ingreso', lista.length)
+  const fuenteNueva = tipo === 'ingreso' && !categoria && hayCupo ? descripcion.replace(/\s+/g, ' ').trim().slice(0, 60) : ''
 
   async function guardar(evento: FormEvent) {
     evento.preventDefault()
@@ -468,7 +489,8 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe
       {tipo === 'gasto' && (
         <>
           <fieldset>
-            <legend>Categoría{propuesta ? '' : ' (la aprendo para la próxima vez)'}</legend>
+            <legend>Categoría</legend>
+            {!propuesta && <small className="ayuda">La aprendo para la próxima vez.</small>}
             <div className="chips">
               {datos.categorias.map(c => (
                 <button key={c.id_etiqueta} type="button" role="radio" aria-checked={categoria?.id_etiqueta === c.id_etiqueta}
@@ -496,6 +518,7 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe
             ))}
           </div>
           {fuenteNueva && <small className="ayuda">Fuente nueva: «{fuenteNueva}». Se crea al guardar, o elige una de arriba.</small>}
+          {tipo === 'ingreso' && !categoria && !hayCupo && descripcion.trim() && <small className="ayuda">Ya tienes {TOPE.ingreso} fuentes: elige una de arriba o se guarda sin fuente.</small>}
         </fieldset>
       )}
       {tipo === 'ahorro' && metas.length > 0 && (
@@ -814,7 +837,7 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
           <ul className="lista">
             {registros.map(r => (
               <FilaMovimiento key={r.id_registro} registro={r} idGastos={idGastos} categorias={fuentes}
-                tipo={nombre(r.id_etiqueta)} alCambiar={alCambiar} />
+                tipo={nombre(r.id_etiqueta)} que={{ nombre: 'Fuente', vacio: 'Sin fuente', aprende: true }} alCambiar={alCambiar} />
             ))}
           </ul>
         ) : <p className="tenue">Aún no registras ingresos este mes.</p>}
@@ -852,7 +875,7 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
         </section>
       )}
       <Asistente idSeguimiento={idIngresos} tipo="ingreso" categorias={fuentes}
-        alCrear={async nombre => ({ id_etiqueta: await crearEtiqueta(idIngresos, nombre), nombre, grupo: null, palabras_clave: [] })}
+        alCrear={!puedeCrear('ingreso', fuentes.length) ? undefined : async nombre => ({ id_etiqueta: await crearEtiqueta(idIngresos, nombre), nombre, grupo: null, palabras_clave: [] })}
         alCambiar={alCambiar} />
     </>
   )

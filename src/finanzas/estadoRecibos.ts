@@ -1,7 +1,9 @@
 // Cuentas de la pestaña Recibos. "mes" es 'AAAA-MM'; "hoy" es 'AAAA-MM-DD'.
 import { mesesAntes, recibosPendientes, type PagoRecibo, type Recibo } from './calculos'
 
-export interface ReciboVisible extends Recibo { dia_pago: number | null; numero_cuenta_enmascarado: string | null; estado?: 'activo' | 'no_se_paga' }
+export interface ReciboVisible extends Recibo {
+  dia_pago: number | null; numero_cuenta_enmascarado: string | null; estado?: 'activo' | 'no_se_paga'; requiere_numero_pago?: boolean
+}
 export interface PagoGuardado extends PagoRecibo { id_pago_recibo: string; id_registro: string | null; fecha_pago: string | null }
 export type EstadoRecibo = 'vencido' | 'por_pagar' | 'pagado' | 'sin_pendiente'
 export interface FilaRecibo {
@@ -9,6 +11,17 @@ export interface FilaRecibo {
 }
 
 export const nombreRecibo = (r: Recibo) => r.nombre_ubicacion ? `${r.nombre_servicio} · ${r.nombre_ubicacion}` : r.nombre_servicio
+
+// Ubicación del filtro: las personales no tienen, van como "Personal".
+export const ubicacionDe = (r: Recibo) => r.nombre_ubicacion ?? 'Personal'
+export const ubicacionesDe = (recibos: Recibo[]) => [...new Set(recibos.map(ubicacionDe))]
+  .sort((a, b) => Number(a === 'Personal') - Number(b === 'Personal') || a.localeCompare(b, 'es'))
+
+// Para el selector: primero las que tienen facturas en el grupo que se ve, después las que no.
+export function ubicacionesConConteo(todas: Recibo[], delGrupo: Recibo[]) {
+  const lista = ubicacionesDe(todas).map(ubicacion => ({ ubicacion, facturas: delGrupo.filter(r => ubicacionDe(r) === ubicacion).length }))
+  return [...lista.filter(u => u.facturas), ...lista.filter(u => !u.facturas)]
+}
 
 // Mediana de los días en que se pagó; null sin pagos con fecha.
 // shortcut: los pagos cargados de la hoja tienen fecha de pago = inicio del período; se ignoran (un pago real justo el día 1 también, raro).

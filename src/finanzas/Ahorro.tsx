@@ -2,8 +2,10 @@ import { useState, type FormEvent } from 'react'
 import { categorizar, crearMetaAhorro, editarMetaAhorro, quitarMetaAhorro, type RegistroGuardado } from '../datos'
 import { formatoValor } from '../indicadores'
 import { leerMonto, leidoDe, MONTO_INVALIDO } from './parseo'
+import { puedeCrear, TOPE } from './reglasCategorias'
 import { avanceMeta, type EstadoMeta, type MetaAhorro } from './metas'
 import type { Movimiento } from './calculos'
+import { FilaMovimiento } from './Ultimos'
 
 const pesos = (v: number) => formatoValor('dinero', v)
 const hoyIso = () => new Date().toLocaleDateString('en-CA')
@@ -28,6 +30,10 @@ export default function Ahorro({ idAhorro, metas, ahorros, alCambiar }: {
   const movimientos: Movimiento[] = ahorros.map(r => ({ fecha: r.fecha, valor: r.valor, tipo: 'ahorro', id_etiqueta: r.id_etiqueta }))
   const deMetas = new Set(metas.map(m => m.id_etiqueta))
   const libres = ahorros.filter(r => !r.id_etiqueta || !deMetas.has(r.id_etiqueta))
+  const [verTodos, setVerTodos] = useState(false)
+  const recientes = [...ahorros].sort((a, b) => b.fecha.localeCompare(a.fecha))
+  const comoCategorias = metas.map(m => ({ id_etiqueta: m.id_etiqueta, nombre: m.nombre, grupo: null, palabras_clave: [] }))
+  const metaDe = (id: string | null) => metas.find(m => m.id_etiqueta === id)?.nombre ?? 'Libre'
 
   // Lanza el error para que el formulario que llamó lo muestre y no se cierre.
   async function accion(hacer: () => Promise<unknown>, mensaje: string) {
@@ -53,12 +59,27 @@ export default function Ahorro({ idAhorro, metas, ahorros, alCambiar }: {
           ))}
         </ul>
       </section>
-      <FormularioMeta titulo="Crear una meta" alGuardar={nueva => accion(() => crearMetaAhorro(idAhorro, nueva), `Meta ${nueva.nombre} creada.`)} />
+      {puedeCrear('ahorro', metas.length)
+        ? <FormularioMeta titulo="Crear una meta" alGuardar={nueva => accion(() => crearMetaAhorro(idAhorro, nueva), `Meta ${nueva.nombre} creada.`)} />
+        : <p className="tenue">Tienes {TOPE.ahorro} metas, el máximo. Para crear otra, quita una: sus ahorros quedan como ahorro libre.</p>}
       {metas.length > 0 && libres.some(r => !r.id_etiqueta) && (
         <AhorroLibre libres={libres} metas={metas}
           alAsignar={(ids, meta) => accion(() => categorizar(ids, meta.id_etiqueta),
             `${ids.length} ${ids.length === 1 ? 'ahorro asignado' : 'ahorros asignados'} a ${meta.nombre}.`)} />
       )}
+      <section>
+        <h2>Mis ahorros</h2>
+        {!recientes.length && <p className="tenue">Aún no registras ahorros.</p>}
+        <ul className="lista">
+          {(verTodos ? recientes : recientes.slice(0, 15)).map(r => (
+            <FilaMovimiento key={r.id_registro} registro={r} idGastos="" categorias={comoCategorias} tipo={metaDe(r.id_etiqueta)}
+              que={{ nombre: 'Meta', vacio: 'Libre', aprende: false }} alCambiar={alCambiar} />
+          ))}
+        </ul>
+        {recientes.length > 15 && (
+          <button className="secundario" onClick={() => setVerTodos(!verTodos)}>{verTodos ? 'Ver solo los últimos 15' : `Ver los ${recientes.length} ahorros`}</button>
+        )}
+      </section>
     </>
   )
 }

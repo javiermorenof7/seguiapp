@@ -6,15 +6,15 @@ import {
 } from '../datos'
 import { formatoValor, type Direccion } from '../indicadores'
 import Grafico from '../Grafico'
-import { PeriodoNavegable, rangoCarga, useRegistrosDe, ventanaInicial, type Ventana } from '../Periodo'
-import { rango as rangoDe } from '../historial/periodo'
+import { rangoCarga, useRegistrosDe, ventanaInicial, type Ventana } from '../Periodo'
+import { mover, rango as rangoDe } from '../historial/periodo'
 import SinDatos from '../SinDatos'
 import Historial, { FilaSimple } from '../historial/Historial'
 import Barras from '../finanzas/Barras'
 import CambiarNombre from '../CambiarNombre'
 import { normalizar } from '../finanzas/parseo'
 import {
-  cambioPeso, comparar, conSigno, constancia, seriesPorDia, faltaParaMeta, indicesRecord, kg, leerSerie, parecido, pesoPorDia,
+  cambioPeso, comparar, conSigno, constancia, faltaParaMeta, fechasDeRecord, recordsSegunMeta, indicesRecord, kg, leerSerie, parecido, pesoPorDia,
   progreso, restarDias, seriesDeUltima, textoSerie,
   type Sesion,
 } from './calculos'
@@ -72,8 +72,8 @@ export default function Salud({ seguimientos, registros, abrir, alVolver, alCamb
       {!gym && <p className="tenue">Preparando…</p>}
       {gym && pestana === 'resumen' && (
         <>
-          <Gym vista="resumen" idGym={gym.id_seguimiento} metaDias={gym.meta?.valor} registros={registros.filter(r => r.id_seguimiento === gym.id_seguimiento)} alCambiar={alCambiar} alVer={setPestana} />
-          <CuerpoHoy medidas={medidas} registros={registros} alVer={() => setPestana('cuerpo')} />
+          <Gym vista="resumen" idGym={gym.id_seguimiento} metaDias={gym.meta?.valor} registros={registros.filter(r => r.id_seguimiento === gym.id_seguimiento)} alCambiar={alCambiar} alVer={setPestana}
+            medidas={medidas} registrosCuerpo={registros} />
         </>
       )}
       {gym && pestana === 'gym' && (
@@ -95,10 +95,10 @@ export default function Salud({ seguimientos, registros, abrir, alVolver, alCamb
   )
 }
 
-function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, alVer }: {
+function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, alVer, medidas = [], registrosCuerpo = [] }: {
   vista: 'resumen' | 'registrar'
   idGym: string; metaDias?: number; registros: RegistroGuardado[]; enfocar?: boolean; alCambiar: () => Promise<void>
-  alVer?: (pestana: 'gym' | 'historial') => void
+  alVer?: (pestana: 'gym' | 'cuerpo' | 'historial') => void; medidas?: Seguimiento[]; registrosCuerpo?: RegistroGuardado[]
 }) {
   // el Resumen abre en la semana actual; la pestaña Gym, en el mes
   const [ventana, setVentana] = useState<Ventana>(() => vista === 'resumen' ? { escala: 'semana', ancla: hoyIso() } : ventanaInicial())
@@ -235,14 +235,9 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
   }
 
   if (!datos) return error ? <p role="alert" className="error">{error}</p> : <p className="tenue">Cargando…</p>
-  if (vista === 'resumen') return !sesiones.length ? (
-    <SinDatos titulo="Aún no registras ejercicios" detalle="Cuando registres tu primer ejercicio en Gym, aquí verás tu constancia y tu progreso." />
-  ) : (
-    <>
-      <PeriodoNavegable valor={ventana} alCambiar={setVentana} />
-      <Constancia sesiones={sesiones} hoy={hoy} metaDias={metaDias} ventana={ventana} alVer={() => alVer?.('gym')} />
-      <Progreso sesiones={sesiones} hoy={hoy} ejercicios={datos.ejercicios.map(e => e.nombre).sort()} ventana={ventana} alVer={() => alVer?.('historial')} />
-    </>
+  if (vista === 'resumen') return (
+    <ResumenSalud sesiones={sesiones} hoy={hoy} metaDias={metaDias} ejercicios={datos.ejercicios.map(e => e.nombre).sort()} medidas={medidas}
+      registros={registrosCuerpo} ventana={ventana} alCambiarVentana={setVentana} alVer={p => alVer?.(p)} />
   )
   const nombres = datos.nombres
   const deSerie = new Map(datos.series.map(x => [x.id_registro, x]))
@@ -288,7 +283,6 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
   )
   if (!abierto) return (
     <>
-      {sesiones.length > 0 && <SeriesDelPeriodo sesiones={sesiones} hoy={hoy} ventana={ventana} alCambiarVentana={setVentana} />}
       <section>
         <MetaGym idGym={idGym} meta={metaDias} alCambiar={alCambiar} />
       </section>
@@ -394,39 +388,10 @@ function EditarSerie({ actual, alGuardar, alCancelar }: {
   )
 }
 
-// El gráfico de cada medida vive en la pestaña Cuerpo; aquí, el último valor, su cambio y lo que falta para la meta.
-function CuerpoHoy({ medidas, registros, alVer }: { medidas: Seguimiento[]; registros: RegistroGuardado[]; alVer: () => void }) {
-  if (!medidas.length) return null
-  return (
-    <section>
-      <div className="bloque-pie"><h2>¿Cómo va mi cuerpo?</h2><button className="enlace" onClick={alVer}>Ver →</button></div>
-      <ul className="lista">
-        {medidas.map(m => {
-          const [ultimo, ...anteriores] = registros.filter(r => r.id_seguimiento === m.id_seguimiento).sort((a, b) => b.fecha.localeCompare(a.fecha))
-          // frente al registro de hace 30 días o más; si no hay, frente al anterior
-          const c = ultimo && comparar(ultimo.valor, anteriores, ultimo.fecha)
-          const cambio = c && (c.hace30 ?? c.ultimo)
-          const falta = ultimo && m.meta && faltaParaMeta(ultimo.valor, m.meta.valor, m.meta.direccion)
-          const detalle = [
-            cambio && `${conSigno(cambio.cambio, m.unidad)} desde el ${diaMes(cambio.fecha)}`,
-            ultimo && m.meta && (falta ? `faltan ${formatoValor('numero', falta, m.unidad)}` : '✓ meta cumplida'),
-          ].filter(Boolean).join(' · ')
-          return (
-            <li key={m.id_seguimiento} className="dos medida-hoy">
-              <span>{m.nombre}{detalle && <span className="tenue">{detalle}</span>}</span>
-              {ultimo
-                ? <strong className="cifra-media">{formatoValor('numero', ultimo.valor, m.unidad)}</strong>
-                : <button className="enlace" onClick={alVer}>Registrar</button>}
-            </li>
-          )
-        })}
-      </ul>
-    </section>
-  )
-}
-
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
-// "esta semana", "la semana del 20/10", "en octubre", "en 2025": va en las cifras de Constancia y Progreso.
+const MESES_LARGOS = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+const decimal = (v: number) => v.toLocaleString('es-CO', { maximumFractionDigits: 1 })
+// "esta semana", "la semana del 20/10", "en octubre", "en 2025": va en las cifras de cada bloque.
 function enPeriodo(ventana: Ventana, hoy: string) {
   const r = rangoDe(ventana.escala, ventana.ancla)
   if (ventana.escala === 'semana') return r.desde <= hoy && hoy <= r.hasta ? 'esta semana' : `la ${r.titulo.toLowerCase()}`
@@ -434,66 +399,199 @@ function enPeriodo(ventana: Ventana, hoy: string) {
   return `en ${r.titulo}`
 }
 
-// Una cifra y un visual por período: series por día (semana), días por semana (mes) o por mes (año). Sin leyenda ni línea de meta.
-function Constancia({ sesiones, hoy, metaDias, ventana, alVer }: { sesiones: Sesion[]; hoy: string; metaDias?: number; ventana: Ventana; alVer: () => void }) {
-  const meta = metaDias ?? null
+// Igual al panel del Resumen de Finanzas: atajos, otro mes o año con datos, ◀ ▶ y aviso para volver.
+function PanelSalud({ ventana, alCambiar, hoy, fechas }: { ventana: Ventana; alCambiar: (v: Ventana) => void; hoy: string; fechas: string[] }) {
+  const r = rangoDe(ventana.escala, ventana.ancla)
+  const atajos: [Ventana, string][] = [
+    [{ escala: 'semana', ancla: hoy }, 'Esta semana'], [{ escala: 'semana', ancla: restarDias(hoy, 7) }, 'Semana pasada'],
+    [{ escala: 'mes', ancla: hoy }, 'Este mes'], [{ escala: 'ano', ancla: hoy }, 'Este año'],
+  ]
+  const es = (v: Ventana) => v.escala === ventana.escala && rangoDe(v.escala, v.ancla).desde === r.desde
+  const meses = [...new Set(fechas.filter(f => f <= hoy).map(f => f.slice(0, 7)))].sort().reverse()
+  const anos = [...new Set(meses.map(m => m.slice(0, 4)))]
+  const primero = fechas.reduce((a, f) => f < a ? f : a, hoy)
+  const elegido = atajos.some(([v]) => es(v)) || ventana.escala === 'semana' ? '' : ventana.escala === 'ano' ? r.desde.slice(0, 4) : r.desde.slice(0, 7)
+  const actual = ventana.escala === 'semana' && r.desde <= hoy && hoy <= r.hasta
+  const nombre = ventana.escala === 'semana' ? `la ${r.titulo.toLowerCase()}` : ventana.escala === 'mes' ? r.titulo : `todo ${r.titulo}`
+  return (
+    <div className="panel-periodo">
+      <span className="etiqueta">Período</span>
+      <div className="fila-filtros">
+        <div className="chips segmentado" role="radiogroup" aria-label="Período del resumen">
+          {atajos.map(([v, texto]) => (
+            <button key={texto} type="button" role="radio" aria-checked={es(v)} className="chip" onClick={() => alCambiar(v)}>{texto}</button>
+          ))}
+        </div>
+        <Selector id="filtro-periodo-salud" titulo="Otro mes o año" icono="📅" valor={elegido}
+          alCambiar={v => v && alCambiar(v.length === 4 ? { escala: 'ano', ancla: `${v}-01-01` } : { escala: 'mes', ancla: `${v}-01` })}>
+          <option value="">Elegir…</option>
+          {anos.map(a => (
+            <optgroup key={a} label={a}>
+              <option value={a}>Todo {a}</option>
+              {meses.filter(m => m.startsWith(a)).map(m => <option key={m} value={m}>{MESES_LARGOS[Number(m.slice(5, 7)) - 1]} de {a}</option>)}
+            </optgroup>
+          ))}
+        </Selector>
+      </div>
+      {ventana.escala !== 'ano' && (
+        <div className="periodo">
+          <button className="secundario" aria-label="Período anterior" disabled={r.desde <= primero} onClick={() => alCambiar({ ...ventana, ancla: mover(ventana.escala, ventana.ancla, -1) })}>◀</button>
+          <strong>{r.titulo}</strong>
+          <button className="secundario" aria-label="Período siguiente" disabled={r.hasta >= hoy} onClick={() => alCambiar({ ...ventana, ancla: mover(ventana.escala, ventana.ancla, 1) })}>▶</button>
+        </div>
+      )}
+      {!actual && (
+        <p role="status" className="aviso">Estás viendo {nombre}. <button className="enlace" onClick={() => alCambiar({ escala: 'semana', ancla: hoy })}>Volver a esta semana</button></p>
+      )}
+    </div>
+  )
+}
+
+// Todo lo de Salud que se mira vive aquí; las pestañas Gym y Cuerpo son para registrar y corregir.
+function ResumenSalud({ sesiones, hoy, metaDias, ejercicios, medidas, registros, ventana, alCambiarVentana, alVer }: {
+  sesiones: Sesion[]; hoy: string; metaDias?: number; ejercicios: string[]; medidas: Seguimiento[]; registros: RegistroGuardado[]
+  ventana: Ventana; alCambiarVentana: (v: Ventana) => void; alVer: (pestana: 'gym' | 'cuerpo' | 'historial') => void
+}) {
+  const r = rangoDe(ventana.escala, ventana.ancla)
+  const records = useMemo(() => fechasDeRecord(sesiones), [sesiones])
+  const enRango = sesiones.filter(s => s.fecha >= r.desde && s.fecha <= r.hasta && s.fecha <= hoy)
+  const dias = new Set(enRango.map(s => s.fecha)).size
+  const series = enRango.reduce((t, s) => t + s.series, 0)
+  const recordsEnRango = records.filter(f => f >= r.desde && f <= r.hasta).length
+  const cuando = enPeriodo(ventana, hoy)
+  const peso = medidas.find(m => normalizar(m.nombre) === 'peso')
+  const ultimoPeso = peso && registros.filter(x => x.id_seguimiento === peso.id_seguimiento).sort((a, b) => b.fecha.localeCompare(a.fecha))[0]
+  const meta = ventana.escala === 'semana' ? metaDias : undefined
+  const volver = { texto: 'Volver a esta semana', hacer: () => alCambiarVentana({ escala: 'semana', ancla: hoy }) }
+  return (
+    <>
+      <PanelSalud ventana={ventana} alCambiar={alCambiarVentana} hoy={hoy} fechas={[...sesiones.map(s => s.fecha), ...registros.map(x => x.fecha)]} />
+      {!sesiones.length ? (
+        <SinDatos titulo="Aún no registras ejercicios" detalle="Cuando registres tu primer ejercicio en Gym, aquí verás tu constancia y tu progreso."
+          acciones={[{ texto: '+ Registrar ejercicio', hacer: () => alVer('gym') }]} />
+      ) : !dias ? (
+        <SinDatos titulo={`No entrenaste ${cuando}`} detalle="No registraste ejercicios en ese período."
+          acciones={[volver, { texto: '+ Registrar ejercicio', hacer: () => alVer('gym') }]} />
+      ) : (
+        <>
+          <section className="resumen-finanzas" aria-label="Días entrenados">
+            <div>
+              <p className="tenue">Días entrenados {cuando}</p>
+              <span className="cifra">{dias}{meta ? ` de ${meta}` : ''}</span>
+              {meta && dias >= meta && <span className="estado en-meta">✓ Cumpliste tu meta</span>}
+              <p className="tenue">{[`${series} ${series === 1 ? 'serie' : 'series'}`, `${recordsEnRango} ${recordsEnRango === 1 ? 'récord' : 'récords'}`,
+                ultimoPeso && peso && `Peso ${formatoValor('numero', ultimoPeso.valor, peso.unidad)}`].filter(Boolean).join(' · ')}</p>
+            </div>
+          </section>
+          <Constancia sesiones={sesiones} hoy={hoy} ventana={ventana} alVer={() => alVer('gym')} />
+          <Progreso sesiones={sesiones} hoy={hoy} ejercicios={ejercicios} ventana={ventana} alVer={() => alVer('historial')} />
+        </>
+      )}
+      <CuerpoHoy medidas={medidas} registros={registros} ventana={ventana} hoy={hoy} alVer={() => alVer('cuerpo')} />
+      {sesiones.length > 0 && <Impacto sesiones={sesiones} hoy={hoy} metaDias={metaDias} />}
+    </>
+  )
+}
+
+// Una barra por día (semana), por semana (mes) o por mes (año) con las series hechas. Sin leyenda ni línea de meta.
+function Constancia({ sesiones, hoy, ventana, alVer }: { sesiones: Sesion[]; hoy: string; ventana: Ventana; alVer: () => void }) {
   const r = rangoDe(ventana.escala, ventana.ancla)
   const grupos = useMemo(() => {
     const todos = constancia(sesiones, ventana.escala, r.desde, r.hasta, hoy)
     // año en celular: los últimos 6 meses que ya empezaron
     return ventana.escala === 'ano' && matchMedia('(max-width: 560px)').matches ? todos.filter(g => !g.futuro).slice(-6) : todos
   }, [sesiones, ventana.escala, r.desde, r.hasta, hoy])
-  const dias = new Set(sesiones.filter(s => s.fecha >= r.desde && s.fecha <= r.hasta && s.fecha <= hoy).map(s => s.fecha)).size
-  const cuando = enPeriodo(ventana, hoy)
-  const etiquetas = grupos.map(g => ventana.escala === 'ano' ? MESES[Number(g.desde.slice(5, 7)) - 1] : diaMes(g.desde))
-  // semana: una barra por día con sus series (barras de 0/1 se ven vacías)
-  const delaSemana = useMemo(() => ventana.escala === 'semana' ? seriesPorDia(sesiones, r.desde, r.hasta, hoy) : [], [sesiones, ventana.escala, r.desde, r.hasta, hoy])
-  const seriesSemana = useMemo(() => [{ nombre: 'Series', datos: delaSemana.map(d => d.series), color: cssVar('--c1') }], [delaSemana])
-  const series = useMemo(() => [{ nombre: 'Días entrenados', datos: grupos.map(g => g.futuro ? null : g.dias), color: cssVar('--c1') }], [grupos])
+  const total = sesiones.filter(s => s.fecha >= r.desde && s.fecha <= r.hasta && s.fecha <= hoy).reduce((t, s) => t + s.series, 0)
+  const etiquetas = grupos.map((g, i) => ventana.escala === 'semana' ? 'LMXJVSD'[i] : ventana.escala === 'mes' ? diaMes(g.desde) : MESES[Number(g.desde.slice(5, 7)) - 1])
+  const titulos = grupos.map((g, i) => ventana.escala === 'semana' ? g.desde.split('-').reverse().join('/') : ventana.escala === 'mes' ? `Semana del ${etiquetas[i]}` : `${etiquetas[i]} ${g.desde.slice(0, 4)}`)
+  const series = useMemo(() => [{ nombre: 'Series', color: cssVar('--c1'),
+    datos: grupos.map(g => g.futuro ? null : sesiones.filter(s => s.fecha >= g.desde && s.fecha <= g.hasta).reduce((t, s) => t + s.series, 0)) }], [grupos, sesiones])
+  const nSeries = (v: number) => `${Math.round(v)} ${Math.round(v) === 1 ? 'serie' : 'series'}`
   return (
     <section>
-      <div className="bloque-pie"><h2>¿Voy cumpliendo?</h2><button className="enlace" onClick={alVer}>Ver →</button></div>
-      <p><strong className="cifra-media">{dias}</strong> <span className="tenue">
-        {ventana.escala === 'semana' && meta ? `de ${meta} días ${cuando}` : `${dias === 1 ? 'día' : 'días'} ${cuando}`}</span></p>
-      {ventana.escala === 'semana' ? (
-        <Barras etiquetas={['L', 'M', 'X', 'J', 'V', 'S', 'D']} series={seriesSemana} leyenda={false}
-          dias={{ titulos: delaSemana.map(d => d.fecha.split('-').reverse().join('/')) }}
-          formato={v => `${Math.round(v)} ${Math.round(v) === 1 ? 'serie' : 'series'}`} formatoEje={v => `${v}`}
-          colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
-          descripcion={`Series de cada día (${r.titulo}): ${delaSemana.filter(d => d.series).map(d => `${diaMes(d.fecha)} ${d.series}`).join(', ') || 'ninguna'}`} />
+      <div className="bloque-pie"><h2>¿Cuánto entrené?</h2><button className="enlace" onClick={alVer}>Ver →</button></div>
+      <p><strong className="cifra-media">{total}</strong> <span className="tenue">{total === 1 ? 'serie' : 'series'} {enPeriodo(ventana, hoy)}</span></p>
+      <Barras etiquetas={etiquetas} series={series} leyenda={false} dias={{ titulos }}
+        formato={nSeries} formatoEje={v => `${v}`} colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
+        descripcion={`Series por ${ventana.escala === 'semana' ? 'día' : ventana.escala === 'mes' ? 'semana' : 'mes'} (${r.titulo}): ${series[0].datos.map((v, i) => v === null ? '' : `${etiquetas[i]} ${v}`).filter(Boolean).join(', ')}`} />
+    </section>
+  )
+}
+
+// Una cosa frente a otra: récords por semana cuando se cumple la meta de días y cuando no. No sigue al filtro.
+function Impacto({ sesiones, hoy, metaDias }: { sesiones: Sesion[]; hoy: string; metaDias?: number }) {
+  const r = useMemo(() => recordsSegunMeta(sesiones, hoy, metaDias ?? null), [sesiones, hoy, metaDias])
+  const cumple = metaDias ? 'cuando cumples tu meta' : `con ${r.umbral} ${r.umbral === 1 ? 'día' : 'días'} o más`
+  const etiquetas = [metaDias ? `Cumpliste (${r.cumplidas.semanas} sem.)` : `${r.umbral}+ días (${r.cumplidas.semanas} sem.)`,
+    metaDias ? `No cumpliste (${r.otras.semanas} sem.)` : `Menos (${r.otras.semanas} sem.)`]
+  const series = useMemo(() => [{ nombre: 'Récords por semana', datos: [r.cumplidas.promedio, r.otras.promedio], color: cssVar('--c1') }], [r])
+  return (
+    <section>
+      <h2>¿Cumplir me hace más fuerte?</h2>
+      {r.cumplidas.semanas < 2 || r.otras.semanas < 2 ? (
+        <p className="tenue">Aún faltan semanas para comparar: hacen falta al menos 2 semanas {cumple} y 2 sin cumplir en las últimas 12.</p>
       ) : (
-        <Barras etiquetas={etiquetas} series={series} maximo={ventana.escala === 'mes' ? 7 : 31} leyenda={false}
-          dias={{ titulos: grupos.map((g, i) => ventana.escala === 'mes' ? `Semana del ${etiquetas[i]}` : `${etiquetas[i]} ${g.desde.slice(0, 4)}`) }}
-          formato={v => `${Math.round(v)} ${Math.round(v) === 1 ? 'día' : 'días'}`} formatoEje={v => `${v}`}
-          colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
-          descripcion={`Días entrenados por ${ventana.escala === 'mes' ? 'semana' : 'mes'} (${r.titulo}): ${grupos.filter(g => !g.futuro).map((g, i) => `${etiquetas[i]} ${g.dias}`).join(', ')}`} />
+        <>
+          <p><strong className="cifra-media">{decimal(r.cumplidas.promedio)}</strong> <span className="tenue">récords por semana {cumple} · {decimal(r.otras.promedio)} cuando no · últimas 12 semanas</span></p>
+          <Barras etiquetas={etiquetas} series={series} horizontal leyenda={false}
+            formato={v => `${decimal(v)} ${v === 1 ? 'récord' : 'récords'} por semana`} formatoEje={decimal}
+            colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
+            descripcion={`Récords por semana en las últimas 12 semanas: ${etiquetas[0]} ${decimal(r.cumplidas.promedio)}, ${etiquetas[1]} ${decimal(r.otras.promedio)}`} />
+        </>
       )}
     </section>
   )
 }
 
-// Pestaña Gym: series de cada día (semana y mes) o de cada mes (año), con su propio filtro.
-function SeriesDelPeriodo({ sesiones, hoy, ventana, alCambiarVentana }: { sesiones: Sesion[]; hoy: string; ventana: Ventana; alCambiarVentana: (v: Ventana) => void }) {
+// La medida elegida en el período, con su meta punteada; debajo, el último valor de las demás.
+function CuerpoHoy({ medidas, registros, ventana, hoy, alVer }: { medidas: Seguimiento[]; registros: RegistroGuardado[]; ventana: Ventana; hoy: string; alVer: () => void }) {
   const r = rangoDe(ventana.escala, ventana.ancla)
-  const puntos = useMemo(() => {
-    const porDia = seriesPorDia(sesiones, r.desde, r.hasta, hoy)
-    if (ventana.escala !== 'ano') return porDia.map(d => ({ etiqueta: String(Number(d.fecha.slice(8, 10))), titulo: d.fecha.split('-').reverse().join('/'), valor: d.series }))
-    return MESES.map((m, i) => {
-      const delMes = porDia.filter(d => Number(d.fecha.slice(5, 7)) === i + 1 && d.series !== null)
-      return { etiqueta: m, titulo: `${m} ${r.titulo}`, valor: delMes.length ? delMes.reduce((t, d) => t + (d.series ?? 0), 0) : null }
-    })
-  }, [sesiones, ventana.escala, r.desde, r.hasta, r.titulo, hoy])
-  const total = puntos.reduce((t, p) => t + (p.valor ?? 0), 0)
-  const series = useMemo(() => [{ nombre: 'Series', datos: puntos.map(p => p.valor), color: cssVar('--c1') }], [puntos])
-  const nSeries = (v: number) => `${Math.round(v)} ${Math.round(v) === 1 ? 'serie' : 'series'}`
+  const [elegida, setElegida] = useState('')
+  const conDatos = medidas.filter(m => registros.some(x => x.id_seguimiento === m.id_seguimiento))
+  const actual = conDatos.find(m => m.id_seguimiento === elegida) ?? conDatos.find(m => normalizar(m.nombre) === 'peso') ?? conDatos[0]
+  const puntos = useMemo(() => !actual ? [] : registros.filter(x => x.id_seguimiento === actual.id_seguimiento && x.fecha >= r.desde && x.fecha <= r.hasta)
+    .map(x => ({ fecha: x.fecha, valor: x.valor })).sort((a, b) => a.fecha.localeCompare(b.fecha)), [registros, actual, r.desde, r.hasta])
+  if (!medidas.length) return null
+  const ultimoDe = (m: Seguimiento) => registros.filter(x => x.id_seguimiento === m.id_seguimiento).sort((a, b) => b.fecha.localeCompare(a.fecha))[0]
+  const metaTexto = (m: Seguimiento, valor: number) => m.meta && (faltaParaMeta(valor, m.meta.valor, m.meta.direccion)
+    ? `faltan ${formatoValor('numero', faltaParaMeta(valor, m.meta.valor, m.meta.direccion), m.unidad)}` : '✓ meta cumplida')
+  const cuando = enPeriodo(ventana, hoy)
+  const ultimo = actual && ultimoDe(actual)
+  const cambio = cambioPeso(puntos)
   return (
     <section>
-      <h2>¿Cuántas series hice?</h2>
-      <PeriodoNavegable valor={ventana} alCambiar={alCambiarVentana} />
-      <p><strong className="cifra-media">{total}</strong> <span className="tenue">{total === 1 ? 'serie' : 'series'} {enPeriodo(ventana, hoy)}</span></p>
-      <Barras etiquetas={puntos.map(p => p.etiqueta)} series={series} leyenda={false} dias={{ titulos: puntos.map(p => p.titulo) }}
-        formato={nSeries} formatoEje={v => `${v}`} colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
-        descripcion={`Series de ${r.titulo}: ${puntos.filter(p => p.valor).map(p => `${p.etiqueta} ${p.valor}`).join(', ') || 'ninguna'}`} />
+      <div className="bloque-pie"><h2>¿Cómo va mi cuerpo?</h2><button className="enlace" onClick={alVer}>Ver →</button></div>
+      {!actual || !ultimo ? (
+        <SinDatos titulo="Aún no registras medidas" detalle="Registra tu peso u otra medida en Cuerpo para ver cómo cambia." acciones={[{ texto: '+ Registrar medida', hacer: alVer }]} />
+      ) : (
+        <>
+          {conDatos.length > 1 && (
+            <Selector id="filtro-medida" titulo="Medida" icono="📏" valor={actual.id_seguimiento} alCambiar={setElegida}>
+              {conDatos.map(m => <option key={m.id_seguimiento} value={m.id_seguimiento}>{m.nombre}</option>)}
+            </Selector>
+          )}
+          <p><strong className="cifra-media">{formatoValor('numero', ultimo.valor, actual.unidad)}</strong> <span className="tenue">
+            {[cambio !== null && `${conSigno(cambio, actual.unidad)} ${cuando}`, metaTexto(actual, ultimo.valor)].filter(Boolean).join(' · ') || `${actual.nombre} el ${diaMes(ultimo.fecha)}`}</span></p>
+          {puntos.length > 0 ? (
+            <Grafico puntos={puntos} meta={actual.meta?.valor} color={cssVar('--c1')} colorMeta={cssVar('--tenue')}
+              formato={v => formatoValor('numero', v, actual.unidad)} etiquetaMeta={actual.meta ? `Meta ${formatoValor('numero', actual.meta.valor, actual.unidad)}` : undefined}
+              desde={r.desde} hasta={r.hasta} descripcion={`${actual.nombre} ${cuando}${actual.meta ? '; la línea punteada es la meta' : ''}`} />
+          ) : <p className="tenue">Sin registros de {actual.nombre.toLowerCase()} {cuando}.</p>}
+        </>
+      )}
+      {medidas.filter(m => m !== actual).length > 0 && (
+        <ul className="lista">
+          {medidas.filter(m => m !== actual).map(m => {
+            const u = ultimoDe(m)
+            return (
+              <li key={m.id_seguimiento} className="dos medida-hoy">
+                <span>{m.nombre}{u && m.meta && <span className="tenue">{metaTexto(m, u.valor)}</span>}</span>
+                {u ? <strong>{formatoValor('numero', u.valor, m.unidad)}</strong> : <button className="enlace" onClick={alVer}>Registrar</button>}
+              </li>
+            )
+          })}
+        </ul>
+      )}
     </section>
   )
 }
@@ -565,9 +663,6 @@ function Progreso({ sesiones, hoy, ejercicios, ventana, alVer }: { sesiones: Ses
 
 function Medida({ medida, registros, alCambiar }: { medida: Seguimiento; registros: RegistroGuardado[]; alCambiar: () => Promise<void> }) {
   const hoy = hoyIso()
-  const [ventana, setVentana] = useState<Ventana>(ventanaInicial)
-  const periodo = rangoDe(ventana.escala, ventana.ancla)
-  const historial = useRegistrosDe(medida.id_seguimiento, rangoCarga(ventana), registros)
   const { nombre, unidad, meta } = medida
   const [valor, setValor] = useState('')
   const [aviso, setAviso] = useState('')
@@ -575,7 +670,6 @@ function Medida({ medida, registros, alCambiar }: { medida: Seguimiento; registr
   const [enviando, setEnviando] = useState(false)
   const [editando, setEditando] = useState(false)
   const rango = normalizar(nombre) === 'peso' ? [20, 400] : [0.1, 1000]
-  const puntos = useMemo(() => historial.filter(r => r.fecha >= periodo.desde && r.fecha <= periodo.hasta).slice().reverse(), [historial, periodo.desde, periodo.hasta])
   const ultimo = registros[0]
 
   async function guardar(evento: FormEvent) {
@@ -622,12 +716,6 @@ function Medida({ medida, registros, alCambiar }: { medida: Seguimiento; registr
       </form>
       {aviso && <p role="status" className="aviso">{aviso}</p>}
       {error && <p role="alert" className="error">{error}</p>}
-      {registros.length > 1 && <PeriodoNavegable valor={ventana} alCambiar={setVentana} />}
-      {puntos.length > 0 && (
-        <Grafico puntos={puntos} meta={meta?.valor} color={cssVar('--c1')} colorMeta={cssVar('--tenue')}
-          formato={v => formatoValor('numero', v, unidad)} etiquetaMeta={meta ? `Meta ${formatoValor('numero', meta.valor, unidad)}` : undefined}
-          desde={periodo.desde} hasta={periodo.hasta} descripcion={`${nombre} en ${periodo.titulo}${meta ? '; la línea punteada es la meta' : ''}`} />
-      )}
       {registros.length > 0 && (
         <ul className="lista">
           {registros.slice(0, 3).map(r => (

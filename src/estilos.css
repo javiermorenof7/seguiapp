@@ -123,6 +123,7 @@ button:disabled { opacity: .6; cursor: default; }
 .lista li.tres { grid-template-columns: 1fr auto auto; }
 .resumen-finanzas .cifra.negativo { color: var(--fuera); }
 .resumen-finanzas .estado.fuera { background: var(--fuera); color: var(--fondo); margin-bottom: 6px; }
+.resumen-finanzas .estado.en-meta { background: var(--en-meta); color: var(--fondo); margin-bottom: 6px; }
 .lista .estado.cerca { background: var(--cerca); color: var(--fondo); }
 .lista .estado.fuera { background: var(--fuera); color: var(--fondo); }
 .fila-presupuesto { display: grid; grid-template-columns: 1fr minmax(0, 170px) auto; gap: 8px 12px; align-items: center; width: 100%; }

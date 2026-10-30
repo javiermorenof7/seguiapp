@@ -402,3 +402,14 @@ section:not([class]) + form.formulario { margin-top: 40px; }
 }
 .segmentado .chip { white-space: nowrap; }
 @media (max-width: 420px) { .segmentado .chip { padding: 6px 4px; font-size: 13px; } }
+.acciones-categoria { flex-wrap: nowrap; gap: 6px; justify-content: end; }
+.acciones-categoria .secundario { min-height: 44px; padding: 0 12px; }
+.confirmar-quitar input { font: inherit; color: var(--tinta); background: var(--fondo); border: 1px solid var(--linea); border-radius: 12px; padding: 10px 12px; width: 100%; min-height: 44px; }
+/* Fila de categoría: nombre y tipo a la izquierda, Editar y Quitar a la derecha; al editar o quitar, el formulario ocupa la fila */
+.lista li.categoria { grid-template-columns: minmax(0, 1fr) auto; row-gap: 2px; }
+.lista li.categoria > span:first-child { grid-column: 1; grid-row: 1; }
+.lista li.categoria > .tenue { grid-column: 1; grid-row: 2; font-size: 14px; }
+.lista li.categoria > span:empty { display: none; }
+.lista li.categoria > .acciones-categoria { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+.lista li.categoria > .confirmar-quitar { grid-column: 1 / -1; grid-row: 3; }
+.lista li.categoria > .confirmar-quitar { max-width: 520px; }

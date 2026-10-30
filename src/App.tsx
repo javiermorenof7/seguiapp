@@ -20,7 +20,7 @@ import Tareas from './tareas/Tareas'
 import Avisos from './avisos/Avisos'
 import MisDatos from './misdatos/MisDatos'
 import Administrar from './misdatos/Administrar'
-import { aTiempoSemana, deHoy, fechaColombia, sumarDias } from './tareas/calculos'
+import { aTiempoSemana, deHoy, fechaColombia, hora12, sumarDias } from './tareas/calculos'
 import { dias } from './habitos/calculos'
 import { mesesAntes } from './finanzas/calculos'
 import { recibosDelMes } from './finanzas/estadoRecibos'
@@ -29,7 +29,7 @@ import { metaProxima } from './finanzas/metas'
 import { conSigno, estadoSemana } from './salud/calculos'
 import { activos, moduloDe, MODULOS, resumenFinanzas, resumenHabitos, resumenSalud, type Modulo } from './inicio/resumenes'
 import { activarModulos, Bienvenida, COLOR, Crear, NOMBRE, QUE_MIDE, type Destino } from './inicio/Crear'
-import { EntroSalio, HabitosHoy, SemanaGym, TareasHoy } from './inicio/Minis'
+import { AgendaHoy, EntroSalio, HabitosHoy, SemanaGym, TareasHoy, type ItemAgenda } from './inicio/Minis'
 
 const TEXTO_ESTADO: Record<Estado, string> = { fuera: '✕ Fuera de la meta', cerca: '◐ Cerca de la meta', en_meta: '✓ Vas bien' }
 const TEXTO_PERIODO: Record<Periodo, string> = { dia: 'día', semana: 'semana', mes: 'mes', ano: 'año' }
@@ -251,7 +251,7 @@ function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, al
     .sort((a, b) => ordenEstado(a.estado) - ordenEstado(b.estado)), [seguimientos, registros])
   const [facturas, setFacturas] = useState<{ porPagar: number; vencidas: number; total: number } | null>(null)
   const [cuotas, setCuotas] = useState<{ pendientes: number; atrasadas: number; total: number } | null>(null)
-  const [tareas, setTareas] = useState<{ pendientes: number; vencidas: number; recordatorios: number; hechasHoy: number; delDia: number; aTiempo: number; total: number } | null>(null)
+  const [tareas, setTareas] = useState<{ pendientes: number; vencidas: number; recordatorios: number; hechasHoy: number; delDia: number; aTiempo: number; total: number; lista: ItemAgenda[] } | null>(null)
   const conTareas = activos.includes('tareas')
   // las tareas viven en sus tablas, no en los registros
   useEffect(() => {
@@ -259,9 +259,17 @@ function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, al
     const hoyCol = fechaColombia(new Date())
     obtenerTareas(sumarDias(hoyCol, -30)).then(d => {
       const h = deHoy(d.tareas, d.recordatorios, hoyCol)
-      setTareas({ pendientes: h.deHoy.length + h.sinFecha.length, vencidas: h.vencidas.length, recordatorios: h.recordatorios.length,
+      setTareas({ pendientes: h.deHoy.length + h.sinFecha.length, vencidas: h.vencidas.length, recordatorios: d.recordatorios.filter(r => r.estado === 'activo').length,
         // las del día, como en Tareas: hechas hoy, de hoy y vencidas
-        hechasHoy: h.hechasHoy.length, delDia: h.hechasHoy.length + h.deHoy.length + h.vencidas.length, ...aTiempoSemana(d.tareas, hoyCol) })
+        hechasHoy: h.hechasHoy.length, delDia: h.hechasHoy.length + h.deHoy.length + h.vencidas.length, ...aTiempoSemana(d.tareas, hoyCol),
+        // lo mismo que Hoy en Tareas, sin las de sin fecha: vencidas, recordatorios por hora y de hoy
+        lista: [
+          ...h.vencidas.map(t => ({ tipo: 'vencida' as const, texto: t.descripcion,
+            marca: new Date(`${t.fecha_limite}T12:00`).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' }) })),
+          ...h.recordatorios.map(r => ({ tipo: 'recordatorio' as const, texto: r.descripcion, marca: hora12(r.hora_envio),
+            paso: Date.parse(r.fecha_proximo_envio!) <= Date.now() })),
+          ...h.deHoy.map(t => ({ tipo: 'hoy' as const, texto: t.descripcion, marca: 'Hoy' })),
+        ] })
     }).catch(() => setTareas(null))
   }, [conTareas])
   const [meta, setMeta] = useState<ReturnType<typeof metaProxima> | null>(null)
@@ -352,11 +360,19 @@ function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, al
         )}
         {activos.includes('tareas') && (
           <Bloque modulo="tareas" vacio={!tareas || (!tareas.pendientes && !tareas.vencidas && !tareas.recordatorios && !tareas.total)}
-            cifra={tareas ? String(tareas.pendientes + tareas.vencidas + tareas.recordatorios) : ''} sub="pendientes hoy"
+            cifra={tareas ? String(tareas.pendientes + tareas.vencidas) : ''} sub="pendientes hoy"
             chapa={tareas?.vencidas ? { texto: `${tareas.vencidas} ${tareas.vencidas === 1 ? 'vencida' : 'vencidas'}`, estado: 'fuera' }
-              : tareas && !tareas.pendientes && !tareas.recordatorios ? { texto: 'Todo al día', estado: 'en_meta' } : null}
-            datos={tareas?.total ? [{ texto: `${Math.round(tareas.aTiempo / tareas.total * 100)} % a tiempo esta semana (${tareas.aTiempo} de ${tareas.total})` }] : []}
-            mini={tareas && tareas.delDia > 0 && <TareasHoy hechas={tareas.hechasHoy} total={tareas.delDia} />}
+              : tareas && !tareas.pendientes ? { texto: 'Todo al día', estado: 'en_meta' } : null}
+            datos={tareas ? [
+              ...(tareas.recordatorios || tareas.total ? [{ texto: [
+                tareas.recordatorios && `${tareas.recordatorios} ${tareas.recordatorios === 1 ? 'recordatorio activo' : 'recordatorios activos'}`,
+                tareas.total && `${Math.round(tareas.aTiempo / tareas.total * 100)} % a tiempo esta semana`,
+              ].filter(Boolean).join(' · ') }] : []),
+            ] : []}
+            mini={tareas && <>
+              {tareas.delDia > 0 && <TareasHoy hechas={tareas.hechasHoy} total={tareas.delDia} />}
+              {tareas.lista.length > 0 && <AgendaHoy items={tareas.lista.slice(0, 4)} mas={tareas.lista.length - 4} />}
+            </>}
             alAbrir={() => alIr({ tipo: 'tareas' })} alRegistrar={() => alIr({ tipo: 'tareas', abrir: 'tarea' })} alCrear={() => alCrear('tareas')} />
         )}
         {otros.length > 0 && (
@@ -416,7 +432,7 @@ function Bloque({ modulo, vacio, cifra, sub, chapa, montos, datos, mini, alAbrir
       )}
       {mini}
       <span className="datos">
-        {datos.map(d => <span key={d.texto}>{d.estado && `${ICONO[d.estado]} `}{d.texto}</span>)}
+        {datos.map((d, i) => <span key={i}>{d.estado && `${ICONO[d.estado]} `}{d.texto}</span>)}
       </span>
       <div className="pie-tarjeta">
         <button className="ver" onClick={e => { e.stopPropagation(); alAbrir() }}>Ver {NOMBRE[modulo].toLowerCase()} →</button>

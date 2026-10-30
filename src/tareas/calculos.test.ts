@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aTiempoPorSemana, aTiempoSemana, deHoy, despuesDeListo, fechaColombia, proximoEnvio, siguienteFecha, type Recordatorio, type Tarea } from './calculos'
+import { aTiempoPorSemana, aTiempoSemana, deHoy, despuesDeListo, fechaColombia, proximoEnvio, siguienteFecha, tocaAvisar, type Recordatorio, type Tarea } from './calculos'
 
 const rec = (r: Partial<Recordatorio>): Recordatorio => ({
   id_recordatorio: 'r', descripcion: 'x', hora_envio: '09:00:00', tipo_repeticion: 'diario', dias_semana: null, dia_mes: null,
@@ -37,6 +37,17 @@ describe('proximoEnvio', () => {
   it('único: su fecha, o nada si ya pasó', () => {
     expect(proximoEnvio(rec({ tipo_repeticion: 'unico' }), ahora, '2026-11-05')).toBe('2026-11-05T14:00:00.000Z')
     expect(proximoEnvio(rec({ tipo_repeticion: 'unico', hora_envio: '07:00' }), ahora, '2026-10-28')).toBeNull()
+  })
+})
+
+describe('tocaAvisar', () => {
+  const envio = '2026-10-29T13:00:00.000Z'
+  it('avisa una sola vez cuando llega la hora y no mueve la fecha', () => {
+    expect(tocaAvisar({ fecha_proximo_envio: envio, fecha_ultimo_aviso: null }, new Date('2026-10-29T12:59:00Z'))).toBe(false)
+    expect(tocaAvisar({ fecha_proximo_envio: envio, fecha_ultimo_aviso: null }, new Date('2026-10-29T13:05:00Z'))).toBe(true)
+    expect(tocaAvisar({ fecha_proximo_envio: envio, fecha_ultimo_aviso: '2026-10-29T13:05:00Z' }, new Date('2026-10-29T13:10:00Z'))).toBe(false)
+    // tras "Listo" la fecha pasa al día siguiente y vuelve a avisar
+    expect(tocaAvisar({ fecha_proximo_envio: '2026-10-30T13:00:00.000Z', fecha_ultimo_aviso: '2026-10-29T13:05:00Z' }, new Date('2026-10-30T13:01:00Z'))).toBe(true)
   })
 })
 

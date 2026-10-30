@@ -224,6 +224,16 @@ button:disabled { opacity: .6; cursor: default; }
 .mini-habitos > span { display: inline-flex; align-items: center; gap: 6px; }
 .mini-habitos i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #FFFFFF; }
 .mini-habitos .lleno i { background: #FFFFFF; }
+.tarjeta .mini-agenda { list-style: none; padding: 0; gap: 2px; }
+.mini-agenda li { display: grid; grid-template-columns: 5.4em 1.1em minmax(0, 1fr); align-items: baseline; gap: 6px; padding: 5px 0; border-top: 1px solid rgba(255, 255, 255, .18); }
+.mini-agenda li:first-child { border-top: 0; }
+.mini-agenda .marca { font-size: 13px; font-variant-numeric: tabular-nums; opacity: .85; white-space: nowrap; }
+.mini-agenda li > span[aria-hidden] { font-size: 16px; line-height: 1; }
+.mini-agenda .texto { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-agenda li.paso { opacity: .6; }
+.mini-agenda li.paso .texto { font-weight: 400; }
+.mini-agenda li.mas { display: block; padding-left: calc(6.5em + 12px); font-size: 13px; opacity: .85; }
+.oculto { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .pie-tarjeta { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; width: 100%; margin-top: auto; padding-top: 16px; }
 .pie-tarjeta .ver { background: none; color: #FFFFFF; font-weight: 700; padding: 8px 0; text-decoration: underline; text-underline-offset: 3px; }
 .pie-tarjeta .registrar { background: rgba(255, 255, 255, .95); color: #13241B; font-weight: 700; padding: 8px 16px; border-radius: 999px; }

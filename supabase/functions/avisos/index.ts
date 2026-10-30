@@ -8,7 +8,7 @@ import {
   AVISO_CIERRE_MES, AVISO_DESCARGA, AVISO_PRUEBA, avisaRecordatorio, avisoMensajesNuevos, avisoRecordatorio, avisoResumenDiario, avisoResumenSemanal,
   momentoColombia, tocaAvisoDescarga, tocaCierreMes, tocaResumenDiario, tocaResumenSemanal, type Aviso, type PreferenciaAviso,
 } from '../../../src/avisos/reglas'
-import { aTiempoSemana, deHoy, despuesDeListo, type Recordatorio, type Tarea } from '../../../src/tareas/calculos'
+import { aTiempoSemana, deHoy, tocaAvisar, type Recordatorio, type Tarea } from '../../../src/tareas/calculos'
 import { recibosDelMes, type PagoGuardado, type ReciboVisible } from '../../../src/finanzas/estadoRecibos'
 import { avanceMeta, type MetaAhorro } from '../../../src/finanzas/metas'
 import { mesesAntes } from '../../../src/finanzas/calculos'
@@ -164,17 +164,17 @@ async function tareaProgramada() {
     if (diario || semanal || p.recibir_recordatorios) {
       const [tareas, recordatorios] = await Promise.all([
         base.from('tarea').select('id_tarea, descripcion, fecha_limite, fecha_realizacion, estado').eq('id_usuario', p.id_usuario).in('estado', ['pendiente', 'hecho']),
-        base.from('recordatorio').select('id_recordatorio, descripcion, hora_envio, tipo_repeticion, dias_semana, dia_mes, fecha_proximo_envio, estado')
+        base.from('recordatorio').select('id_recordatorio, descripcion, hora_envio, tipo_repeticion, dias_semana, dia_mes, fecha_proximo_envio, fecha_ultimo_aviso, estado')
           .eq('id_usuario', p.id_usuario).eq('estado', 'activo'),
       ])
       const lasTareas = (revisar(tareas) ?? []) as Tarea[]
       const losRecordatorios = (revisar(recordatorios) ?? []) as Recordatorio[]
 
-      // Recordatorios que ya llegaron a su hora: se avisan y pasan a su próxima fecha. Los que no avisan siguen en Hoy.
-      for (const r of losRecordatorios.filter(r => r.fecha_proximo_envio && Date.parse(r.fecha_proximo_envio) <= ahora.getTime() && avisaRecordatorio(p, r))) {
+      // Recordatorios que ya llegaron a su hora: se avisan una vez y siguen en Hoy hasta que se marquen "Listo".
+      for (const r of losRecordatorios.filter(r => tocaAvisar(r, ahora) && avisaRecordatorio(p, r))) {
         if (await enviar(suyas, avisoRecordatorio(p, r))) {
           enviados++
-          await base.from('recordatorio').update(despuesDeListo(r, ahora)).eq('id_recordatorio', r.id_recordatorio)
+          await base.from('recordatorio').update({ fecha_ultimo_aviso: ahora.toISOString() }).eq('id_recordatorio', r.id_recordatorio)
         }
       }
       if (diario && await enviar(suyas, avisoResumenDiario(await conteoDelDia(p.id_usuario, m.fecha, lasTareas, losRecordatorios)))) enviados++

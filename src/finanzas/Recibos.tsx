@@ -135,7 +135,9 @@ export default function Recibos({ idGastos, categorias, aprendido, abrirNueva, a
       )}
       <section>
         <h2>Mis facturas</h2>
-        <div className="chips" role="radiogroup" aria-label="Ver facturas">
+        <div className="panel-periodo">
+        <span className="etiqueta">Ver</span>
+        <div className="chips segmentado" role="radiogroup" aria-label="Ver facturas">
           {([['por_pagar', 'Por pagar', porPagar.length], ['pagadas', 'Pagadas', pagadas.length], ['pausa', 'En pausa', pausados.length]] as const).map(([g, texto, n]) => (
             <button key={g} type="button" role="radio" aria-checked={grupo === g} className="chip" onClick={() => setGrupo(g)}>{texto} ({n})</button>
           ))}
@@ -151,6 +153,7 @@ export default function Recibos({ idGastos, categorias, aprendido, abrirNueva, a
             )}
           </Selector>
         )}
+        </div>
       </section>
       {grupo !== 'pausa' && (
         <ul className="lista">

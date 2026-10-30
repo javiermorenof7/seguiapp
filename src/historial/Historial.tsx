@@ -21,6 +21,9 @@ const etiqueta = (escala: Escala, fecha: string) => {
 const cssVar = (nombre: string) => getComputedStyle(document.documentElement).getPropertyValue(nombre).trim()
 
 // Todos los registros del módulo por semana, mes o año, con sus filtros, totales y un gráfico del período.
+// Un ícono por lo que filtra; los demás llevan la etiqueta.
+const ICONOS: Record<string, string> = { Tipo: '🗂️', 'Categoría o fuente': '🏷️', Origen: '✍️', Ejercicio: '🏋️', Hábito: '🎯' }
+
 export default function Historial({ ids, registros, filtros, buscar, suma, formato = v => Number.isInteger(v) ? String(v) : '', total, fila }: {
   ids: string[]
   registros: RegistroGuardado[]
@@ -75,17 +78,21 @@ export default function Historial({ ids, registros, filtros, buscar, suma, forma
       </div>
       <div className="filtros">
         {filtros.map(f => (
-          <Selector key={f.nombre} id={`filtro-${f.nombre}`} titulo={f.nombre} icono="🏷️" valor={elegidos[f.nombre]}
+          <Selector key={f.nombre} id={`filtro-${f.nombre}`} titulo={f.nombre} icono={ICONOS[f.nombre] ?? '🏷️'} valor={elegidos[f.nombre]}
             alCambiar={v => setElegidos({ ...elegidos, [f.nombre]: v })} alLimpiar={() => setElegidos({ ...elegidos, [f.nombre]: '' })}>
             <option value="">Todos</option>
             {f.opciones.map(([valor, t]) => <option key={valor} value={valor}>{t}</option>)}
           </Selector>
         ))}
         {buscar && (
-          <label>Buscar
-            <input value={texto} maxLength={60} onChange={ev => setTexto(ev.target.value)} placeholder="Palabra a buscar" autoComplete="off" />
-            <small className="ayuda">Ej.: almuerzo, taxi</small>
-          </label>
+          <div className="filtro">
+            <label htmlFor="filtro-buscar" className="etiqueta">Buscar</label>
+            <div className={texto ? 'selector elegido' : 'selector'}>
+              <span aria-hidden="true">🔎</span>
+              <input id="filtro-buscar" value={texto} maxLength={60} onChange={ev => setTexto(ev.target.value)} placeholder="Ej.: almuerzo, taxi" autoComplete="off" />
+              {texto && <button type="button" className="quitar" aria-label="Borrar la búsqueda" onClick={() => setTexto('')}>✕</button>}
+            </div>
+          </div>
         )}
       </div>
       </div>

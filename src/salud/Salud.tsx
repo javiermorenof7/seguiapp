@@ -673,7 +673,7 @@ function HistorialSalud({ gym, medidas, registros, alCambiar }: {
       ids={seguimientos.map(s => s.id_seguimiento)}
       registros={registros}
       filtros={[
-        { nombre: 'Qué', opciones: seguimientos.map(s => [s.id_seguimiento, s.nombre] as [string, string]), de: r => r.id_seguimiento },
+        { nombre: 'Tipo', opciones: seguimientos.map(s => [s.id_seguimiento, s.nombre] as [string, string]), de: r => r.id_seguimiento },
         { nombre: 'Ejercicio', opciones: [...ejercicios].sort((a, b) => a[1].localeCompare(b[1])), de: r => r.id_etiqueta ?? '' },
       ]}
       suma={false}

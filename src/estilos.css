@@ -155,7 +155,11 @@ button:disabled { opacity: .6; cursor: default; }
 .segmentado .chip { border: 0; border-radius: 9px; padding: 6px 12px; font-size: 14px; }
 .segmentado .chip[aria-checked="true"] { background: var(--tinta); color: var(--fondo); }
 .panel-periodo .fila-filtros { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-@media (max-width: 560px) { .segmentado { display: grid; grid-template-columns: repeat(2, 1fr); width: 100%; } }
+@media (max-width: 560px) {
+  .segmentado { display: grid; grid-template-columns: repeat(2, 1fr); width: 100%; }
+  /* con 3 opciones (Semana, Mes, Año) van en una sola fila */
+  .segmentado:not(:has(> :nth-child(4))) { grid-template-columns: repeat(3, 1fr); }
+}
 .lista li.recibo { grid-template-columns: 1fr auto auto auto; }
 .lista li.recibo > button { justify-self: end; }
 @media (max-width: 560px) { .lista li.recibo { grid-template-columns: 1fr auto; } .lista li.recibo > button { grid-column: 1 / -1; justify-self: stretch; } }
@@ -368,11 +372,6 @@ section:not([class]) + form.formulario { margin-top: 40px; }
 }
 .filtro { min-width: 0; }
 @media (max-width: 420px) { .filtros { grid-template-columns: minmax(0, 1fr); } }
-/* "Buscar" del historial con el mismo título que los filtros */
-.filtros > label { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--tenue); }
-.filtros > label input, .filtros > label small { font-size: 1rem; font-weight: 400; letter-spacing: 0; text-transform: none; }
-.filtros > label input { min-height: 48px; }
-.filtros > label small { font-size: .85rem; }
 
 /* Descripción de los movimientos: hasta 2 líneas antes de cortarse */
 .lista li.ultimo > .tenue { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -382,3 +381,24 @@ section:not([class]) + form.formulario { margin-top: 40px; }
   -webkit-mask-image: linear-gradient(to right, var(--inicio, #000), #000 40px, #000 calc(100% - 40px), var(--hasta, #000));
   mask-image: linear-gradient(to right, var(--inicio, #000), #000 40px, #000 calc(100% - 40px), var(--hasta, #000));
 }
+
+/* Panel de filtros igual en toda la app */
+.filtro input { flex: 1; min-width: 0; font: inherit; font-weight: 600; color: var(--tinta); background: transparent; border: 0; padding: 12px 0; }
+.filtro .selector:has(input:focus-visible) { outline: 3px solid var(--acento); outline-offset: 2px; }
+.filtro input:focus-visible { outline: none; }
+.filtro .selector { min-width: 0; }
+.panel-periodo .filtro { margin-top: 0; }
+.filtros { gap: 12px; align-items: end; }
+@media (min-width: 421px) { .filtros { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); } }
+.panel-periodo .periodo { width: 100%; max-width: 520px; justify-self: start; }
+.panel-periodo .filtros { max-width: none; }
+@media (min-width: 700px) {
+  .panel-periodo .fila-filtros { align-items: end; }
+  .panel-periodo .fila-filtros .filtro { flex: 1 1 260px; max-width: 420px; }
+}
+/* Medida de hoy en computador: el campo con ancho cómodo junto a Guardar */
+@media (min-width: 421px) {
+  .fila-presupuesto:has(> input[inputmode="decimal"]) { grid-template-columns: auto minmax(0, 320px) auto; justify-content: start; }
+}
+.segmentado .chip { white-space: nowrap; }
+@media (max-width: 420px) { .segmentado .chip { padding: 6px 4px; font-size: 13px; } }

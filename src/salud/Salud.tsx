@@ -11,7 +11,6 @@ import { rango as rangoDe } from '../historial/periodo'
 import SinDatos from '../SinDatos'
 import Historial, { FilaSimple } from '../historial/Historial'
 import Barras from '../finanzas/Barras'
-import { SemanaGym } from '../inicio/Minis'
 import CambiarNombre from '../CambiarNombre'
 import { normalizar } from '../finanzas/parseo'
 import {
@@ -241,10 +240,8 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
   ) : (
     <>
       <PeriodoNavegable valor={ventana} alCambiar={setVentana} />
-      <div className="bloques-salud">
-        <Constancia sesiones={sesiones} hoy={hoy} metaDias={metaDias} ventana={ventana} alVer={() => alVer?.('gym')} />
-        <Progreso sesiones={sesiones} hoy={hoy} ejercicios={datos.ejercicios.map(e => e.nombre).sort()} ventana={ventana} alVer={() => alVer?.('historial')} />
-      </div>
+      <Constancia sesiones={sesiones} hoy={hoy} metaDias={metaDias} ventana={ventana} alVer={() => alVer?.('gym')} />
+      <Progreso sesiones={sesiones} hoy={hoy} ejercicios={datos.ejercicios.map(e => e.nombre).sort()} ventana={ventana} alVer={() => alVer?.('historial')} />
     </>
   )
   const nombres = datos.nombres
@@ -437,7 +434,7 @@ function enPeriodo(ventana: Ventana, hoy: string) {
   return `en ${r.titulo}`
 }
 
-// Una cifra y un visual por período: círculos (semana), días por semana (mes) o por mes (año). Sin leyenda ni línea de meta.
+// Una cifra y un visual por período: series por día (semana), días por semana (mes) o por mes (año). Sin leyenda ni línea de meta.
 function Constancia({ sesiones, hoy, metaDias, ventana, alVer }: { sesiones: Sesion[]; hoy: string; metaDias?: number; ventana: Ventana; alVer: () => void }) {
   const meta = metaDias ?? null
   const r = rangoDe(ventana.escala, ventana.ancla)
@@ -449,13 +446,22 @@ function Constancia({ sesiones, hoy, metaDias, ventana, alVer }: { sesiones: Ses
   const dias = new Set(sesiones.filter(s => s.fecha >= r.desde && s.fecha <= r.hasta && s.fecha <= hoy).map(s => s.fecha)).size
   const cuando = enPeriodo(ventana, hoy)
   const etiquetas = grupos.map(g => ventana.escala === 'ano' ? MESES[Number(g.desde.slice(5, 7)) - 1] : diaMes(g.desde))
+  // semana: una barra por día con sus series (barras de 0/1 se ven vacías)
+  const delaSemana = useMemo(() => ventana.escala === 'semana' ? seriesPorDia(sesiones, r.desde, r.hasta, hoy) : [], [sesiones, ventana.escala, r.desde, r.hasta, hoy])
+  const seriesSemana = useMemo(() => [{ nombre: 'Series', datos: delaSemana.map(d => d.series), color: cssVar('--c1') }], [delaSemana])
   const series = useMemo(() => [{ nombre: 'Días entrenados', datos: grupos.map(g => g.futuro ? null : g.dias), color: cssVar('--c1') }], [grupos])
   return (
     <section>
       <div className="bloque-pie"><h2>¿Voy cumpliendo?</h2><button className="enlace" onClick={alVer}>Ver →</button></div>
       <p><strong className="cifra-media">{dias}</strong> <span className="tenue">
         {ventana.escala === 'semana' && meta ? `de ${meta} días ${cuando}` : `${dias === 1 ? 'día' : 'días'} ${cuando}`}</span></p>
-      {ventana.escala === 'semana' ? <SemanaGym semana={grupos.map(g => g.futuro ? null : g.dias > 0)} meta={meta} enPagina /> : (
+      {ventana.escala === 'semana' ? (
+        <Barras etiquetas={['L', 'M', 'X', 'J', 'V', 'S', 'D']} series={seriesSemana} leyenda={false}
+          dias={{ titulos: delaSemana.map(d => d.fecha.split('-').reverse().join('/')) }}
+          formato={v => `${Math.round(v)} ${Math.round(v) === 1 ? 'serie' : 'series'}`} formatoEje={v => `${v}`}
+          colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
+          descripcion={`Series de cada día (${r.titulo}): ${delaSemana.filter(d => d.series).map(d => `${diaMes(d.fecha)} ${d.series}`).join(', ') || 'ninguna'}`} />
+      ) : (
         <Barras etiquetas={etiquetas} series={series} maximo={ventana.escala === 'mes' ? 7 : 31} leyenda={false}
           dias={{ titulos: grupos.map((g, i) => ventana.escala === 'mes' ? `Semana del ${etiquetas[i]}` : `${etiquetas[i]} ${g.desde.slice(0, 4)}`) }}
           formato={v => `${Math.round(v)} ${Math.round(v) === 1 ? 'día' : 'días'}`} formatoEje={v => `${v}`}

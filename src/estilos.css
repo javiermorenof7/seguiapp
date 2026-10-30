@@ -435,6 +435,5 @@ section:not([class]) + form.formulario { margin-top: 40px; }
 .serie-fila ~ .serie-fila .numero-serie { height: 44px; }
 .pregunta-grafico { margin: 16px 0 4px; font-size: 1rem; }
 
-/* Resumen de Salud: constancia y fuerza lado a lado en escritorio; cada medida con su cambio debajo del nombre */
-@media (min-width: 1000px) { .bloques-salud { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; } }
+/* Resumen de Salud: cada medida con su cambio debajo del nombre */
 .lista li.medida-hoy > span:first-child .tenue { display: block; font-size: 14px; white-space: normal; }

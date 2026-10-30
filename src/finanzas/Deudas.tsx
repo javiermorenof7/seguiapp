@@ -144,7 +144,7 @@ function TarjetaPrestamo({ prestamo, movimientos, gasto, accion }: {
       )}
       {mensaje && <p role="alert" className="error">{mensaje}</p>}
       {filas.length > 1 && (
-        <Grafico puntos={puntos} color={cssVar('--acento')} colorMeta={cssVar('--tenue')} formato={pesos} compacto
+        <Grafico puntos={puntos} color={cssVar('--c1')} colorMeta={cssVar('--tenue')} formato={pesos} compacto
           descripcion={`Saldo de ${nombre} cuota a cuota hasta ${fechaCorta(estado.fin ?? hoy)}`} />
       )}
       {cuadres.length > 0 && (

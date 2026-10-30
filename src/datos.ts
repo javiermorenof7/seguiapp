@@ -137,6 +137,13 @@ export async function renombrarEjercicio(idEtiqueta: string, viejo: string, nuev
 export const renombrarMedida = (id: string, nuevo: string) =>
   cambiarNombre('seguimiento', id, nuevo, `Ya tienes algo llamado ${nuevo} (o lo tuviste antes).`)
 
+// Nombre y unidad de una medida del cuerpo; el nombre es único aunque la medida se haya dejado de medir.
+export async function editarMedida(id: string, cambios: { nombre: string; unidad: string }) {
+  const { error } = await supabase.from('seguimiento').update(cambios).eq('id_seguimiento', id)
+  if ((error as { code?: string } | null)?.code === '23505') throw new ErrorDatos(`Ya tienes algo llamado ${cambios.nombre} (o lo tuviste antes).`)
+  revisar({ data: null, error })
+}
+
 export async function quitarSeguimiento(id: string) {
   revisar(await supabase.from('seguimiento').update({ estado: 'eliminado' }).eq('id_seguimiento', id))
 }
@@ -344,7 +351,14 @@ export async function cambiarRecordatorio(idRecordatorio: string, cambios: Parti
 }
 
 const CAMPOS_PREFERENCIA = 'estado, recibir_resumen_diario, frecuencia_resumen_diario, hora_resumen_diario, recibir_resumen_semanal, '
-  + 'dia_resumen_semanal, hora_resumen_semanal, recibir_cierre_mes, hora_cierre_mes, recibir_recordatorios, tipos_recordatorio, mostrar_descripcion, recibir_aviso_descarga'
+  + 'dia_resumen_semanal, hora_resumen_semanal, recibir_cierre_mes, hora_cierre_mes, recibir_recordatorios, tipos_recordatorio, mostrar_descripcion, recibir_aviso_descarga, '
+  + 'recibir_recordatorio_no_registrado, modulos_recordatorio_apagados, cantidad_maxima_recordatorios_dia, hora_inicio_silencio, hora_fin_silencio, recibir_aviso_inactividad'
+
+// Cuándo se anotó cada registro (para mostrar el ritmo que aprendió la app).
+export async function obtenerMarcas(desde: string) {
+  return revisar(await supabase.from('registro').select('id_seguimiento, fecha_registro, fecha_creacion').eq('estado', 'activo').gte('fecha_registro', desde)) as
+    { id_seguimiento: string; fecha_registro: string; fecha_creacion: string }[]
+}
 
 // null si nunca ha guardado: la pantalla parte de PREFERENCIA_INICIAL.
 export async function obtenerAvisos() {
@@ -517,12 +531,15 @@ export async function deshacerMovimientoPrestamo(m: Pick<MovimientoPrestamo, 'id
 // Ejercicios (etiquetas de Gym), series del último año y nombres aprendidos; las fechas salen de los registros.
 export async function obtenerSalud(idGym: string, desde: string) {
   const [ejercicios, series, alias] = await Promise.all([
-    supabase.from('etiqueta').select('id_etiqueta, nombre').eq('id_seguimiento', idGym).eq('estado', 'activo'),
+    // también los quitados: sus series pasadas siguen contando y se ven con su nombre
+    supabase.from('etiqueta').select('id_etiqueta, nombre, estado').eq('id_seguimiento', idGym),
     supabase.from('serie_gym').select('id_registro, cantidad_series, cantidad_repeticiones, peso_kilogramos').gte('fecha_creacion', desde),
     supabase.from('alias').select('texto_escrito, texto_correcto').eq('tipo', 'ejercicio').eq('estado', 'activo'),
   ])
+  const todos = revisar(ejercicios) as { id_etiqueta: string; nombre: string; estado: string }[]
   return {
-    ejercicios: revisar(ejercicios) as { id_etiqueta: string; nombre: string }[],
+    ejercicios: todos.filter(e => e.estado === 'activo'),
+    nombres: new Map(todos.map(e => [e.id_etiqueta, e.nombre])),
     series: revisar(series) as { id_registro: string; cantidad_series: number; cantidad_repeticiones: number; peso_kilogramos: number | null }[],
     alias: new Map(revisar(alias).map(a => [a.texto_escrito, a.texto_correcto] as [string, string])),
   }
@@ -531,7 +548,20 @@ export async function obtenerSalud(idGym: string, desde: string) {
 export async function crearEtiqueta(idSeguimiento: string, nombre: string) {
   return revisar(await supabase.from('etiqueta').insert({ id_seguimiento: idSeguimiento, nombre }).select('id_etiqueta').single()).id_etiqueta as string
 }
-export const crearEjercicio = crearEtiqueta
+// Si el ejercicio existió y se quitó, vuelve con su nombre (el nombre es único en el seguimiento).
+export async function crearEjercicio(idGym: string, nombre: string) {
+  const { data, error } = await supabase.from('etiqueta').insert({ id_seguimiento: idGym, nombre }).select('id_etiqueta').single()
+  if (error?.code !== '23505') return revisar({ data, error }).id_etiqueta as string
+  const [fila] = revisar(await supabase.from('etiqueta').update({ estado: 'activo' })
+    .eq('id_seguimiento', idGym).eq('nombre', nombre).eq('estado', 'eliminado').select('id_etiqueta'))
+  if (!fila) throw new ErrorDatos(`Ya tienes un ejercicio llamado ${nombre}.`)
+  return fila.id_etiqueta as string
+}
+
+// Deja de salir en la lista y en las sugerencias; sus series pasadas se conservan.
+export async function quitarEjercicio(idEtiqueta: string) {
+  revisar(await supabase.from('etiqueta').update({ estado: 'eliminado' }).eq('id_etiqueta', idEtiqueta))
+}
 
 // Categoría de gastos o fuente de ingresos. Si existió y se quitó, vuelve con su nombre (el nombre es único en el seguimiento).
 export async function crearCategoria(idSeguimiento: string, nombre: string, grupo: 'basico' | 'personal' | null) {

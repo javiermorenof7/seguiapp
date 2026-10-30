@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { enviarAvisoPrueba, guardarPreferenciaAviso, guardarSuscripcion, obtenerAvisos, quitarSuscripcion } from '../datos'
+import { enviarAvisoPrueba, guardarPreferenciaAviso, guardarSuscripcion, obtenerAvisos, obtenerMarcas, obtenerSeguimientos, quitarSuscripcion } from '../datos'
+import { horaColombia, moduloDe, MODULOS, porQue, ritmo, type Marca, type Modulo } from './ritmo'
 import { LLAVE_PUBLICA_VAPID } from './llave'
 import { equipoDe, estaInstalada } from '../equipo'
 import type { Repeticion } from '../tareas/calculos'
@@ -9,6 +10,7 @@ import { PREFERENCIA_INICIAL, TIPOS_RECORDATORIO, type PreferenciaAviso } from '
 type Preferencia = Omit<PreferenciaAviso, `fecha_ultimo_${string}`>
 type EstadoEquipo = 'sin_soporte' | 'instalar' | 'bloqueado' | 'apagado' | 'activo'
 
+const NOMBRE_MODULO: Record<Modulo, string> = { gastos: 'Gastos', gym: 'Gym', habitos: 'Hábitos' }
 const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 const TIPO: Record<Repeticion, string> = { unico: 'Una vez', diario: 'Cada día', habiles: 'Lunes a viernes', semanal: 'Cada semana', mensual: 'Cada mes' }
 const soportaPush = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
@@ -28,6 +30,8 @@ async function suscripcionActual() {
 
 export default function Avisos({ alVolver, alInstalar }: { alVolver: () => void; alInstalar: () => void }) {
   const [preferencia, setPreferencia] = useState<Preferencia | null>(null)
+  // el ritmo que aprendió la app de cada módulo que usa la persona (para "por qué me llega")
+  const [ritmos, setRitmos] = useState<[Modulo, string][]>([])
   const [guardada, setGuardada] = useState(false)
   const [equipo, setEquipo] = useState<EstadoEquipo | null>(null)
   const [otros, setOtros] = useState(0)
@@ -48,6 +52,15 @@ export default function Avisos({ alVolver, alInstalar }: { alVolver: () => void;
       setOtros(d.equipos)
     }, e => setError((e as Error).message))
     revisarEquipo().catch(() => setEquipo('sin_soporte'))
+    const hoy = new Date().toLocaleDateString('en-CA')
+    Promise.all([obtenerSeguimientos(), obtenerMarcas(new Date(Date.now() - 60 * 864e5).toLocaleDateString('en-CA'))]).then(([seguimientos, registros]) => {
+      const de = new Map(seguimientos.map(s => [s.id_seguimiento, moduloDe(s)]))
+      const usados = MODULOS.filter(x => [...de.values()].includes(x))
+      setRitmos(usados.map(x => {
+        const marcas: Marca[] = registros.filter(r => de.get(r.id_seguimiento) === x).map(r => ({ fecha: r.fecha_registro, hora: horaColombia(r.fecha_creacion) }))
+        return [x, porQue(x, ritmo(x, marcas, hoy))]
+      }))
+    }, () => setRitmos([]))
   }, [])
 
   async function hacer(accion: () => Promise<void>, mensaje: string) {
@@ -192,6 +205,42 @@ export default function Avisos({ alVolver, alInstalar }: { alVolver: () => void;
           </div>
         )}
         <small className="ayuda">Los que no avisen siguen saliendo en Hoy.</small>
+      </fieldset>
+
+      <fieldset className="formulario" disabled={apagados || enviando}>
+        <legend><h2>Lo que no has registrado</h2></legend>
+        <label className="casilla"><input type="checkbox" checked={p.recibir_recordatorio_no_registrado}
+          onChange={ev => guardar({ recibir_recordatorio_no_registrado: ev.target.checked })} />
+          <span>Recordarme si no he anotado algo. La app aprende cuándo sueles anotar y solo avisa si ese día no lo hiciste.</span></label>
+        {p.recibir_recordatorio_no_registrado && (
+          <>
+            <div className="chips" role="group" aria-label="De qué módulos">
+              {MODULOS.map(x => (
+                <button key={x} type="button" role="checkbox" aria-checked={!p.modulos_recordatorio_apagados.includes(x)} className="chip"
+                  onClick={() => guardar({ modulos_recordatorio_apagados: p.modulos_recordatorio_apagados.includes(x)
+                    ? p.modulos_recordatorio_apagados.filter(y => y !== x) : [...p.modulos_recordatorio_apagados, x] })}>{NOMBRE_MODULO[x]}</button>
+              ))}
+            </div>
+            {ritmos.filter(([x]) => !p.modulos_recordatorio_apagados.includes(x)).map(([x, texto]) => (
+              <small key={x} className="ayuda"><strong>{NOMBRE_MODULO[x]}:</strong> {texto}</small>
+            ))}
+            <div className="chips" role="radiogroup" aria-label="Máximo de recordatorios al día">
+              <span className="tenue">Máximo al día</span>
+              {[1, 2, 3].map(n => (
+                <button key={n} type="button" role="radio" aria-checked={p.cantidad_maxima_recordatorios_dia === n} className="chip"
+                  onClick={() => guardar({ cantidad_maxima_recordatorios_dia: n })}>{n}</button>
+              ))}
+            </div>
+            <small className="ayuda">Si coinciden varios, llegan juntos en un solo aviso. Si ignoras uno 3 veces, te llega menos seguido.</small>
+          </>
+        )}
+        <label className="casilla"><input type="checkbox" checked={p.recibir_aviso_inactividad} onChange={ev => guardar({ recibir_aviso_inactividad: ev.target.checked })} />
+          <span>Avisarme si dejo de usar la app: máximo 3 avisos (al notarlo, a la semana y a las dos semanas) y luego silencio.</span></label>
+        <div className="campos">
+          <label>Silencio desde<input type="time" value={p.hora_inicio_silencio.slice(0, 5)} onChange={ev => ev.target.value && guardar({ hora_inicio_silencio: ev.target.value })} /></label>
+          <label>Hasta<input type="time" value={p.hora_fin_silencio.slice(0, 5)} onChange={ev => ev.target.value && guardar({ hora_fin_silencio: ev.target.value })} /></label>
+        </div>
+        <small className="ayuda">En esas horas no te llega ningún recordatorio.</small>
       </fieldset>
 
       <fieldset className="formulario" disabled={apagados || enviando}>

@@ -10,7 +10,6 @@ import {
   saldoDespues, type EstadoPresupuesto, type Movimiento, type TipoMovimiento,
 } from './calculos'
 import Barras from './Barras'
-import Dona from './Dona'
 import SinDatos from '../SinDatos'
 import { Apilada, Avance } from './Medidas'
 import { recibosDelMes, totalesDelMes } from './estadoRecibos'
@@ -230,6 +229,13 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
           buscar={r => r.nota ?? ''}
           suma
           formato={pesos}
+          vista={() => ({
+            modo: 'suma', pregunta: '¿Cuánto entró y salió?', formatoEje: pesosEje,
+            // siempre en el mismo orden y con su color fijo
+            series: (['ingreso', 'gasto', 'ahorro'] as const).flatMap(t => id(t) ? [{
+              nombre: NOMBRES[t], color: cssVar(t === 'ingreso' ? '--ingresos' : t === 'gasto' ? '--gastos' : '--ahorro'), de: (r: RegistroGuardado) => r.id_seguimiento === id(t),
+            }] : []),
+          })}
           total={lista => (['gasto', 'ingreso', 'ahorro'] as const)
             .map(t => [NOMBRES[t], lista.filter(r => r.id_seguimiento === id(t)).reduce((s, r) => s + r.valor, 0)] as const)
             .filter(([, v]) => v > 0).map(([n, v]) => `${n} ${pesos(v)}`).join(' · ') || 'Sin movimientos'}
@@ -310,7 +316,6 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
               <>
                 <Resumen cuentas={cuentasVer} acumulado={acumuladoAno(todos, esAno ? finAno : mesVer)} alVerRecibos={() => setPestana('recibos')} />
                 {!esAno && facturasVer && <FacturasDelMes totales={facturasVer} alVer={() => setPestana('recibos')} />}
-                <EnQueSeVa filas={cuentasVer.filas} alVer={() => setPestana('gastos')} />
                 <PorCategoria filas={cuentasVer.filas} alVer={() => setPestana('gastos')} />
                 {!esAno && idIngresos && <IngresosDelMes movimientos={todos} mes={mesVer} alVer={() => setPestana('ingresos')} />}
                 {metasAhorro && <MetasDelMes metas={metasAhorro.metas}
@@ -606,27 +611,8 @@ function Resumen({ cuentas, acumulado, alVerRecibos }: { cuentas: Cuentas; acumu
   )
 }
 
-const COLORES_DONA = ['--c1', '--c2', '--c3', '--c4', '--c5', '--tenue']
 
 // Las 5 categorías con más gasto del mes y el resto en "Otras".
-function EnQueSeVa({ filas, alVer }: { filas: ReturnType<typeof porCategoria>; alVer: () => void }) {
-  const porciones = useMemo(() => {
-    const conGasto = filas.filter(f => f.gastado > 0).sort((a, b) => b.gastado - a.gastado)
-    const otras = conGasto.slice(5).reduce((t, f) => t + f.gastado, 0)
-    return [...conGasto.slice(0, 5).map(f => ({ nombre: f.nombre, valor: f.gastado })), ...(otras ? [{ nombre: 'Otras', valor: otras }] : [])]
-      .map((p, i) => ({ ...p, color: cssVar(COLORES_DONA[i]) }))
-  }, [filas])
-  const total = porciones.reduce((t, p) => t + p.valor, 0)
-  if (!total) return null
-  return (
-    <section>
-      <div className="bloque-pie"><h2>¿En qué se me va la plata?</h2>{ver(alVer)}</div>
-      <Dona porciones={porciones} total={total} formato={pesos} colorFondo={cssVar('--fondo')}
-        descripcion={`Gasto del mes por categoría: ${porciones.map(p => `${p.nombre} ${pesos(p.valor)}`).join(', ')}`} />
-    </section>
-  )
-}
-
 // Barra con tope: lo gastado encima de la pista gris del presupuesto, de mayor a menor.
 function PorCategoria({ filas, alVer }: { filas: ReturnType<typeof porCategoria>; alVer: () => void }) {
   const color = (e: EstadoPresupuesto, conPresupuesto: boolean) =>
@@ -825,7 +811,7 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
   const recibido = useMemo(() => esperadoVsRecibido(movimientos, mes), [movimientos, mes])
   const fuente = useMemo(() => {
     const r = porFuente(movimientos, mes)
-    const colores = ['--t4', '--t1', '--t7', '--t5', '--t3', '--t6', '--t2']
+    const colores = ['--c1', '--c2', '--c3', '--c4', '--c5']
     return { etiquetas: r.meses.map(nombreMes), series: r.series.map((x, i) => ({ nombre: nombre(x.id_etiqueta), datos: x.datos, color: cssVar(colores[i % colores.length]) })) }
   }, [movimientos, mes, fuentes])
 
@@ -868,8 +854,8 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
           <h2>¿Llegó lo esperado?</h2>
           <Barras etiquetas={recibido.map(m => nombreMes(m.mes))} colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')} formato={pesos}
             series={[
-              { nombre: 'Esperado', datos: recibido.map(m => m.esperado), color: cssVar('--linea'), borde: cssVar('--tenue') },
-              { nombre: 'Recibido', datos: recibido.map(m => m.recibido), color: cssVar('--t4') },
+              { nombre: 'Esperado', datos: recibido.map(m => m.esperado), color: 'transparent', borde: cssVar('--tenue') },
+              { nombre: 'Recibido', datos: recibido.map(m => m.recibido), color: cssVar('--ingresos') },
             ]}
             descripcion="Ingresos fijos esperados frente a lo recibido de esas fuentes en los últimos 6 meses" />
         </section>

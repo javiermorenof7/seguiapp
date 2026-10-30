@@ -17,6 +17,7 @@ export function SemanaGym({ semana, meta }: { semana: (boolean | null)[]; meta: 
   return (
     <span className="mini mini-semana" role="img" aria-label={`Esta semana: ${hechos} ${meta ? `de ${meta} ` : ''}días de gym`}>
       {semana.map((d, i) => <span key={i} className={d ? 'lleno' : d === null ? 'futuro' : undefined}>{'LMXJVSD'[i]}</span>)}
+      {meta && <span className="sub">{hechos >= meta ? 'Meta de la semana cumplida' : `Faltan ${meta - hechos} ${meta - hechos === 1 ? 'día' : 'días'} para la meta`}</span>}
     </span>
   )
 }

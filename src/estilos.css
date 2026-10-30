@@ -10,7 +10,7 @@
   /* estado frente a la meta, apto para daltonismo y siempre con texto */
   --en-meta: #1D4ED8; --cerca: #B45309; --fuera: #BE123C;
   /* gráficos: un color fijo por serie y una escala Trópico aparte para categorías */
-  --ingresos: #059669; --gastos: #EA580C; --ahorro: #7C3AED; --pista: #DDE3DA;
+  --ingresos: #059669; --gastos: #EA580C; --ahorro: #7C3AED; --pista: #C5CEC2;
   --c1: #0D9488; --c2: #4F46E5; --c3: #CA8A04; --c4: #65A30D; --c5: #C026D3;
   color-scheme: light dark;
 }
@@ -22,7 +22,7 @@
     --linea: #24352B;
     --t1: #0E7F5C;
     --en-meta: #60A5FA; --cerca: #F59E0B; --fuera: #FB7185;
-    --ingresos: #34D399; --gastos: #FB923C; --ahorro: #A78BFA; --pista: #2B3F33;
+    --ingresos: #34D399; --gastos: #EA580C; --ahorro: #A78BFA; --pista: #2B3F33;
     --c1: #2DD4BF; --c2: #818CF8; --c3: #FBBF24; --c4: #A3E635; --c5: #E879F9;
   }
 }
@@ -213,6 +213,7 @@ button:disabled { opacity: .6; cursor: default; }
 .mini-semana > span { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: rgba(255, 255, 255, .22); }
 .mini-semana > span.lleno { background: #FFFFFF; color: #13241B; }
 .mini-semana > span.futuro { background: none; border: 1px dashed rgba(255, 255, 255, .6); }
+.mini-semana > span.sub { grid-column: 1 / -1; width: auto; height: auto; border-radius: 0; background: none; place-items: start; font-weight: 400; }
 .tarjeta .mini-habitos { display: flex; flex-wrap: wrap; gap: 6px 14px; }
 .mini-habitos > span { display: inline-flex; align-items: center; gap: 6px; }
 .mini-habitos i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #FFFFFF; }
@@ -288,15 +289,7 @@ section:not([class]) > h2:first-child { margin-bottom: 14px; }
 .plegable > section:first-of-type { margin-top: 8px; }
 
 
-.dona { display: grid; grid-template-columns: minmax(180px, 260px) minmax(0, 1fr); gap: 24px; align-items: center; margin: 16px 0 8px; }
-.dona-lienzo { position: relative; height: 240px; }
-.dona-centro { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; margin: 0; pointer-events: none; }
-.dona-centro strong { font-size: 20px; }
-.dona-leyenda { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
-.dona-leyenda li { display: grid; grid-template-columns: auto 1fr auto 3.5em; gap: 10px; align-items: center; }
-.dona-leyenda .tenue { margin: 0; text-align: right; }
 .muestra { display: inline-block; width: 12px; height: 12px; border-radius: 4px; vertical-align: middle; }
-@media (max-width: 560px) { .dona { grid-template-columns: minmax(0, 1fr); } .dona-lienzo { height: 220px; } }
 
 .sugeridos { display: grid; gap: 8px; }
 .sugeridos .tenue { margin: 0; font-size: 14px; }
@@ -413,3 +406,18 @@ section:not([class]) + form.formulario { margin-top: 40px; }
 .lista li.categoria > .acciones-categoria { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
 .lista li.categoria > .confirmar-quitar { grid-column: 1 / -1; grid-row: 3; }
 .lista li.categoria > .confirmar-quitar { max-width: 520px; }
+
+/* Gym: una fila por serie (número, peso, repeticiones, quitar) */
+.series-gym { display: grid; gap: 10px; }
+.serie-fila { display: grid; grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr) 44px; gap: 8px; align-items: end; }
+.serie-fila label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; }
+.numero-serie { display: grid; place-items: center; height: 44px; font-weight: 700; color: var(--tenue); }
+.serie-fila .quitar { min-height: 44px; background: none; color: var(--tenue); border-radius: 999px; }
+.serie-fila:not(:has(.quitar)) { grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr); }
+.series-gym > .secundario { justify-self: start; }
+.series-dia { text-align: right; }
+/* títulos solo en la primera serie; las demás quedan como filas de una tabla (los campos conservan su aria-label) */
+.serie-fila ~ .serie-fila label { font-size: 0; gap: 0; }
+.serie-fila label input { font-size: 1rem; }
+.serie-fila ~ .serie-fila .numero-serie { height: 44px; }
+.pregunta-grafico { margin: 16px 0 4px; font-size: 1rem; }

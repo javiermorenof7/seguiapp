@@ -522,7 +522,7 @@ function EnElTiempo({ filas, datos }: { filas: FilaRecibo[]; datos: Datos }) {
           </select>
         </label>
       </div>
-      <Grafico puntos={puntos} color={cssVar('--acento')} colorMeta={cssVar('--tenue')} formato={pesos}
+      <Grafico puntos={puntos} color={cssVar('--c1')} colorMeta={cssVar('--tenue')} formato={pesos}
         formatoEje={v => `$${new Intl.NumberFormat('es-CO', { notation: 'compact', maximumFractionDigits: 1 }).format(v)}`}
         descripcion={`Valor pagado de ${actual.nombre} en el último año`} />
     </section>

@@ -15,6 +15,12 @@ export interface PreferenciaAviso {
   tipos_recordatorio: Repeticion[]
   mostrar_descripcion: boolean
   recibir_aviso_descarga: boolean
+  recibir_recordatorio_no_registrado: boolean
+  modulos_recordatorio_apagados: ('gastos' | 'gym' | 'habitos')[]
+  cantidad_maxima_recordatorios_dia: number
+  hora_inicio_silencio: string
+  hora_fin_silencio: string
+  recibir_aviso_inactividad: boolean
   fecha_ultimo_resumen_diario: string | null
   fecha_ultimo_resumen_semanal: string | null
   fecha_ultimo_cierre_mes: string | null
@@ -32,6 +38,8 @@ export const PREFERENCIA_INICIAL: PreferenciaAviso = {
   recibir_recordatorios: true, tipos_recordatorio: TIPOS_RECORDATORIO,
   mostrar_descripcion: false,
   recibir_aviso_descarga: true,
+  recibir_recordatorio_no_registrado: true, modulos_recordatorio_apagados: [], cantidad_maxima_recordatorios_dia: 2,
+  hora_inicio_silencio: '22:00', hora_fin_silencio: '06:00', recibir_aviso_inactividad: true,
   fecha_ultimo_resumen_diario: null, fecha_ultimo_resumen_semanal: null, fecha_ultimo_cierre_mes: null, fecha_ultimo_aviso_descarga: null,
 }
 

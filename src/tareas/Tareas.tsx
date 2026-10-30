@@ -23,7 +23,7 @@ function TiempoPorSemana({ semanas }: { semanas: ReturnType<typeof aTiempoPorSem
   return (
     <>
       <h3>Últimas 8 semanas</h3>
-      <Barras apilado etiquetas={etiquetas} series={series} formato={v => `${Math.round(v)}`} colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
+      <Barras apilado etiquetas={etiquetas} series={series} dias={{ titulos: etiquetas.map(e => `Semana del ${e}`) }} formato={v => `${Math.round(v)}`} colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
         descripcion={`Tareas a tiempo y tarde por semana: ${semanas.map(w => `${etiquetas[semanas.indexOf(w)]} ${w.aTiempo} a tiempo, ${w.tarde} tarde`).join('; ')}`} />
     </>
   )

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  anteriorDe, comparar, constancia, seriesPorDia, diasEntrenados, faltaParaMeta, estadoSemana, leerSerie, parecido, pesoPorDia, progreso, seriesDeUltima, sesionesPorDia, sugerencia, textoSerie, type Sesion,
+  anteriorDe, cambioPeso, comparar, constancia, seriesPorDia, diasEntrenados, faltaParaMeta, estadoSemana, leerSerie, parecido, pesoPorDia, progreso, seriesDeUltima, sesionesPorDia, sugerencia, textoSerie, type Sesion,
 } from './calculos'
 
 const s = (fecha: string, ejercicio: string, series: number, repeticiones: number, peso: number | null): Sesion =>
@@ -27,6 +27,10 @@ describe('leerSerie', () => {
 })
 
 describe('gym', () => {
+  it('cambio de peso del primer al último día del período; null con un solo día', () => {
+    expect(cambioPeso(pesoPorDia(sesiones, 'press banca'))).toBe(7.5)
+    expect(cambioPeso(pesoPorDia(sesiones, 'press banca', '2026-10-15'))).toBeNull()
+  })
   it('la vez anterior es la más reciente del ejercicio', () => expect(anteriorDe(sesiones, 'press banca')?.fecha).toBe('2026-10-15'))
   it('sugiere subir tras dos sesiones iguales', () => {
     expect(sugerencia({ ejercicio: 'press banca', series: 3, repeticiones: 8, peso: 62.5 }, sesiones)).toContain('65 kg')

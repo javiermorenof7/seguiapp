@@ -105,7 +105,10 @@ export function pesoPorDia(sesiones: Sesion[], ejercicio: string, desde = ''): M
 export const indicesRecord = (puntos: Medicion[]) =>
   puntos.flatMap((p, i) => i && p.valor > Math.max(...puntos.slice(0, i).map(x => x.valor)) ? [i] : [])
 
-export const diasEntrenados = (sesiones: Sesion[], hoy: string, dias = 30) =>
+// Cuánto cambió el mejor peso del primer al último día del período; null con menos de 2 días.
+export const cambioPeso = (puntos: Medicion[]) => puntos.length > 1 ? puntos[puntos.length - 1].valor - puntos[0].valor : null
+
+export const diasEntrenados =(sesiones: Sesion[], hoy: string, dias = 30) =>
   new Set(sesiones.filter(s => diasEntre(s.fecha, hoy) < dias && s.fecha <= hoy).map(s => s.fecha)).size
 
 // Medida nueva frente al último registro y al más reciente de hace 30 días o más.

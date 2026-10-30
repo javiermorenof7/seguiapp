@@ -10,6 +10,7 @@ import {
   saldoDespues, type EstadoPresupuesto, type Movimiento, type TipoMovimiento,
 } from './calculos'
 import Barras from './Barras'
+import Dona from './Dona'
 import SinDatos from '../SinDatos'
 import { Apilada, Avance } from './Medidas'
 import { recibosDelMes, totalesDelMes } from './estadoRecibos'
@@ -316,6 +317,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
               <>
                 <Resumen cuentas={cuentasVer} acumulado={acumuladoAno(todos, esAno ? finAno : mesVer)} alVerRecibos={() => setPestana('recibos')} />
                 {!esAno && facturasVer && <FacturasDelMes totales={facturasVer} alVer={() => setPestana('recibos')} />}
+                <EnQueSeVa filas={cuentasVer.filas} alVer={() => setPestana('gastos')} />
                 <PorCategoria filas={cuentasVer.filas} alVer={() => setPestana('gastos')} />
                 {!esAno && idIngresos && <IngresosDelMes movimientos={todos} mes={mesVer} alVer={() => setPestana('ingresos')} />}
                 {metasAhorro && <MetasDelMes metas={metasAhorro.metas}
@@ -614,6 +616,25 @@ function Resumen({ cuentas, acumulado, alVerRecibos }: { cuentas: Cuentas; acumu
 
 // Las 5 categorías con más gasto del mes y el resto en "Otras".
 // Barra con tope: lo gastado encima de la pista gris del presupuesto, de mayor a menor.
+const COLORES_DONA = ['--c1', '--c2', '--c3', '--c4', '--c5', '--tenue']
+function EnQueSeVa({ filas, alVer }: { filas: ReturnType<typeof porCategoria>; alVer: () => void }) {
+  const porciones = useMemo(() => {
+    const conGasto = filas.filter(f => f.gastado > 0).sort((a, b) => b.gastado - a.gastado)
+    const otras = conGasto.slice(5).reduce((t, f) => t + f.gastado, 0)
+    return [...conGasto.slice(0, 5).map(f => ({ nombre: f.nombre, valor: f.gastado })), ...(otras ? [{ nombre: 'Otras', valor: otras }] : [])]
+      .map((p, i) => ({ ...p, color: cssVar(COLORES_DONA[i]) }))
+  }, [filas])
+  const total = porciones.reduce((t, p) => t + p.valor, 0)
+  if (!total) return null
+  return (
+    <section>
+      <div className="bloque-pie"><h2>¿En qué se me va la plata?</h2>{ver(alVer)}</div>
+      <Dona porciones={porciones} total={total} formato={pesos} colorFondo={cssVar('--fondo')}
+        descripcion={`Gasto del mes por categoría: ${porciones.map(p => `${p.nombre} ${pesos(p.valor)}`).join(', ')}`} />
+    </section>
+  )
+}
+
 function PorCategoria({ filas, alVer }: { filas: ReturnType<typeof porCategoria>; alVer: () => void }) {
   const color = (e: EstadoPresupuesto, conPresupuesto: boolean) =>
     cssVar(e === 'pasado' ? '--fuera' : e === 'cerca' ? '--cerca' : conPresupuesto ? '--en-meta' : '--tenue')

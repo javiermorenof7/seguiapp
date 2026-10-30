@@ -11,11 +11,12 @@ import { rango as rangoDe } from '../historial/periodo'
 import SinDatos from '../SinDatos'
 import Historial, { FilaSimple } from '../historial/Historial'
 import Barras from '../finanzas/Barras'
+import { SemanaGym } from '../inicio/Minis'
 import CambiarNombre from '../CambiarNombre'
 import { normalizar } from '../finanzas/parseo'
 import {
-  comparar, conSigno, constancia, diasPorSemana, quedanSemana, faltaParaMeta, estadoSemana, indicesRecord, kg, leerSerie, metaSemanal, parecido, pesoPorDia,
-  progreso, restarDias, seriesDeUltima, sesionesPorDia, textoSerie,
+  comparar, conSigno, constancia, seriesPorDia, faltaParaMeta, indicesRecord, kg, leerSerie, parecido, pesoPorDia,
+  progreso, restarDias, seriesDeUltima, textoSerie,
   type Sesion,
 } from './calculos'
 
@@ -100,9 +101,7 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar }: 
   idGym: string; metaDias?: number; registros: RegistroGuardado[]; enfocar?: boolean; alCambiar: () => Promise<void>
 }) {
   const [ventana, setVentana] = useState<Ventana>(ventanaInicial)
-  const [ventanaConstancia, setVentanaConstancia] = useState<Ventana>(ventanaInicial)
-  // si cualquiera de los dos gráficos va a más de un año atrás (0), se carga todo
-  const registros = useRegistrosDe(idGym, rangoCarga(ventana) && rangoCarga(ventanaConstancia), delAno) as RegistroGuardado[]
+  const registros = useRegistrosDe(idGym, rangoCarga(ventana), delAno) as RegistroGuardado[]
   const hoy = hoyIso()
   const [datos, setDatos] = useState<Datos | null>(null)
   const [ejercicio, setEjercicio] = useState('')
@@ -239,8 +238,8 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar }: 
     <SinDatos titulo="Aún no registras ejercicios" detalle="Cuando registres tu primer ejercicio en Gym, aquí verás tu constancia y tu progreso." />
   ) : (
     <>
-      <Constancia sesiones={sesiones} hoy={hoy} idGym={idGym} metaDias={metaDias} alCambiar={alCambiar} ventana={ventanaConstancia} alCambiarVentana={setVentanaConstancia} />
-      <Progreso sesiones={sesiones} ejercicios={datos.ejercicios.map(e => e.nombre).sort()} ventana={ventana} alCambiarVentana={setVentana} />
+      <Constancia sesiones={sesiones} hoy={hoy} idGym={idGym} metaDias={metaDias} alCambiar={alCambiar} ventana={ventana} alCambiarVentana={setVentana} />
+      <Progreso sesiones={sesiones} ejercicios={datos.ejercicios.map(e => e.nombre).sort()} ventana={ventana} />
     </>
   )
   const nombres = datos.nombres
@@ -417,51 +416,47 @@ function CuerpoHoy({ medidas, registros, alVer }: { medidas: Seguimiento[]; regi
 }
 
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
-// "20–26 oct" o "29 sep–5 oct" para la semana que empieza ese lunes
-function rangoSemana(lunes: string) {
-  const domingo = restarDias(lunes, -6)
-  const dia = (f: string) => Number(f.slice(8, 10)), mes = (f: string) => MESES[Number(f.slice(5, 7)) - 1]
-  return mes(lunes) === mes(domingo) ? `${dia(lunes)}–${dia(domingo)} ${mes(domingo)}` : `${dia(lunes)} ${mes(lunes)}–${dia(domingo)} ${mes(domingo)}`
-}
-
-const TEXTO_SEMANA = { en_meta: '✓ En meta esta semana', cerca: '◐ Cerca de la meta esta semana', fuera: '✕ Lejos de la meta esta semana' }
-
+// Una cifra y los círculos de la semana; abajo, un solo filtro mueve este gráfico y el de Progreso. Sin semáforo ni leyenda.
 function Constancia({ sesiones, hoy, idGym, metaDias, alCambiar, ventana, alCambiarVentana }: {
   sesiones: Sesion[]; hoy: string; idGym: string; metaDias?: number; alCambiar: () => Promise<void>; ventana: Ventana; alCambiarVentana: (v: Ventana) => void
 }) {
-  const semanas = useMemo(() => diasPorSemana(sesiones, hoy), [sesiones, hoy])
-  // el promedio sale de las semanas cerradas: la que va todavía puede subir
-  const meta = metaSemanal(semanas.slice(0, -1), metaDias)
-  const estaSemana = semanas[semanas.length - 1].dias
-  const esta = meta && estadoSemana(estaSemana, meta.valor, quedanSemana(hoy))
+  const meta = metaDias ?? null
   const r = rangoDe(ventana.escala, ventana.ancla)
+  const lunes = rangoDe('semana', hoy).desde
+  const circulos = (desde: string) => constancia(sesiones, 'semana', desde, restarDias(desde, -6), hoy).map(g => g.futuro ? null : g.dias > 0)
+  const estaSemana = circulos(lunes)
+  const hechos = estaSemana.filter(Boolean).length
   const porDia = ventana.escala === 'semana'
-  const grupos = useMemo(() => constancia(sesiones, ventana.escala, r.desde, r.hasta, hoy, meta?.valor ?? null), [sesiones, ventana.escala, r.desde, r.hasta, hoy, meta?.valor])
-  const etiquetas = grupos.map(g => porDia ? `${'LMXJVSD'[(new Date(`${g.desde}T12:00:00Z`).getUTCDay() + 6) % 7]} ${Number(g.desde.slice(8, 10))}`
-    : ventana.escala === 'mes' ? rangoSemana(g.desde) : MESES[Number(g.desde.slice(5, 7)) - 1])
-  const conMeta = !!meta && !porDia
-  const series = useMemo(() => [{ nombre: 'Días entrenados', datos: grupos.map(g => g.futuro ? null : g.dias), leyenda: cssVar('--c1'),
-    color: grupos.map(g => cssVar(!conMeta || g.meta === null ? '--c1' : `--${estadoSemana(g.dias, g.meta, g.quedan).replace('_', '-')}`)) }], [grupos, conMeta])
-  const linea = useMemo(() => conMeta ? { nombre: meta!.propia ? 'Meta' : 'Tu promedio', datos: grupos.map(g => g.meta ?? 0), color: cssVar('--tinta'), punteada: true } : undefined,
-    [grupos, conMeta, meta?.propia])
+  const grupos = useMemo(() => constancia(sesiones, ventana.escala, r.desde, r.hasta, hoy), [sesiones, ventana.escala, r.desde, r.hasta, hoy])
+  const etiquetas = grupos.map(g => MESES[Number(g.desde.slice(5, 7)) - 1])
+  const series = useMemo(() => [{ nombre: 'Días entrenados', datos: grupos.map(g => g.futuro ? null : g.dias), color: cssVar('--c1') }], [grupos])
+  // Mes: día a día, la altura son las series de ese día
+  const delMes = useMemo(() => seriesPorDia(sesiones, r.desde, r.hasta, hoy), [sesiones, r.desde, r.hasta, hoy])
+  const diasDelMes = delMes.filter(d => d.series).length
+  const seriesMes = useMemo(() => [{ nombre: 'Series', datos: delMes.map(d => d.series), color: cssVar('--c1') }], [delMes])
   return (
     <section>
       <h2>¿Estoy entrenando seguido?</h2>
-      <p>Esta semana: <strong className="cifra-media">{estaSemana}</strong> <span className="tenue">{meta ? `de ${meta.valor} días` : estaSemana === 1 ? 'día' : 'días'}</span></p>
-      {meta ? <p className="con-estado"><span className={`estado ${esta!.replace('_', '-')}`}>{TEXTO_SEMANA[esta!]}</span>
-        <span className="tenue"> {meta.propia ? `Meta: ${meta.valor} días por semana` : `Sin meta: se compara con tu promedio (${meta.valor} días por semana)`}</span></p>
-        : <p className="tenue">Pon tu meta de días por semana para saber si vas en meta, cerca o lejos.</p>}
-      <PeriodoNavegable valor={ventana} alCambiar={alCambiarVentana} />
-      <Barras etiquetas={etiquetas} series={series} linea={linea} maximo={porDia ? 1 : ventana.escala === 'mes' ? 7 : 31} leyenda={false}
-        dias={{ titulos: grupos.map((g, i) => porDia ? g.desde.split('-').reverse().join('/') : ventana.escala === 'mes' ? `Semana del ${etiquetas[i]}` : `${etiquetas[i]} ${g.desde.slice(0, 4)}`) }}
-        formato={v => porDia ? (v ? 'Entrenó' : 'No entrenó') : `${Math.round(v)} ${Math.round(v) === 1 ? 'día' : 'días'}`} formatoEje={v => porDia ? '' : `${v}`}
-        colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
-        descripcion={`Días entrenados ${porDia ? 'cada día de la semana' : ventana.escala === 'mes' ? 'por semana del mes' : 'por mes'} (${r.titulo}): ${grupos.filter(g => !g.futuro).map((g, i) => `${etiquetas[i]} ${g.dias}`).join(', ')}${conMeta ? `; la línea es ${meta!.propia ? 'la meta' : 'tu promedio'}` : ''}`} />
-      {conMeta && <p className="leyenda-estado">
-        {(['en-meta', 'cerca', 'fuera'] as const).map(c => <span key={c}><i style={{ background: cssVar(`--${c}`) }} />{c === 'en-meta' ? 'En meta' : c === 'cerca' ? 'Cerca' : 'Lejos'}</span>)}
-        <span><i className="linea-meta" />{meta.propia ? 'Meta' : 'Tu promedio'}</span>
-      </p>}
+      <p><strong className="cifra-media">{hechos}</strong> <span className="tenue">{meta ? `de ${meta} días esta semana` : `${hechos === 1 ? 'día' : 'días'} esta semana`}</span></p>
+      <SemanaGym semana={estaSemana} meta={meta} enPagina />
       <MetaGym idGym={idGym} meta={metaDias} alCambiar={alCambiar} />
+      <PeriodoNavegable valor={ventana} alCambiar={alCambiarVentana} />
+      {porDia && <SemanaGym semana={circulos(r.desde)} meta={null} enPagina />}
+      {ventana.escala === 'mes' && <>
+        <Barras etiquetas={delMes.map(d => String(Number(d.fecha.slice(8, 10))))} series={seriesMes} leyenda={false}
+          dias={{ titulos: delMes.map(d => d.fecha.split('-').reverse().join('/')) }}
+          formato={v => `${Math.round(v)} ${Math.round(v) === 1 ? 'serie' : 'series'}`} formatoEje={v => `${v}`}
+          colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
+          descripcion={`Series de cada día de ${r.titulo}: ${delMes.filter(d => d.series).map(d => `${Number(d.fecha.slice(8, 10))} ${d.series}`).join(', ') || 'ninguna'}`} />
+        <p className="tenue">{diasDelMes} {diasDelMes === 1 ? 'día entrenado' : 'días entrenados'} en {r.titulo.split(' ')[0]}</p>
+      </>}
+      {ventana.escala === 'ano' && (
+        <Barras etiquetas={etiquetas} series={series} maximo={31} leyenda={false}
+          dias={{ titulos: grupos.map((g, i) => `${etiquetas[i]} ${g.desde.slice(0, 4)}`) }}
+          formato={v => `${Math.round(v)} ${Math.round(v) === 1 ? 'día' : 'días'}`} formatoEje={v => `${v}`}
+          colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
+          descripcion={`Días entrenados por mes (${r.titulo}): ${grupos.filter(g => !g.futuro).map((g, i) => `${etiquetas[i]} ${g.dias}`).join(', ')}`} />
+      )}
     </section>
   )
 }
@@ -477,7 +472,7 @@ function MetaGym({ idGym, meta, alCambiar }: { idGym: string; meta?: number; alC
     if (n !== null && !(Number.isInteger(n) && n >= 1 && n <= 7)) return setMensaje('Escribe un número de días entre 1 y 7.')
     try {
       await guardarMeta(idGym, n === null ? null : { valor: n, direccion: 'mas_es_mejor', periodo: 'semana' })
-      setMensaje(n === null ? 'Meta quitada: se compara con tu promedio.' : 'Meta guardada.')
+      setMensaje(n === null ? 'Meta quitada.' : 'Meta guardada.')
       await alCambiar()
     } catch (e) {
       setMensaje((e as Error).message)
@@ -491,7 +486,7 @@ function MetaGym({ idGym, meta, alCambiar }: { idGym: string; meta?: number; alC
       </button>
       {abierto && (
         <form className="formulario" onSubmit={guardar}>
-          <label>Días por semana (vacío para comparar con tu promedio)
+          <label>Días por semana (vacío para quitarla)
             <input inputMode="numeric" maxLength={1} value={valor} onChange={ev => setValor(ev.target.value)} placeholder="Ej. 4" />
           </label>
           <button className="principal">Guardar meta</button>
@@ -502,9 +497,7 @@ function MetaGym({ idGym, meta, alCambiar }: { idGym: string; meta?: number; alC
   )
 }
 
-function Progreso({ sesiones, ejercicios, ventana, alCambiarVentana }: {
-  sesiones: Sesion[]; ejercicios: string[]; ventana: Ventana; alCambiarVentana: (v: Ventana) => void
-}) {
+function Progreso({ sesiones, ejercicios, ventana }: { sesiones: Sesion[]; ejercicios: string[]; ventana: Ventana }) {
   const r = rangoDe(ventana.escala, ventana.ancla)
   const [elegido, setElegido] = useState('')
   const actual = ejercicios.includes(elegido) ? elegido : ejercicios[0]
@@ -515,17 +508,11 @@ function Progreso({ sesiones, ejercicios, ventana, alCambiarVentana }: {
   if (!actual || !p) return null
   return (
     <section>
-      <h2>¿Cómo voy en cada ejercicio?</h2>
+      <h2>¿Estoy progresando?</h2>
       <Selector id="filtro-ejercicio" titulo="Ejercicio" icono="🏋️" valor={actual} alCambiar={setElegido}>
         {ejercicios.map(e => <option key={e}>{e}</option>)}
       </Selector>
-      <ul className="lista">
-        {sesionesPorDia(sesiones, actual).map(d => (
-          <li key={d.fecha} className="dos"><span>{diaMes(d.fecha)}</span><span className="series-dia">{d.series.map(textoSerie).join(' · ')}</span></li>
-        ))}
-      </ul>
-      {p.record !== null && <p>Récord: <strong>{kg(p.record)}</strong>{p.desdePrimera !== null && <span className="tenue"> · desde la primera {conSigno(p.desdePrimera, 'kg')}</span>}</p>}
-      {diasConPeso > 1 && <PeriodoNavegable valor={ventana} alCambiar={alCambiarVentana} />}
+      {p.record !== null && <p>Récord <strong className="cifra-media">{kg(p.record)}</strong>{p.desdePrimera !== null && <span className="tenue"> · {conSigno(p.desdePrimera, 'kg')} desde la primera</span>}</p>}
       {puntos.length > 0 ? (
         <Grafico puntos={puntos} color={cssVar('--c1')} colorMeta={cssVar('--tenue')} formato={kg} destacados={records} desde={r.desde} hasta={r.hasta}
           descripcion={`Mayor peso de cada día en ${actual}; los puntos grandes son cada récord nuevo`} />

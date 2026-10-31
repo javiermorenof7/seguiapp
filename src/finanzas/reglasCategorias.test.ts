@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { puedeCrear, sugerirNuevas, yaExiste, type SinCategoria } from './reglasCategorias'
+import { CATEGORIAS_INICIALES, puedeCrear, sugerirNuevas, yaExiste, type SinCategoria } from './reglasCategorias'
+import { categoriaDe, normalizar } from './parseo'
 
 const hoy = '2026-10-29'
 const registros = (nota: string, fechas: string[]): SinCategoria[] =>
@@ -41,5 +42,25 @@ describe('sugerirNuevas', () => {
     const doce = Array.from({ length: 12 }, (_, i) => ({ nombre: `C${i}` }))
     expect(sugerirNuevas(registros('Veterinaria', cinco), doce, new Map(), 'gasto', hoy)).toEqual([])
     expect(sugerirNuevas(registros('Veterinaria', cinco), doce.slice(0, 4), new Map(), 'ingreso', hoy)).toHaveLength(1)
+  })
+})
+
+describe('categorías iniciales', () => {
+  const comoCategorias = CATEGORIAS_INICIALES.map((c, i) => ({ ...c, id_etiqueta: `c${i}` }))
+
+  it('caben en el tope, dejan cupo y no repiten nombre', () => {
+    expect(puedeCrear('gasto', CATEGORIAS_INICIALES.length)).toBe(true)
+    expect(new Set(CATEGORIAS_INICIALES.map(c => normalizar(c.nombre))).size).toBe(CATEGORIAS_INICIALES.length)
+  })
+
+  it('incluyen Hogar y Deudas, que usan Facturas y Deudas', () => {
+    expect(comoCategorias.some(c => normalizar(c.nombre).startsWith('hogar'))).toBe(true)
+    expect(comoCategorias.some(c => normalizar(c.nombre) === 'deudas')).toBe(true)
+  })
+
+  it('proponen categoría desde el primer gasto', () => {
+    expect(categoriaDe('almuerzo', new Map(), comoCategorias)?.nombre).toBe('Comida fuera')
+    expect(categoriaDe('Taxi al trabajo', new Map(), comoCategorias)?.nombre).toBe('Transporte')
+    expect(categoriaDe('droguería', new Map(), comoCategorias)?.nombre).toBe('Salud')
   })
 })

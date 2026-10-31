@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import Selector from '../Selector'
 import {
-  aprenderCategoria, crearEtiqueta, guardarPresupuesto, obtenerFinanzas, obtenerMetasAhorro, obtenerPrestamos, obtenerRecibos, obtenerRegistros, registrar, type RegistroGuardado, type Seguimiento,
+  aprenderCategoria, crearCategoriasIniciales, crearEtiqueta, guardarPresupuesto, obtenerFinanzas, obtenerMetasAhorro, obtenerPrestamos, obtenerRecibos, obtenerRegistros, registrar, type RegistroGuardado, type Seguimiento,
 } from '../datos'
 import { formatoValor } from '../indicadores'
 import { categoriaDe, leerMonto, leidoDe, MONTO_INVALIDO, normalizar, type Categoria } from './parseo'
@@ -182,6 +182,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
       alIrAFacturas={() => setPestana('recibos')}
       alIrADeudas={() => setPestana('deudas')}
       prestamos={prestamos}
+      alCrearIniciales={async () => { await crearCategoriasIniciales(idGastos!); await cargar() }}
       alGuardar={async (aprendio, mensaje) => {
         setRegistrado(mensaje); setRegistrando(null)
         await Promise.all([alCambiar(), aprendio ? cargar() : null])
@@ -360,7 +361,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
   )
 }
 
-function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe, presupuestos, inusual, alCerrar, alIrAFacturas, alIrADeudas, prestamos, alGuardar }: {
+function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe, presupuestos, inusual, alCerrar, alIrAFacturas, alIrADeudas, prestamos, alCrearIniciales, alGuardar }: {
   datos: Datos
   metas: MetaAhorro[]
   anteriores: Movimiento[]
@@ -373,6 +374,7 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe
   alIrAFacturas: () => void
   alIrADeudas: () => void
   prestamos: { nombre_entidad: string; nombre_prestamo: string | null }[]
+  alCrearIniciales: () => Promise<void>
   alGuardar: (aprendio: boolean, mensaje: string) => Promise<void>
 }) {
   const tipo = tipoInicial
@@ -500,7 +502,13 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe
           <fieldset>
             <legend>Categoría</legend>
             {datos.categorias.length === 0
-              ? <small className="ayuda">Aún no tienes categorías: se guarda sin categoría. Créalas en la pestaña Categorías y luego le pones una.</small>
+              ? <small className="ayuda">
+                  Aún no tienes categorías: se guarda sin categoría.{' '}
+                  <button type="button" className="enlace" disabled={enviando} onClick={async () => {
+                    setEnviando(true); setError('')
+                    try { await alCrearIniciales() } catch (err) { setError((err as Error).message) } finally { setEnviando(false) }
+                  }}>Crear las categorías básicas</button> (Hogar, Mercado, Transporte…) y eliges una.
+                </small>
               : !propuesta && <small className="ayuda">La aprendo para la próxima vez.</small>}
             <div className="chips">
               {datos.categorias.map(c => (

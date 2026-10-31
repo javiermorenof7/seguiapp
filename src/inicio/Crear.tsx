@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { activarPlantillas, crearSeguimiento, type Seguimiento } from '../datos'
+import { activarPlantillas, crearCategoriasIniciales, crearSeguimiento, type Seguimiento } from '../datos'
 import type { AccionFinanzas } from '../finanzas/Finanzas'
 import type { AccionTareas } from '../tareas/Tareas'
 import { INICIALES } from '../salud/Salud'
@@ -47,7 +47,10 @@ export async function activarModulos(modulos: Modulo[], seguimientos: Seguimient
     ...(modulos.includes('salud') ? INICIALES.map(i => ({ ...i, tipo_medida: 'numero' as const })) : []),
   ]
   const faltan = base.filter(b => !seguimientos.some(s => s.codigo_plantilla === b.codigo_plantilla && s.nombre === b.nombre))
-  await Promise.all(faltan.map(f => crearSeguimiento({ ...f, frecuencia: 'registro' }, null)))
+  const ids = await Promise.all(faltan.map(f => crearSeguimiento({ ...f, frecuencia: 'registro' }, null)))
+  // Gastos recién creado empieza con categorías para poder registrar desde el primer día
+  const idGastos = ids[faltan.findIndex(f => f.codigo_plantilla === 'finanzas' && f.nombre === 'Gastos')]
+  if (idGastos) await crearCategoriasIniciales(idGastos)
 }
 
 export function Crear({ activos, modulo, alElegir, alVolver }: {

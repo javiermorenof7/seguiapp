@@ -223,13 +223,15 @@ export default function Habitos({ seguimientos, registros, enfocar, alVolver, al
                         onClick={() => { setConfirmar(confirmar === h.id_seguimiento ? null : h.id_seguimiento); setRenombrando(null) }}>Quitar</button>
                     </span>
                     {renombrando?.id === h.id_seguimiento && (
-                      <form className="chips" onSubmit={ev => renombrar(ev, h)}>
+                      <form className="formulario corregir" onSubmit={ev => renombrar(ev, h)}>
                         <label>Nuevo nombre
                           <input required maxLength={60} value={renombrando.nombre} autoComplete="off"
                             onChange={ev => setRenombrando({ id: h.id_seguimiento, nombre: ev.target.value })} />
                         </label>
-                        <button className="chip">Guardar</button>
-                        <button type="button" className="chip" onClick={() => { setRenombrando(null); setError('') }}>Cancelar</button>
+                        <div className="chips">
+                          <button className="principal">Guardar</button>
+                          <button type="button" className="secundario" onClick={() => { setRenombrando(null); setError('') }}>Cancelar</button>
+                        </div>
                       </form>
                     )}
                     {confirmar === h.id_seguimiento && (

@@ -146,7 +146,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
     const movs = esAno ? todos.filter(m => m.fecha.startsWith(periodo)).map(m => ({ ...m, fecha: `${periodo}-01-01` })) : todos
     const meses = esAno ? (periodo === hoyIso().slice(0, 4) ? Number(hoyIso().slice(5, 7)) : 12) : 1
     const presupuestos = new Map(datos.presupuestos.map(p => [p.id_etiqueta, Number(p.valor) * meses]))
-    const pendientes = esAno ? [] : recibosPendientes(datos.recibos, datos.pagos, mes)
+    const pendientes = esAno ? [] : recibosPendientes(datos.recibos.filter(r => r.descuenta_saldo !== false), datos.pagos, mes)
     const idHogar = datos.categorias.find(c => normalizar(c.nombre).startsWith('hogar'))?.id_etiqueta ?? null
     const filas = porCategoria(movs, mes, datos.categorias, presupuestos, pendientes, idHogar)
     const delMes = resumenMes(movs, mes)
@@ -320,6 +320,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
                 <EnQueSeVa filas={cuentasVer.filas} alVer={() => setPestana('gastos')} />
                 <PorCategoria filas={cuentasVer.filas} alVer={() => setPestana('gastos')} />
                 {!esAno && idIngresos && <IngresosDelMes movimientos={todos} mes={mesVer} alVer={() => setPestana('ingresos')} />}
+                {idIngresos && <IngresosPorFuente movimientos={todos} mes={esAno ? finAno : mesVer} fuentes={datos.fuentes} alVer={() => setPestana('ingresos')} />}
                 {metasAhorro && <MetasDelMes metas={metasAhorro.metas}
                   ahorros={metasAhorro.ahorros.map(r => ({ fecha: r.fecha, valor: r.valor, tipo: 'ahorro' as const, id_etiqueta: r.id_etiqueta }))} alVer={() => setPestana('ahorro')} />}
                 {deudas && <DeudasHoy deudas={deudas} alVer={() => setPestana('deudas')} />}
@@ -699,6 +700,23 @@ function IngresosDelMes({ movimientos, mes, alVer }: { movimientos: Movimiento[]
   )
 }
 
+function IngresosPorFuente({ movimientos, mes, fuentes, alVer }: { movimientos: Movimiento[]; mes: string; fuentes: Categoria[]; alVer: () => void }) {
+  const fuente = useMemo(() => {
+    const r = porFuente(movimientos, mes)
+    const colores = ['--c1', '--c2', '--c3', '--c4', '--c5']
+    const nombre = (id: string | null) => fuentes.find(f => f.id_etiqueta === id)?.nombre ?? 'Sin fuente'
+    return { etiquetas: r.meses.map(nombreMes), series: r.series.map((x, i) => ({ nombre: nombre(x.id_etiqueta), datos: x.datos, color: cssVar(colores[i % colores.length]) })) }
+  }, [movimientos, mes, fuentes])
+  if (!fuente.series.length) return null
+  return (
+    <section>
+      <div className="bloque-pie"><h2>¿De dónde vienen mis ingresos?</h2>{ver(alVer)}</div>
+      <Barras etiquetas={fuente.etiquetas} series={fuente.series} formato={pesos} colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
+        descripcion="Ingresos de cada fuente en los últimos 6 meses" />
+    </section>
+  )
+}
+
 function MetasDelMes({ metas, ahorros, alVer }: { metas: MetaAhorro[]; ahorros: Movimiento[]; alVer: () => void }) {
   const hoy = hoyIso()
   if (!metas.length) return null
@@ -830,11 +848,6 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
   const hoy = hoyIso()
   const delMes = useMemo(() => fijos(movimientos, mes).map(f => ({ ...f, estado: estadoFijo(f, movimientos, hoy) })), [movimientos, mes, hoy])
   const recibido = useMemo(() => esperadoVsRecibido(movimientos, mes), [movimientos, mes])
-  const fuente = useMemo(() => {
-    const r = porFuente(movimientos, mes)
-    const colores = ['--c1', '--c2', '--c3', '--c4', '--c5']
-    return { etiquetas: r.meses.map(nombreMes), series: r.series.map((x, i) => ({ nombre: nombre(x.id_etiqueta), datos: x.datos, color: cssVar(colores[i % colores.length]) })) }
-  }, [movimientos, mes, fuentes])
 
   return (
     <>
@@ -863,13 +876,6 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
           </ul>
         ) : <p className="tenue">Un ingreso es fijo cuando llega de la misma fuente los últimos 3 meses con un monto parecido. Ponle fuente a tus ingresos para verlos aquí.</p>}
       </section>
-      {fuente.series.length > 0 && (
-        <section>
-          <h2>¿De dónde vienen mis ingresos?</h2>
-          <Barras etiquetas={fuente.etiquetas} series={fuente.series} formato={pesos} colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
-            descripcion="Ingresos de cada fuente en los últimos 6 meses" />
-        </section>
-      )}
       {recibido.some(m => m.esperado > 0) && (
         <section>
           <h2>¿Llegó lo esperado?</h2>

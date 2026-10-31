@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  anteriorDe, cambioPeso, comparar, fechasDeRecord, recordsSegunMeta, constancia, seriesPorDia, diasEntrenados, faltaParaMeta, estadoSemana, leerSerie, parecido, pesoPorDia, progreso, seriesDeUltima, sesionesPorDia, sugerencia, textoSerie, type Sesion,
+  anteriorDe, cambioPeso, coincidencias, comparar, fechasDeRecord, recordsSegunMeta, constancia, seriesPorDia, diasEntrenados, faltaParaMeta, estadoSemana, leerSerie, parecido, pesoPorDia, progreso, seriesDeUltima, sesionesPorDia, sugerencia, textoSerie, type Sesion,
 } from './calculos'
 
 const s = (fecha: string, ejercicio: string, series: number, repeticiones: number, peso: number | null): Sesion =>
@@ -52,6 +52,16 @@ describe('gym', () => {
     expect(parecido('press banca', conocidos)).toBeNull()
     expect(parecido('rem', conocidos)).toBeNull()
     expect(parecido('curl biceps', conocidos)).toBeNull()
+  })
+  it('coincidencias: sin mayúsculas ni tildes, primero las que empiezan y luego las más hechas', () => {
+    const conocidos = ['Remo con barra', 'Press militar', 'Press Banca', 'Elevación lateral', 'Curl']
+    const hechas = [{ fecha: '2026-10-01', ejercicio: 'Press Banca', series: 1, repeticiones: 8, peso: 60 }]
+    expect(coincidencias('PRESS', conocidos, hechas)).toEqual(['Press Banca', 'Press militar'])
+    expect(coincidencias('elevacion', conocidos, [])).toEqual(['Elevación lateral'])
+    expect(coincidencias('r', conocidos, [])).toEqual(['Remo con barra', 'Curl', 'Elevación lateral', 'Press Banca', 'Press militar'])
+    expect(coincidencias('press banca', conocidos, [])).toEqual([])
+    expect(coincidencias('  ', conocidos, [])).toEqual([])
+    expect(coincidencias('a', Array.from({ length: 9 }, (_, i) => `a${i}`), [])).toHaveLength(6)
   })
   it('progreso: últimas 5, récord y cambio desde la primera', () => {
     const p = progreso(sesiones, 'press banca')

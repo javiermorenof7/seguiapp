@@ -24,12 +24,14 @@ export default function CambiarNombre({ inicial, etiqueta = 'Nuevo nombre', maxi
   }
 
   return (
-    <form className="chips cambiar-nombre" onSubmit={guardar}>
+    <form className="formulario corregir" onSubmit={guardar}>
       <label>{etiqueta}
         <input required maxLength={maximo} value={texto} autoComplete="off" autoFocus onChange={ev => setTexto(ev.target.value)} />
       </label>
-      <button className="chip" disabled={enviando}>Guardar</button>
-      <button type="button" className="chip" onClick={alCancelar}>Cancelar</button>
+      <div className="chips">
+        <button className="principal" disabled={enviando}>Guardar</button>
+        <button type="button" className="secundario" onClick={alCancelar}>Cancelar</button>
+      </div>
       {error && <p role="alert" className="error">{error}</p>}
     </form>
   )

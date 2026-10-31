@@ -185,13 +185,7 @@ button:disabled { opacity: .6; cursor: default; }
 .mapa-semanas .mes { font-size: 11px; font-style: normal; color: var(--tenue); white-space: nowrap; align-self: end; }
 .mapa-semanas span.hoy, .leyenda-estado i.hoy { outline: 2px solid var(--tinta); outline-offset: 1px; }
 .lista li .chips { grid-column: 1 / -1; }
-.cambiar-nombre { align-items: center; }
-.cambiar-nombre label { flex: 1 1 260px; display: flex; align-items: center; gap: 8px; }
-.cambiar-nombre input { flex: 1; min-width: 0; }
 .lista li.ultimo > form.chips { grid-column: 1 / -1; justify-content: start; }
-.editar-serie { align-items: center; }
-.editar-serie label { display: flex; align-items: center; gap: 6px; }
-.editar-serie input { width: 6em; }
 
 /* Inicio por módulos */
 .tarjeta .datos { display: grid; gap: 4px; margin-top: 10px; overflow-wrap: anywhere; }
@@ -448,3 +442,58 @@ section:not([class]) + form.formulario { margin-top: 40px; }
 
 /* Resumen de Salud: cada medida con su cambio debajo del nombre */
 .lista li.medida-hoy > span:first-child .tenue { display: block; font-size: 14px; white-space: normal; }
+
+/* Facturas: tabla por lugar y servicio, cuadros y detalle con el número de pago */
+.tabla-recibos { overflow-x: auto; }
+.tabla-recibos table { display: block; width: 100%; border-collapse: collapse; }
+.tabla-recibos thead, .tabla-recibos tbody { display: grid; gap: 8px; }
+.tabla-recibos tbody { margin-top: 8px; }
+.tabla-recibos tr { display: grid; gap: 8px; align-items: center; grid-template-columns: minmax(120px, 1fr) repeat(var(--servicios), minmax(84px, 1fr)); }
+.tabla-recibos th { font-size: 14px; font-weight: 700; text-align: left; overflow-wrap: anywhere; }
+.tabla-recibos thead th { color: var(--tenue); text-align: center; font-weight: 600; }
+.tabla-recibos td { padding: 0; text-align: center; min-width: 0; }
+@media (max-width: 560px) {
+  .tabla-recibos tr { gap: 6px; grid-template-columns: repeat(var(--servicios), minmax(62px, 1fr)); }
+  .tabla-recibos thead th { font-size: 12px; overflow-wrap: normal; hyphens: auto; }
+  .tabla-recibos .celda-recibo { padding: 8px 2px; font-size: 13px; }
+  .tabla-recibos thead td { display: none; }
+  .tabla-recibos tbody th { grid-column: 1 / -1; margin-top: 4px; }
+}
+.cuadros-recibos { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+@media (max-width: 560px) { .cuadros-recibos { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.tabla-recibos td > .tenue { font-size: 20px; }
+.celda-recibo { display: grid; gap: 2px; justify-items: start; align-content: start; width: 100%; min-height: 48px; padding: 8px 10px; border-radius: 12px; font-size: 14px; text-align: left; overflow-wrap: anywhere; background: var(--linea); color: var(--tinta); }
+.tabla-recibos .celda-recibo { justify-items: center; text-align: center; }
+.celda-recibo.en-meta { background: var(--en-meta); color: var(--fondo); }
+.celda-recibo.cerca { background: var(--cerca); color: var(--fondo); }
+.celda-recibo.fuera { background: var(--fuera); color: var(--fondo); }
+.celda-recibo[aria-expanded="true"] { outline: 3px solid var(--tinta); outline-offset: 2px; }
+.detalle-recibo li.recibo { grid-template-columns: 1fr auto auto; }
+.detalle-recibo li.recibo > button { grid-column: 1 / -1; justify-self: start; }
+@media (max-width: 560px) { .detalle-recibo li.recibo { grid-template-columns: 1fr auto; } .detalle-recibo li.recibo > button { justify-self: stretch; } }
+.numero-pago { grid-column: 1 / -1; min-width: 0; }
+.numero-pago { display: grid; gap: 8px; justify-items: start; }
+.numero-pago .etiqueta { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--tenue); }
+.numero-pago label, .numero-pago input { width: 100%; }
+.copiar-numero { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 8px 16px; border: 1px solid var(--linea); border-radius: 12px; background: transparent; color: var(--tinta); font-size: 18px; text-align: left; overflow-wrap: anywhere; }
+.copiar-numero strong { flex: none; font-size: 14px; }
+.vencidas-anteriores > summary { cursor: pointer; font-weight: 700; color: var(--fuera); min-height: 44px; display: flex; align-items: center; gap: 8px; }
+.vencidas-anteriores > summary::before { content: '▸'; }
+.vencidas-anteriores[open] > summary::before { content: '▾'; }
+.lista li .mes-gasto { grid-column: 1 / -1; }
+.mes-gasto > .tenue { flex-basis: 100%; }
+
+/* Base de todo campo: las clases de cada pantalla la pueden ajustar. 16 px evita el zoom al tocar en iPhone. */
+:where(input:not([type="checkbox"], [type="radio"]), select, textarea) {
+  font: inherit; font-size: max(16px, 1em); color: var(--tinta); background: var(--fondo); border: 1px solid var(--linea);
+  border-radius: 12px; padding: 10px 12px; min-height: 44px; min-width: 0; max-width: 100%;
+}
+.lista li > form.formulario { grid-column: 1 / -1; width: 100%; }
+.formulario .campos label { min-width: 0; font-size: 14px; }
+/* Enlaces de acción dentro del contenido: el dedo necesita 44 px; el pie de página queda como está. */
+section .enlace, form .enlace, li .enlace { display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; }
+.formulario input, .formulario select, .formulario textarea, .fila-presupuesto input, .fila-presupuesto select { font-size: max(16px, 1em); min-height: 44px; }
+.mas > summary { display: flex; align-items: center; min-height: 44px; }
+.lista li.recibo:has(> form.corregir), .lista li.ultimo:has(> form.corregir) { display: grid; }
+.formulario { grid-template-columns: minmax(0, 1fr); }
+.lista li.dos > span:first-child { min-width: 0; overflow-wrap: anywhere; }

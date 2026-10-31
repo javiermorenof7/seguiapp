@@ -63,6 +63,19 @@ export function parecido(nombre: string, conocidos: string[]): string | null {
 }
 
 // Últimas 5 sesiones, récord y cambio desde la primera con peso.
+// Los nombres que contienen lo escrito: primero los que empiezan así, luego los más hechos. Sin el que ya está escrito completo.
+export function coincidencias(texto: string, conocidos: string[], sesiones: Sesion[], maximo = 6) {
+  const n = normalizar(texto)
+  if (!n) return []
+  const veces = new Map<string, number>()
+  for (const s of sesiones) veces.set(s.ejercicio, (veces.get(s.ejercicio) ?? 0) + 1)
+  const empieza = (c: string) => normalizar(c).startsWith(n) ? 0 : 1
+  return conocidos
+    .filter(c => normalizar(c) !== n && normalizar(c).includes(n))
+    .sort((a, b) => empieza(a) - empieza(b) || (veces.get(b) ?? 0) - (veces.get(a) ?? 0) || a.localeCompare(b))
+    .slice(0, maximo)
+}
+
 export function progreso(sesiones: Sesion[], ejercicio: string) {
   const suyas = sesiones.filter(s => s.ejercicio === ejercicio).sort(masReciente)
   const conPeso = suyas.filter(s => s.peso !== null).map(s => s.peso!)

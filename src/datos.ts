@@ -196,7 +196,7 @@ export async function obtenerFinanzas(idGastos: string, desdePagos: string, idIn
     supabase.from('meta').select('id_meta, id_etiqueta, valor')
       .eq('id_seguimiento', idGastos).eq('estado', 'activo').not('id_etiqueta', 'is', null),
     supabase.from('alias').select('texto_escrito, texto_correcto').eq('tipo', 'categoria').eq('estado', 'activo'),
-    supabase.from('recibo').select('id_recibo, nombre_servicio, nombre_ubicacion, tipo_recibo').eq('estado', 'activo'),
+    supabase.from('recibo').select('id_recibo, nombre_servicio, nombre_ubicacion, tipo_recibo, descuenta_saldo').eq('estado', 'activo'),
     supabase.from('pago_recibo').select('id_recibo, fecha_periodo, valor, estado').gte('fecha_periodo', desdePagos),
     supabase.from('pago_recibo').select('id_registro').not('id_registro', 'is', null),
     supabase.from('movimiento_prestamo').select('id_registro').not('id_registro', 'is', null),
@@ -395,7 +395,7 @@ export async function quitarSuscripcion(endpoint: string) {
 // Recibos activos (número siempre enmascarado) y sus pagos del último año, para el día aprendido y el gráfico.
 export async function obtenerRecibos(desde: string) {
   const [recibos, pagos] = await Promise.all([
-    supabase.from('recibo_visible').select('id_recibo, nombre_servicio, nombre_ubicacion, tipo_recibo, dia_pago, numero_cuenta_enmascarado, requiere_numero_pago, estado')
+    supabase.from('recibo_visible').select('id_recibo, nombre_servicio, nombre_ubicacion, tipo_recibo, dia_pago, numero_cuenta_enmascarado, requiere_numero_pago, descuenta_saldo, estado')
       .in('estado', ['activo', 'no_se_paga']).order('nombre_servicio'),
     supabase.from('pago_recibo').select('id_pago_recibo, id_recibo, id_registro, fecha_periodo, valor, fecha_pago, estado')
       .gte('fecha_periodo', desde),
@@ -428,7 +428,7 @@ export async function cambiarEstadoRecibo(idRecibo: string, estado: 'activo' | '
   revisar(await supabase.from('recibo').update({ estado }).eq('id_recibo', idRecibo))
 }
 
-// "No se pagó ese mes": cierra el período sin gasto para que no vuelva a salir.
+// "No se paga este mes": cierra el período sin gasto para que no vuelva a salir.
 export async function marcarSinPago(idRecibo: string, fechaPeriodo: string) {
   revisar(await supabase.from('pago_recibo').upsert({ id_recibo: idRecibo, fecha_periodo: fechaPeriodo, valor: 0, estado: 'cancelado' },
     { onConflict: 'id_usuario,id_recibo,fecha_periodo' }))
@@ -437,7 +437,7 @@ export async function marcarSinPago(idRecibo: string, fechaPeriodo: string) {
 // Sin número nuevo se conserva el que tenía (la pantalla solo conoce el enmascarado).
 export async function editarRecibo(idRecibo: string, cambios: {
   nombre_servicio: string; nombre_ubicacion: string | null; tipo_recibo: 'hogar' | 'personal'; dia_pago: number | null
-  requiere_numero_pago: boolean; numero_cuenta?: string
+  requiere_numero_pago: boolean; descuenta_saldo: boolean; numero_cuenta?: string
 }) {
   const { error } = await supabase.from('recibo').update(cambios).eq('id_recibo', idRecibo)
   if (error?.code === '23505') throw new ErrorDatos('Ya tienes una factura con ese servicio y ubicación.')
@@ -449,19 +449,23 @@ export async function quitarRecibo(idRecibo: string) {
   revisar(await supabase.from('recibo').update({ estado: 'eliminado' }).eq('id_recibo', idRecibo))
 }
 
-// Crea el gasto y marca el período pagado; si el pago falla, quita el gasto para no contarlo sin recibo.
+// Crea el gasto (si la factura descuenta del saldo) y marca el período pagado; si el pago falla, quita el gasto para no contarlo sin recibo.
 // shortcut: dos llamadas sin transacción y sin cola; pasar a una función SQL si un fallo entre las dos llega a dejar huérfanos.
 export async function pagarRecibo(pago: {
   id_recibo: string; fecha_periodo: string; valor: number; fecha_pago: string; dia_pago: number | null
-  gasto: { id_seguimiento: string; id_etiqueta: string | null; grupo: 'basico' | null; nota: string }
+  // fecha: a qué día va el gasto; fecha_pago es cuándo se pagó
+  gasto: { id_seguimiento: string; id_etiqueta: string | null; grupo: 'basico' | null; nota: string; fecha: string } | null
 }) {
-  const id_registro = crypto.randomUUID()
-  revisar(await supabase.from('registro').insert({ ...pago.gasto, id_registro, fecha_registro: pago.fecha_pago, valor: pago.valor }))
+  const id_registro = pago.gasto ? crypto.randomUUID() : null
+  if (pago.gasto) {
+    const { fecha, ...gasto } = pago.gasto
+    revisar(await supabase.from('registro').insert({ ...gasto, id_registro, fecha_registro: fecha, valor: pago.valor }))
+  }
   const { error } = await supabase.from('pago_recibo').upsert({
     id_recibo: pago.id_recibo, fecha_periodo: pago.fecha_periodo, valor: pago.valor, fecha_pago: pago.fecha_pago, estado: 'pagado', id_registro,
   }, { onConflict: 'id_usuario,id_recibo,fecha_periodo' })
   if (error) {
-    await eliminarRegistro(id_registro).catch(() => {})
+    if (id_registro) await eliminarRegistro(id_registro).catch(() => {})
     revisar({ data: null, error })
   }
   if (pago.dia_pago) await supabase.from('recibo').update({ dia_pago: pago.dia_pago }).eq('id_recibo', pago.id_recibo)

@@ -18,24 +18,24 @@ export const QUE_MIDE: Record<Modulo, string> = {
   finanzas: 'Gastos, ingresos, ahorro, presupuestos y facturas.',
   salud: 'Gym, peso y medidas.',
   habitos: 'Lo que haces cada día, con rachas.',
-  tareas: 'Pendientes con fecha y recordatorios.',
+  tareas: 'Tareas con fecha y recordatorios.',
 }
 const OPCIONES: Record<Modulo, { texto: string; ejemplo: string; destino: Destino }[]> = {
   finanzas: [
     { texto: 'Gasto', ejemplo: '35 mil almuerzo', destino: { tipo: 'finanzas', abrir: 'gasto' } },
     { texto: 'Ingreso', ejemplo: 'sueldo, ventas', destino: { tipo: 'finanzas', abrir: 'ingreso' } },
-    { texto: 'Ahorro', ejemplo: 'lo que guardas este mes', destino: { tipo: 'finanzas', abrir: 'ahorro' } },
-    { texto: 'Presupuesto', ejemplo: 'tope por categoría', destino: { tipo: 'finanzas', abrir: 'presupuesto' } },
-    { texto: 'Factura', ejemplo: 'luz, agua, internet', destino: { tipo: 'finanzas', abrir: 'factura' } },
+    { texto: 'Ahorro', ejemplo: 'libre o para una meta', destino: { tipo: 'finanzas', abrir: 'ahorro' } },
+    { texto: 'Presupuesto', ejemplo: 'tope al mes por categoría', destino: { tipo: 'finanzas', abrir: 'presupuesto' } },
+    { texto: 'Factura nueva', ejemplo: 'luz, agua, internet', destino: { tipo: 'finanzas', abrir: 'factura' } },
   ],
   salud: [
-    { texto: 'Ejercicio', ejemplo: 'press banca 4x10 60', destino: { tipo: 'salud', abrir: 'ejercicio' } },
+    { texto: 'Ejercicio', ejemplo: 'press banca, con series y peso', destino: { tipo: 'salud', abrir: 'ejercicio' } },
     { texto: 'Medida', ejemplo: 'peso, cintura o la que quieras', destino: { tipo: 'salud', abrir: 'medida' } },
   ],
   habitos: [{ texto: 'Hábito', ejemplo: 'agua 2 litros', destino: { tipo: 'habitos', enfocar: true } }],
   tareas: [
-    { texto: 'Tarea', ejemplo: 'pagar el arriendo el viernes', destino: { tipo: 'tareas', abrir: 'tarea' } },
-    { texto: 'Recordatorio', ejemplo: 'pastilla cada día a las 8', destino: { tipo: 'tareas', abrir: 'recordatorio' } },
+    { texto: 'Tarea', ejemplo: 'llamar al banco el viernes', destino: { tipo: 'tareas', abrir: 'tarea' } },
+    { texto: 'Recordatorio', ejemplo: 'pastilla cada día a las 8; te avisa', destino: { tipo: 'tareas', abrir: 'recordatorio' } },
   ],
 }
 
@@ -62,7 +62,7 @@ export function Crear({ activos, modulo, alElegir, alVolver }: {
       <button className="volver" onClick={elegido && !modulo && activos.length > 1 ? () => setElegido(undefined) : alVolver}>
         ← {elegido && !modulo && activos.length > 1 ? 'Otro módulo' : 'Mi seguimiento'}
       </button>
-      <header className="encabezado"><div><h1>{elegido ? NOMBRE[elegido] : '¿Qué quieres registrar?'}</h1></div></header>
+      <header className="encabezado"><div><h1>{elegido ? NOMBRE[elegido] : '¿Qué quieres agregar?'}</h1></div></header>
       <div className="opciones">
         {!elegido && activos.map(m => (
           <button key={m} className={`opcion ${COLOR[m]}`} onClick={() => setElegido(m)}>

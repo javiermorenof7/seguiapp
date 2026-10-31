@@ -8,6 +8,20 @@ export type TipoCategoria = 'gasto' | 'ingreso' | 'ahorro'
 export const TOPE: Record<TipoCategoria, number> = { gasto: 12, ingreso: 5, ahorro: 6 }
 export const puedeCrear = (tipo: TipoCategoria, cuantas: number) => cuantas < TOPE[tipo]
 
+// Las de Gastos con que empieza una persona nueva, con palabras clave para proponerlas desde el primer gasto.
+// Hogar y Deudas las usan Facturas y Deudas; quedan cupos libres para las que la persona cree.
+export const CATEGORIAS_INICIALES: { nombre: string; grupo: 'basico' | 'personal'; palabras_clave: string[] }[] = [
+  { nombre: 'Hogar', grupo: 'basico', palabras_clave: ['arriendo', 'luz', 'agua', 'gas', 'internet', 'administracion', 'aseo'] },
+  { nombre: 'Mercado', grupo: 'basico', palabras_clave: ['mercado', 'supermercado', 'tienda', 'fruver', 'carniceria', 'panaderia'] },
+  { nombre: 'Transporte', grupo: 'basico', palabras_clave: ['taxi', 'uber', 'bus', 'transmilenio', 'metro', 'gasolina', 'parqueadero', 'peaje'] },
+  { nombre: 'Salud', grupo: 'basico', palabras_clave: ['farmacia', 'drogueria', 'medico', 'cita', 'eps', 'medicamentos'] },
+  { nombre: 'Deudas', grupo: 'basico', palabras_clave: ['cuota', 'tarjeta', 'credito', 'prestamo'] },
+  { nombre: 'Comida fuera', grupo: 'personal', palabras_clave: ['almuerzo', 'desayuno', 'cena', 'restaurante', 'domicilio', 'cafe', 'onces'] },
+  { nombre: 'Entretenimiento', grupo: 'personal', palabras_clave: ['cine', 'netflix', 'spotify', 'salida', 'fiesta', 'concierto'] },
+  { nombre: 'Compras', grupo: 'personal', palabras_clave: ['ropa', 'zapatos', 'regalo', 'celular'] },
+  { nombre: 'Otros', grupo: 'personal', palabras_clave: [] },
+]
+
 export const yaExiste = (nombre: string, categorias: { nombre: string }[]) =>
   categorias.some(c => normalizar(c.nombre) === normalizar(nombre))
 

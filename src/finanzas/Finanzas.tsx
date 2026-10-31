@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import Selector from '../Selector'
 import {
-  aprenderCategoria, crearEtiqueta, guardarPresupuesto, obtenerFinanzas, obtenerMetasAhorro, obtenerPrestamos, obtenerRecibos, obtenerRegistros, registrar, type RegistroGuardado, type Seguimiento,
+  aprenderCategoria, crearCategoriasIniciales, crearEtiqueta, guardarPresupuesto, obtenerFinanzas, obtenerMetasAhorro, obtenerPrestamos, obtenerRecibos, obtenerRegistros, registrar, type RegistroGuardado, type Seguimiento,
 } from '../datos'
 import { formatoValor } from '../indicadores'
 import { categoriaDe, leerMonto, leidoDe, MONTO_INVALIDO, normalizar, type Categoria } from './parseo'
@@ -182,6 +182,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
       alIrAFacturas={() => setPestana('recibos')}
       alIrADeudas={() => setPestana('deudas')}
       prestamos={prestamos}
+      alCrearIniciales={async () => { await crearCategoriasIniciales(idGastos!); await cargar() }}
       alGuardar={async (aprendio, mensaje) => {
         setRegistrado(mensaje); setRegistrando(null)
         await Promise.all([alCambiar(), aprendio ? cargar() : null])
@@ -360,7 +361,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
   )
 }
 
-function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe, presupuestos, inusual, alCerrar, alIrAFacturas, alIrADeudas, prestamos, alGuardar }: {
+function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe, presupuestos, inusual, alCerrar, alIrAFacturas, alIrADeudas, prestamos, alCrearIniciales, alGuardar }: {
   datos: Datos
   metas: MetaAhorro[]
   anteriores: Movimiento[]
@@ -373,6 +374,7 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe
   alIrAFacturas: () => void
   alIrADeudas: () => void
   prestamos: { nombre_entidad: string; nombre_prestamo: string | null }[]
+  alCrearIniciales: () => Promise<void>
   alGuardar: (aprendio: boolean, mensaje: string) => Promise<void>
 }) {
   const tipo = tipoInicial
@@ -413,7 +415,8 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe
     if (leido.descripcion.length > MAX_DESCRIPCION) return setError(`La descripción admite hasta ${MAX_DESCRIPCION} letras.`)
     if (!fecha || fecha > hoyIso()) return setError('Elige una fecha de hoy o anterior.')
     if (!idSeguimiento) return setError(`No encuentro tu seguimiento de ${NOMBRES[tipo]}.`)
-    if (tipo === 'gasto' && !categoria) return setError('Elige en qué categoría va.')
+    // sin categorías creadas (persona nueva) el gasto se guarda sin categoría y se le pone después
+    if (tipo === 'gasto' && !categoria && datos.categorias.length > 0) return setError('Elige en qué categoría va.')
     const repetido = posibleRepetido(anteriores, { tipo, fecha, valor: leido.valor, descripcion: leido.descripcion })
     if (repetido && !confirm(`Ya registraste "${repetido.nota}" por ${pesos(repetido.valor)} el ${repetido.fecha.split('-').reverse().join('/')}. ¿Guardarlo igual?`)) return
     setEnviando(true)
@@ -432,13 +435,13 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe
       let mensaje = resultado === 'guardado'
         ? `${TEXTO[tipo]} registrado: ${pesos(leido.valor)}${fuente ? ` ${tipo === 'gasto' ? 'en' : 'de'} ${fuente.nombre}` : ''}.`
         : 'Sin conexión: quedó guardado en este equipo y se enviará al volver la conexión.'
-      if (tipo === 'gasto') {
-        const presupuesto = presupuestos.get(categoria!.id_etiqueta) ?? null
-        const total = gastadoDe(categoria!.id_etiqueta) + leido.valor
+      if (tipo === 'gasto' && categoria) {
+        const presupuesto = presupuestos.get(categoria.id_etiqueta) ?? null
+        const total = gastadoDe(categoria.id_etiqueta) + leido.valor
         const e = estadoPresupuesto(total, presupuesto)
-        const raro = inusual({ valor: leido.valor, descripcion: leido.descripcion, id_etiqueta: categoria!.id_etiqueta })
-        if (raro) mensaje += ` Ojo: es más del doble de lo normal (${pesos(raro.promedio)} en promedio ${raro.base === 'descripcion' ? `en "${leido.descripcion}"` : `en ${categoria!.nombre}`}).`
-        if (e) mensaje += ` ${TEXTO_PRESUPUESTO[e]} del presupuesto de ${categoria!.nombre}: ${pesos(total)} de ${pesos(presupuesto!)}.`
+        const raro = inusual({ valor: leido.valor, descripcion: leido.descripcion, id_etiqueta: categoria.id_etiqueta })
+        if (raro) mensaje += ` Ojo: es más del doble de lo normal (${pesos(raro.promedio)} en promedio ${raro.base === 'descripcion' ? `en "${leido.descripcion}"` : `en ${categoria.nombre}`}).`
+        if (e) mensaje += ` ${TEXTO_PRESUPUESTO[e]} del presupuesto de ${categoria.nombre}: ${pesos(total)} de ${pesos(presupuesto!)}.`
       }
       const meta = tipo === 'ahorro' ? metas.find(m => m.id_etiqueta === idMeta) : undefined
       await alGuardar(aprende || !!idFuenteNueva, meta ? `${mensaje} Va a la meta ${meta.nombre}.` : mensaje)
@@ -498,7 +501,15 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe
         <>
           <fieldset>
             <legend>Categoría</legend>
-            {!propuesta && <small className="ayuda">La aprendo para la próxima vez.</small>}
+            {datos.categorias.length === 0
+              ? <small className="ayuda">
+                  Aún no tienes categorías: se guarda sin categoría.{' '}
+                  <button type="button" className="enlace" disabled={enviando} onClick={async () => {
+                    setEnviando(true); setError('')
+                    try { await alCrearIniciales() } catch (err) { setError((err as Error).message) } finally { setEnviando(false) }
+                  }}>Crear las categorías básicas</button> (Hogar, Mercado, Transporte…) y eliges una.
+                </small>
+              : !propuesta && <small className="ayuda">La aprendo para la próxima vez.</small>}
             <div className="chips">
               {datos.categorias.map(c => (
                 <button key={c.id_etiqueta} type="button" role="radio" aria-checked={categoria?.id_etiqueta === c.id_etiqueta}

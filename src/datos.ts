@@ -2,6 +2,7 @@ import { supabase } from './supabase'
 import { encolar, pendientes, quitar, vaciar } from './cola'
 import type { Frecuencia, Meta, Registro, TipoMedida } from './indicadores'
 import type { Categoria } from './finanzas/parseo'
+import { CATEGORIAS_INICIALES } from './finanzas/reglasCategorias'
 import type { PagoRecibo, Recibo } from './finanzas/calculos'
 import type { PagoGuardado, ReciboVisible } from './finanzas/estadoRecibos'
 import type { MovimientoPrestamo, Prestamo } from './finanzas/prestamos'
@@ -584,6 +585,12 @@ export async function editarCategoria(idEtiqueta: string, viejo: string, cambios
   revisar({ data: null, error })
   if (cambios.nombre !== viejo)
     revisar(await supabase.from('alias').update({ texto_correcto: cambios.nombre }).eq('tipo', 'categoria').eq('texto_correcto', viejo))
+}
+
+// Las categorías iniciales de Gastos; las que ya existan (aunque se hayan quitado) no se tocan.
+export async function crearCategoriasIniciales(idGastos: string) {
+  revisar(await supabase.from('etiqueta')
+    .upsert(CATEGORIAS_INICIALES.map(c => ({ ...c, id_seguimiento: idGastos })), { onConflict: 'id_seguimiento,nombre', ignoreDuplicates: true }))
 }
 
 // Borrado lógico: sus registros pasan a la categoría elegida (o quedan sin categoría); montos y fechas no se tocan.

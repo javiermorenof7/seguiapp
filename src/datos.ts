@@ -412,7 +412,7 @@ export async function verNumeroCuenta(idRecibo: string): Promise<string | null> 
 // Si ya existe en pausa o quitada, la vuelve a usar con el estado pedido en vez de fallar.
 export async function crearRecibo(datos: {
   nombre_servicio: string; tipo_recibo: 'hogar' | 'personal'; nombre_ubicacion: string | null; numero_cuenta: string | null; requiere_numero_pago: boolean
-  estado: 'activo' | 'no_se_paga'
+  descuenta_saldo: boolean; estado: 'activo' | 'no_se_paga'
 }) {
   const { error, data } = await supabase.from('recibo').insert(datos).select('id_recibo').single()
   if (error?.code !== '23505') return revisar({ data, error }).id_recibo as string
@@ -443,6 +443,19 @@ export async function editarRecibo(idRecibo: string, cambios: {
   const { error } = await supabase.from('recibo').update(cambios).eq('id_recibo', idRecibo)
   if (error?.code === '23505') throw new ErrorDatos('Ya tienes una factura con ese servicio y ubicación.')
   revisar({ data: null, error })
+}
+
+// Gastos vigentes que la factura creó al pagarse, para ofrecer quitarlos cuando deja de descontar.
+export async function gastosDeRecibo(idRecibo: string) {
+  const pagos = revisar(await supabase.from('pago_recibo').select('id_registro').eq('id_recibo', idRecibo).not('id_registro', 'is', null))
+  if (!pagos.length) return []
+  return revisar(await supabase.from('registro').select('id_registro, valor')
+    .in('id_registro', pagos.map(p => p.id_registro)).eq('estado', 'activo')) as { id_registro: string; valor: number }[]
+}
+
+// Quita esos gastos (borrado lógico); los pagos de la factura quedan como pagados.
+export async function quitarGastos(ids: string[]) {
+  revisar(await supabase.from('registro').update({ estado: 'eliminado' }).in('id_registro', ids))
 }
 
 // Borrado lógico: conserva su historial de pagos.

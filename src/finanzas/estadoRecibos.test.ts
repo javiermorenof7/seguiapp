@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { avanceDelMes, diaAprendido, mosaicoRecibos, finDeMes, numeroParaCopiar, recibosDelMes, totalesDelMes, ubicacionDe, ubicacionesConConteo, ubicacionesDe, vencidasAnteriores, vencidasPorFactura, type FilaRecibo, type PagoGuardado, type ReciboVisible } from './estadoRecibos'
+import { avanceDelMes, diaAprendido, mosaicoRecibos, finDeMes, numeroParaCopiar, recibosDelMes, totalesDelMes, ubicacionDe, ubicacionParecida, ubicacionesConConteo, ubicacionesDe, vencidasAnteriores, vencidasPorFactura, type FilaRecibo, type PagoGuardado, type ReciboVisible } from './estadoRecibos'
 
 const r = (id: string, extra: Partial<ReciboVisible> = {}): ReciboVisible => ({
   id_recibo: id, nombre_servicio: id, nombre_ubicacion: null, tipo_recibo: 'personal', dia_pago: null, numero_cuenta_enmascarado: null, ...extra,
@@ -124,6 +124,20 @@ it('no aprende el día de los pagos cargados de la hoja (pago = inicio del perí
   const cargado = { ...p('a', '2026-08', 1), fecha_pago: '2026-08-01' }
   expect(diaAprendido([cargado, { ...p('a', '2026-09', 1), fecha_pago: '2026-09-01' }])).toBeNull()
   expect(recibosDelMes([r('a', { dia_pago: 20 })], [p('a', '2026-09', 1, 5)], '2026-10-15')[0]).toMatchObject({ dia: 20, estado: 'por_pagar' })
+})
+
+describe('ubicacionParecida', () => {
+  const usadas = ['Casa', 'La Mesa', 'Apartamento']
+  it('reconoce la misma ubicación escrita distinto o con un error', () => {
+    expect(ubicacionParecida('casa', usadas)).toBe('Casa')
+    expect(ubicacionParecida('la mesá', usadas)).toBe('La Mesa')
+    expect(ubicacionParecida('Apartameto', usadas)).toBe('Apartamento')
+  })
+  it('no pregunta por la misma ni por una nueva', () => {
+    expect(ubicacionParecida('Casa', usadas)).toBeNull()
+    expect(ubicacionParecida('Finca', usadas)).toBeNull()
+    expect(ubicacionParecida('Casa', [])).toBeNull()
+  })
 })
 
 describe('ubicaciones del filtro', () => {

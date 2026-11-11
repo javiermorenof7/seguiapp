@@ -1,6 +1,7 @@
 // Cuentas de la pestaña Recibos. "mes" es 'AAAA-MM'; "hoy" es 'AAAA-MM-DD'.
 import { mesesAntes, recibosPendientes, type PagoRecibo, type Recibo } from './calculos'
 import { normalizar } from './parseo'
+import { parecido } from '../salud/calculos'
 
 export interface ReciboVisible extends Recibo {
   dia_pago: number | null; numero_cuenta_enmascarado: string | null; estado?: 'activo' | 'no_se_paga'; requiere_numero_pago?: boolean; descuenta_saldo?: boolean
@@ -17,6 +18,15 @@ export const nombreRecibo = (r: Recibo) => r.nombre_ubicacion ? `${r.nombre_serv
 export const ubicacionDe = (r: Recibo) => r.nombre_ubicacion ?? 'Personal'
 export const ubicacionesDe = (recibos: Recibo[]) => [...new Set(recibos.map(ubicacionDe))]
   .sort((a, b) => Number(a === 'Personal') - Number(b === 'Personal') || a.localeCompare(b, 'es'))
+
+// La ubicación ya usada a la que se parece lo escrito ("casa" o "Csa" → "Casa"); null si es la misma o es nueva.
+export function ubicacionParecida(escrita: string, existentes: string[]): string | null {
+  const n = normalizar(escrita)
+  const igual = existentes.find(u => normalizar(u) === n)
+  if (igual) return igual === escrita ? null : igual
+  const cerca = parecido(n, existentes.map(normalizar))
+  return existentes.find(u => normalizar(u) === cerca) ?? null
+}
 
 // Para el selector: primero las que tienen facturas en el grupo que se ve, después las que no.
 export function ubicacionesConConteo(todas: Recibo[], delGrupo: Recibo[]) {

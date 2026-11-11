@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import Selector from '../Selector'
 import {
-  aprenderNombre, crearEjercicio, crearMedida, crearSeguimiento, eliminarRegistro, guardarMeta, obtenerSalud, quitarEjercicio, quitarSeguimiento, registrar, registrarSerie, renombrarEjercicio, editarMedida, corregirSerie,
+  aprenderNombre, crearEjercicio, crearMedida, crearSeguimiento, eliminarRegistro, guardarMeta, obtenerSalud, quitarEjercicio, quitarSeguimiento, registrar, registrarSeries, renombrarEjercicio, editarMedida, corregirSerie,
   type RegistroGuardado, type Seguimiento,
 } from '../datos'
 import { formatoValor, type Direccion } from '../indicadores'
@@ -14,8 +14,8 @@ import Barras from '../finanzas/Barras'
 import CambiarNombre from '../CambiarNombre'
 import { normalizar } from '../finanzas/parseo'
 import {
-  cambioPeso, coincidencias, comparar, conSigno, constancia, faltaParaMeta, fechasDeRecord, recordsSegunMeta, indicesRecord, kg, leerSerie, parecido, pesoPorDia,
-  progreso, restarDias, seriesDeUltima, textoSerie,
+  cambioPeso, coincidencias, comparar, conPaso, conSigno, constancia, faltaParaMeta, fechasDeRecord, recordsSegunMeta, indicesRecord, kg, leerSerie, parecido, pesoPorDia,
+  progreso, restarDias, seriesDeUltima, textoSerie, textoSeries,
   type Sesion,
 } from './calculos'
 
@@ -102,6 +102,7 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
 }) {
   // el Resumen abre en la semana actual; la pestaña Gym, en el mes
   const [ventana, setVentana] = useState<Ventana>(() => vista === 'resumen' ? { escala: 'semana', ancla: hoyIso() } : ventanaInicial())
+  const todo = rangoCarga(ventana) === 0
   const registros = useRegistrosDe(idGym, rangoCarga(ventana), delAno) as RegistroGuardado[]
   const hoy = hoyIso()
   const [datos, setDatos] = useState<Datos | null>(null)
@@ -113,17 +114,19 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
   const [aviso, setAviso] = useState('')
   const [abierto, setAbierto] = useState(!!enfocar)
   const [editando, setEditando] = useState<string | null>(null)
+  const [grupoAbierto, setGrupoAbierto] = useState<string | null>(null)
   const [renombrando, setRenombrando] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
 
   const cargar = useCallback(async () => {
     try {
-      setDatos(await obtenerSalud(idGym, '2000-01-01'))
+      // las series acompañan a los registros cargados: el último año (con margen) o todo el historial al mirar más atrás
+      setDatos(await obtenerSalud(idGym, todo ? '2000-01-01' : restarDias(hoyIso(), 370)))
     } catch (e) {
       setError((e as Error).message)
     }
-  }, [idGym])
+  }, [idGym, todo])
   useEffect(() => { cargar() }, [cargar])
 
   const sesiones = useMemo<Sesion[]>(() => {
@@ -187,7 +190,7 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
       const existente = datos.ejercicios.find(e => e.nombre === nombre)
       const idEtiqueta = existente?.id_etiqueta ?? await crearEjercicio(idGym, nombre)
       const antes = pesoPorDia(sesiones, nombre).filter(p => p.fecha < hoy).pop()
-      for (const x of lista) await registrarSerie({ id_seguimiento: idGym, id_etiqueta: idEtiqueta, fecha: hoy, series: x.series, repeticiones: x.repeticiones, peso: x.peso })
+      await registrarSeries({ id_seguimiento: idGym, id_etiqueta: idEtiqueta, fecha: hoy }, lista)
       const hechas = lista.reduce((t, x) => t + x.series, 0)
       const pesos = lista.flatMap(x => x.peso === null ? [] : [x.peso])
       const maximo = pesos.length ? Math.max(...pesos) : null
@@ -257,25 +260,49 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
   )
   const nombres = datos.nombres
   const deSerie = new Map(datos.series.map(x => [x.id_registro, x]))
-  const ultimos = registros.filter(r => deSerie.has(r.id_registro)).slice(0, 6)
+  // un renglón por ejercicio y día (los 6 más recientes); sus series se abren para editarlas o borrarlas
+  const grupos = new Map<string, { fecha: string; ejercicio: string; series: { id: string; series: number; repeticiones: number; peso: number | null }[] }>()
+  for (const r of registros) {
+    const x = deSerie.get(r.id_registro)
+    if (!x) continue
+    const clave = `${r.fecha}|${r.id_etiqueta}`
+    if (!grupos.has(clave)) grupos.set(clave, { fecha: r.fecha, ejercicio: nombres.get(r.id_etiqueta ?? '') ?? 'Ejercicio', series: [] })
+    // llegan de la más reciente a la más antigua: al frente para leerlas en el orden en que se hicieron
+    grupos.get(clave)!.series.unshift({ id: r.id_registro, series: x.cantidad_series, repeticiones: x.cantidad_repeticiones, peso: x.peso_kilogramos === null ? null : Number(x.peso_kilogramos) })
+  }
+  const ultimos = [...grupos].slice(0, 6)
   const loUltimo = ultimos.length > 0 && (
     <section>
       <h2>Lo último que registraste</h2>
       <ul className="lista">
-        {ultimos.map(r => {
-          const x = deSerie.get(r.id_registro)!
-          const actual = { ejercicio: nombres.get(r.id_etiqueta ?? '') ?? 'Ejercicio', series: x.cantidad_series, repeticiones: x.cantidad_repeticiones,
-            peso: x.peso_kilogramos === null ? null : Number(x.peso_kilogramos) }
-          return (
-            <FilaSimple key={r.id_registro} fecha={r.fecha} titulo={actual.ejercicio} detalle={textoSerie(actual)}
-              alBorrar={() => eliminarRegistro(r.id_registro).then(alCambiar)} sinAcciones={editando === r.id_registro} alEditar={() => setEditando(r.id_registro)}>
-              {editando === r.id_registro && (
-                <EditarSerie actual={actual} alCancelar={() => setEditando(null)}
-                  alGuardar={async s => { await corregirSerie(r.id_registro, s); setEditando(null); await Promise.all([cargar(), alCambiar()]) }} />
-              )}
-            </FilaSimple>
-          )
-        })}
+        {ultimos.map(([clave, g]) => (
+          <li key={clave} className="ultimo grupo-gym">
+            <span>{g.fecha.split('-').reverse().join('/')}</span>
+            <strong>{g.ejercicio}</strong>
+            <span className="tenue">{textoSeries(g.series)}</span>
+            <span className="chips">
+              <button className="secundario" aria-expanded={grupoAbierto === clave} onClick={() => { setGrupoAbierto(grupoAbierto === clave ? null : clave); setEditando(null) }}>
+                {grupoAbierto === clave ? 'Cerrar' : 'Editar'}
+              </button>
+            </span>
+            {grupoAbierto === clave && (
+              <ul className="lista series-del-grupo">
+                {g.series.map((s, i) => {
+                  const actual = { ejercicio: g.ejercicio, series: s.series, repeticiones: s.repeticiones, peso: s.peso }
+                  return (
+                    <FilaSimple key={s.id} fecha="" titulo={`Fila ${i + 1}`} detalle={textoSerie(actual)}
+                      alBorrar={() => eliminarRegistro(s.id).then(alCambiar)} sinAcciones={editando === s.id} alEditar={() => setEditando(s.id)}>
+                      {editando === s.id && (
+                        <EditarSerie actual={actual} alCancelar={() => setEditando(null)}
+                          alGuardar={async nueva => { await corregirSerie(s.id, nueva); setEditando(null); await Promise.all([cargar(), alCambiar()]) }} />
+                      )}
+                    </FilaSimple>
+                  )
+                })}
+              </ul>
+            )}
+          </li>
+        ))}
       </ul>
     </section>
   )
@@ -304,7 +331,20 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
       </section>
       <section>
         <button className="principal registrar-uno" onClick={() => setAbierto(true)}>+ Registrar ejercicio</button>
+        {frecuentes.length > 0 && (
+          <div className="sugeridos repetir-gym">
+            <span className="tenue">Igual que la última vez (se guarda con un toque)</span>
+            <div className="chips">
+              {frecuentes.map(f => {
+                const previas = seriesDeUltima(sesiones, f.ejercicio)
+                return <button key={f.ejercicio} type="button" className="chip" disabled={enviando}
+                  onClick={() => guardar(f.ejercicio, previas.map(p => ({ ejercicio: f.ejercicio, ...p })))}>{f.ejercicio} · {textoSeries(previas)}</button>
+              })}
+            </div>
+          </div>
+        )}
         {aviso && <p role="status" className="aviso">{aviso}</p>}
+        {error && <p role="alert" className="error">{error}</p>}
       </section>
       {loUltimo}
       {misEjercicios}
@@ -342,25 +382,25 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
           <legend>Series</legend>
           {filas.map((f, i) => (
             <div key={i} className="serie-fila">
-              <label>Series
+              <Pasos titulo="Series" que={`series de la fila ${i + 1}`} alSumar={paso => cambiarFila(i, { series: conPaso(f.series, paso, 1) })}>
                 <input required inputMode="numeric" maxLength={3} value={f.series} aria-label={`Cuántas series iguales en la fila ${i + 1}`}
                   onChange={ev => cambiarFila(i, { series: ev.target.value })} />
-              </label>
-              <label>Peso (kg)
-                <input inputMode="decimal" maxLength={8} value={f.peso} placeholder="Vacío = tu cuerpo" aria-label={`Peso de la fila ${i + 1}`}
+              </Pasos>
+              <Pasos titulo="Peso (kg)" que={`peso de la fila ${i + 1}`} alSumar={paso => cambiarFila(i, { peso: conPaso(f.peso, paso * 2.5, 0) })}>
+                <input inputMode="decimal" maxLength={8} value={f.peso} placeholder="Tu cuerpo" aria-label={`Peso de la fila ${i + 1}`}
                   onChange={ev => cambiarFila(i, { peso: ev.target.value })} />
-              </label>
-              <label>Repeticiones
+              </Pasos>
+              <Pasos titulo="Repeticiones" que={`repeticiones de la fila ${i + 1}`} alSumar={paso => cambiarFila(i, { repeticiones: conPaso(f.repeticiones, paso, 1) })}>
                 <input required inputMode="numeric" maxLength={4} value={f.repeticiones} placeholder="Reps" aria-label={`Repeticiones de la fila ${i + 1}`}
                   onChange={ev => cambiarFila(i, { repeticiones: ev.target.value })} />
-              </label>
+              </Pasos>
               {filas.length > 1 && <button type="button" className="quitar" aria-label={`Quitar la fila ${i + 1}`}
                 onClick={() => { autollenadas.current = false; setFilas(filas.filter((_, j) => j !== i)); setPregunta(null) }}>✕</button>}
             </div>
           ))}
           <button type="button" className="secundario" disabled={filas.length >= 30}
             onClick={() => { autollenadas.current = false; setFilas([...filas, { ...filas[filas.length - 1], series: '1' }]); setPregunta(null) }}>+ Serie distinta</button>
-          <small className="ayuda">Si todas salieron iguales, una sola fila: 4 series, 60 kg, 10 reps. Si alguna varió, "+ Serie distinta" copia la anterior para que cambies solo eso.</small>
+          <small className="ayuda">Si todas salieron iguales, una sola fila: 4 series, 60 kg, 10 reps. Si alguna varió, "+ Serie distinta" copia la anterior para que cambies solo eso. Con − y + el peso va de 2,5 en 2,5; vacío es con tu cuerpo.</small>
         </fieldset>
         {pregunta ? (
           <div className="chips" role="group" aria-label="¿Quisiste decir…?">
@@ -377,6 +417,20 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
       {loUltimo}
       {misEjercicios}
     </>
+  )
+}
+
+// Un campo de la fila con − y + a los lados, para no abrir el teclado en el gimnasio.
+function Pasos({ titulo, que, alSumar, children }: { titulo: string; que: string; alSumar: (paso: 1 | -1) => void; children: ReactNode }) {
+  return (
+    <div className="campo-pasos">
+      <span aria-hidden="true">{titulo}</span>
+      <div className="pasos">
+        <button type="button" aria-label={`Menos ${que}`} onClick={() => alSumar(-1)}>−</button>
+        {children}
+        <button type="button" aria-label={`Más ${que}`} onClick={() => alSumar(1)}>+</button>
+      </div>
+    </div>
   )
 }
 

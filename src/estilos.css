@@ -111,6 +111,8 @@ button:disabled { opacity: .6; cursor: default; }
 .politica p, .politica li { line-height: 1.6; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+/* la pregunta (o el campo que se abre) ocupa su propio renglón y las opciones quedan juntas debajo */
+.chips > .linea { flex-basis: 100%; }
 .chip { background: transparent; color: var(--tinta); padding: 8px 14px; border-radius: 999px; border: 1px solid var(--linea); }
 .chip[aria-checked="true"] { background: var(--acento); border-color: var(--acento); color: #FFFFFF; font-weight: 700; }
 .formulario legend { font-weight: 600; padding: 0 6px; }
@@ -425,17 +427,19 @@ section:not([class]) + form.formulario { margin-top: 40px; }
 .lista li.categoria > .confirmar-quitar { grid-column: 1 / -1; grid-row: 3; }
 .lista li.categoria > .confirmar-quitar { max-width: 520px; }
 
-/* Gym: una fila por serie (número, peso, repeticiones, quitar) */
+/* Gym: una fila por grupo de series iguales (series y peso arriba, repeticiones y quitar abajo), cada campo con − y + */
 .series-gym { display: grid; gap: 10px; }
-.serie-fila { display: grid; grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr) 44px; gap: 8px; align-items: end; }
-.serie-fila label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; }
-.serie-fila .quitar { min-height: 44px; background: none; color: var(--tenue); border-radius: 999px; }
-.serie-fila:not(:has(.quitar)) { grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr); }
+.serie-fila { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: end; }
+.serie-fila + .serie-fila { border-top: 1px solid var(--linea); padding-top: 10px; }
+.campo-pasos { display: grid; gap: 4px; font-size: 13px; font-weight: 600; }
+.pasos { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 4px; }
+.pasos button { min-height: 44px; padding: 0; background: transparent; color: var(--tinta); border: 1px solid var(--linea); border-radius: 12px; font-size: 1.25rem; font-weight: 700; }
+.pasos input { font-size: 1rem; text-align: center; padding-inline: 4px; }
+.serie-fila .quitar { min-height: 44px; min-width: 44px; justify-self: end; background: none; color: var(--tenue); border-radius: 999px; }
+.repetir-gym { margin-top: 14px; }
+.lista li.grupo-gym > .series-del-grupo { grid-column: 1 / -1; margin: 0; padding: 0; }
 .series-gym > .secundario { justify-self: start; }
 .series-dia { text-align: right; }
-/* títulos solo en la primera serie; las demás quedan como filas de una tabla (los campos conservan su aria-label) */
-.serie-fila ~ .serie-fila label { font-size: 0; gap: 0; }
-.serie-fila label input { font-size: 1rem; }
 .pregunta-grafico { margin: 16px 0 4px; font-size: 1rem; }
 
 /* Resumen de Salud: cada medida con su cambio debajo del nombre */

@@ -19,8 +19,8 @@ export const ubicacionDe = (r: Recibo) => r.nombre_ubicacion ?? 'Personal'
 export const ubicacionesDe = (recibos: Recibo[]) => [...new Set(recibos.map(ubicacionDe))]
   .sort((a, b) => Number(a === 'Personal') - Number(b === 'Personal') || a.localeCompare(b, 'es'))
 
-// La ubicación ya usada a la que se parece lo escrito ("casa" o "Csa" → "Casa"); null si es la misma o es nueva.
-export function ubicacionParecida(escrita: string, existentes: string[]): string | null {
+// El servicio o la ubicación ya usados a los que se parece lo escrito ("casa" o "Csa" → "Casa"); null si es el mismo o es nuevo.
+export function parecidoExistente(escrita: string, existentes: string[]): string | null {
   const n = normalizar(escrita)
   const igual = existentes.find(u => normalizar(u) === n)
   if (igual) return igual === escrita ? null : igual

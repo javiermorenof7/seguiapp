@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  anteriorDe, cambioPeso, coincidencias, comparar, fechasDeRecord, recordsSegunMeta, constancia, seriesPorDia, diasEntrenados, faltaParaMeta, estadoSemana, leerSerie, parecido, pesoPorDia, progreso, seriesDeUltima, sesionesPorDia, sugerencia, textoSerie, type Sesion,
+  anteriorDe, cambioPeso, coincidencias, comparar, fechasDeRecord, recordsSegunMeta, constancia, seriesPorDia, diasEntrenados, faltaParaMeta, estadoSemana, leerSerie, conPaso, textoSeries, parecido, pesoPorDia, progreso, seriesDeUltima, sesionesPorDia, sugerencia, textoSerie, type Sesion,
 } from './calculos'
 
 const s = (fecha: string, ejercicio: string, series: number, repeticiones: number, peso: number | null): Sesion =>
@@ -136,6 +136,21 @@ describe('series individuales', () => {
     const alterna = [ses('2026-11-03', 1, 10, 60), ses('2026-11-03', 1, 8, 65), ses('2026-11-03', 1, 10, 60)]
     expect(seriesDeUltima(alterna, 'press banca')).toHaveLength(3)
     expect(seriesDeUltima(sesiones, 'sentadilla')).toEqual([])
+  })
+
+  it('suma y resta con los botones sin bajar del mínimo', () => {
+    expect(conPaso('60', 2.5, 0)).toBe('62,5')
+    expect(conPaso('62,5', -2.5, 0)).toBe('60')
+    expect(conPaso('', 2.5, 0)).toBe('2,5')
+    expect(conPaso('2,5', -2.5, 0)).toBe('')
+    expect(conPaso('1', -1, 1)).toBe('1')
+    expect(conPaso('', 1, 1)).toBe('1')
+  })
+
+  it('resume las series de un ejercicio en un renglón', () => {
+    expect(textoSeries([{ series: 1, repeticiones: 10, peso: 25 }, { series: 1, repeticiones: 10, peso: 47.5 }])).toBe('25, 47,5 kg × 10')
+    expect(textoSeries([{ series: 4, repeticiones: 10, peso: 60 }])).toBe('4 × 10 · 60 kg')
+    expect(textoSeries([{ series: 3, repeticiones: 10, peso: 60 }, { series: 1, repeticiones: 8, peso: 65 }])).toBe('3 × 10 · 60 kg, 65 kg × 8')
   })
 
   it('escribe cada serie como en el gimnasio', () => {

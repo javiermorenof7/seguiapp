@@ -101,10 +101,16 @@ export function sesionesPorDia(sesiones: Sesion[], ejercicio: string, n = 3) {
   return [...dias].slice(0, n).map(([fecha, lista]) => ({ fecha, series: [...lista].reverse() }))
 }
 
-// La última sesión serie por serie, para precargar el formulario (las viejas "4 × 10" se abren en 4 series iguales).
+// La última sesión para precargar el formulario: las series seguidas iguales van juntas en una fila ("4 × 10 · 60 kg").
 export function seriesDeUltima(sesiones: Sesion[], ejercicio: string) {
   const [dia] = sesionesPorDia(sesiones, ejercicio, 1)
-  return dia ? dia.series.flatMap(s => Array.from({ length: s.series }, () => ({ repeticiones: s.repeticiones, peso: s.peso }))) : []
+  const filas: { series: number; repeticiones: number; peso: number | null }[] = []
+  for (const s of dia?.series ?? []) {
+    const ultima = filas[filas.length - 1]
+    if (ultima && ultima.repeticiones === s.repeticiones && ultima.peso === s.peso) ultima.series += s.series
+    else filas.push({ series: s.series, repeticiones: s.repeticiones, peso: s.peso })
+  }
+  return filas
 }
 
 // Mayor peso de cada día en un ejercicio desde una fecha.

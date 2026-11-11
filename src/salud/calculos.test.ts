@@ -126,9 +126,15 @@ describe('series individuales', () => {
     expect(dias[0].series.map(s => s.peso)).toEqual([60, 65, 70])
   })
 
-  it('precarga la última sesión serie por serie y abre las viejas', () => {
-    expect(seriesDeUltima(sesiones, 'press banca')).toEqual([{ repeticiones: 10, peso: 60 }, { repeticiones: 8, peso: 65 }, { repeticiones: 6, peso: 70 }])
-    expect(seriesDeUltima(sesiones.slice(3), 'press banca')).toHaveLength(4)
+  it('precarga la última sesión juntando las series seguidas iguales', () => {
+    expect(seriesDeUltima(sesiones, 'press banca')).toEqual([{ series: 1, repeticiones: 10, peso: 60 }, { series: 1, repeticiones: 8, peso: 65 }, { series: 1, repeticiones: 6, peso: 70 }])
+    expect(seriesDeUltima(sesiones.slice(3), 'press banca')).toEqual([{ series: 4, repeticiones: 10, peso: 60 }])
+    // tres iguales guardadas una por una y una distinta al final: dos filas
+    const mixta = [ses('2026-11-02', 1, 8, 65), ses('2026-11-02', 1, 10, 60), ses('2026-11-02', 2, 10, 60)]
+    expect(seriesDeUltima(mixta, 'press banca')).toEqual([{ series: 3, repeticiones: 10, peso: 60 }, { series: 1, repeticiones: 8, peso: 65 }])
+    // iguales pero no seguidas no se juntan: el orden en que se hicieron se conserva
+    const alterna = [ses('2026-11-03', 1, 10, 60), ses('2026-11-03', 1, 8, 65), ses('2026-11-03', 1, 10, 60)]
+    expect(seriesDeUltima(alterna, 'press banca')).toHaveLength(3)
     expect(seriesDeUltima(sesiones, 'sentadilla')).toEqual([])
   })
 

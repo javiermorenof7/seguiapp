@@ -427,17 +427,15 @@ section:not([class]) + form.formulario { margin-top: 40px; }
 
 /* Gym: una fila por serie (número, peso, repeticiones, quitar) */
 .series-gym { display: grid; gap: 10px; }
-.serie-fila { display: grid; grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr) 44px; gap: 8px; align-items: end; }
+.serie-fila { display: grid; grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr) 44px; gap: 8px; align-items: end; }
 .serie-fila label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; }
-.numero-serie { display: grid; place-items: center; height: 44px; font-weight: 700; color: var(--tenue); }
 .serie-fila .quitar { min-height: 44px; background: none; color: var(--tenue); border-radius: 999px; }
-.serie-fila:not(:has(.quitar)) { grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr); }
+.serie-fila:not(:has(.quitar)) { grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr); }
 .series-gym > .secundario { justify-self: start; }
 .series-dia { text-align: right; }
 /* títulos solo en la primera serie; las demás quedan como filas de una tabla (los campos conservan su aria-label) */
 .serie-fila ~ .serie-fila label { font-size: 0; gap: 0; }
 .serie-fila label input { font-size: 1rem; }
-.serie-fila ~ .serie-fila .numero-serie { height: 44px; }
 .pregunta-grafico { margin: 16px 0 4px; font-size: 1rem; }
 
 /* Resumen de Salud: cada medida con su cambio debajo del nombre */

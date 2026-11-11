@@ -96,6 +96,9 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
   const [tipoHistorial, setTipoHistorial] = useState(idGastos ?? '')
   // el Historial muestra primero lo registrado a mano; "Ver" de los automáticos lo abre con todo
   const [origenHistorial, setOrigenHistorial] = useState('manual')
+  // la categoría y el período (mes o año) con que el Resumen abre el Historial
+  const [categoriaHistorial, setCategoriaHistorial] = useState('')
+  const [periodoHistorial, setPeriodoHistorial] = useState('')
 
   const cargar = useCallback(async () => {
     if (!idGastos) return
@@ -220,12 +223,14 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
       </div>
       {datos && pestana === 'historial' && (
         <Historial
-          key={`${tipoHistorial}-${origenHistorial}`}
+          key={`${tipoHistorial}-${origenHistorial}-${categoriaHistorial}-${periodoHistorial}`}
+          escalaInicial={periodoHistorial.length === 4 ? 'ano' : 'mes'}
+          anclaInicial={periodoHistorial ? `${periodoHistorial}${periodoHistorial.length === 4 ? '-01' : ''}-01` : undefined}
           ids={(['gasto', 'ingreso', 'ahorro'] as const).flatMap(t => id(t) ?? [])}
           registros={registros}
           filtros={[
             { nombre: 'Tipo', inicial: tipoHistorial, opciones: (['gasto', 'ingreso', 'ahorro'] as const).flatMap(t => id(t) ? [[id(t)!, NOMBRES[t]] as [string, string]] : []), de: r => r.id_seguimiento },
-            { nombre: 'Categoría o fuente', opciones: [...datos.categorias, ...datos.fuentes].map(c => [c.id_etiqueta, c.nombre] as [string, string]), de: r => r.id_etiqueta ?? '' },
+            { nombre: 'Categoría o fuente', inicial: categoriaHistorial, opciones: [...datos.categorias, ...datos.fuentes].map(c => [c.id_etiqueta, c.nombre] as [string, string]), de: r => r.id_etiqueta ?? '' },
             { nombre: 'Origen', inicial: origenHistorial, opciones: [['factura', 'Facturas'], ['prestamo', 'Préstamos'], ['manual', 'A mano']], de: r => datos.origenes.get(r.id_registro) ?? 'manual' },
           ]}
           buscar={r => r.nota ?? ''}
@@ -278,6 +283,9 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
         const nombre = esAno ? `todo ${ano}` : nombreMesLargo(mesVer)
         const reparto = esAno ? todos.filter(m => m.fecha.startsWith(ano)).map(m => ({ ...m, fecha: `${ano}-01-01` })) : todos
         const sinNada = !cuentasVer.delMes.ingresos && !cuentasVer.delMes.gastos && !cuentasVer.delMes.ahorro
+        const verCategoria = (idEtiqueta: string) => {
+          setTipoHistorial(idGastos ?? ''); setOrigenHistorial(''); setCategoriaHistorial(idEtiqueta); setPeriodoHistorial(mesVer); setPestana('historial')
+        }
         const atajos: [string, string][] = [[mes, 'Este mes'], [mesesAntes(mes, 1), 'Mes pasado'], [anoActual, 'Este año'], [String(Number(anoActual) - 1), 'Año pasado']]
         return (
           <>
@@ -318,8 +326,8 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
               <>
                 <Resumen cuentas={cuentasVer} acumulado={acumuladoAno(todos, esAno ? finAno : mesVer)} alVerRecibos={() => setPestana('recibos')} />
                 {!esAno && facturasVer && <FacturasDelMes totales={facturasVer} alVer={() => setPestana('recibos')} />}
-                <EnQueSeVa filas={cuentasVer.filas} alVer={() => setPestana('gastos')} />
-                <PorCategoria filas={cuentasVer.filas} alVer={() => setPestana('gastos')} />
+                <EnQueSeVa filas={cuentasVer.filas} alVer={() => setPestana('gastos')} alVerCategoria={verCategoria} />
+                <PorCategoria filas={cuentasVer.filas} alVer={() => setPestana('gastos')} alVerCategoria={verCategoria} />
                 {!esAno && idIngresos && <IngresosDelMes movimientos={todos} mes={mesVer} alVer={() => setPestana('ingresos')} />}
                 {idIngresos && <IngresosPorFuente movimientos={todos} mes={esAno ? finAno : mesVer} fuentes={datos.fuentes} alVer={() => setPestana('ingresos')} />}
                 {metasAhorro && <MetasDelMes metas={metasAhorro.metas}
@@ -342,7 +350,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
             categorias={datos.categorias}
             origenes={datos.origenes}
             mes={mes}
-            alVerTodos={(idTipo, origen) => { setTipoHistorial(idTipo || idGastos); setOrigenHistorial(origen); setPestana('historial') }}
+            alVerTodos={(idTipo, origen) => { setTipoHistorial(idTipo || idGastos); setOrigenHistorial(origen); setCategoriaHistorial(''); setPeriodoHistorial(''); setPestana('historial') }}
             alCambiar={async () => { await Promise.all([alCambiar(), cargar()]) }}
           />
           <Presupuestos
@@ -629,11 +637,11 @@ function Resumen({ cuentas, acumulado, alVerRecibos }: { cuentas: Cuentas; acumu
 // Las 5 categorías con más gasto del mes y el resto en "Otras".
 // Barra con tope: lo gastado encima de la pista gris del presupuesto, de mayor a menor.
 const COLORES_DONA = ['--c1', '--c2', '--c3', '--c4', '--c5', '--tenue']
-function EnQueSeVa({ filas, alVer }: { filas: ReturnType<typeof porCategoria>; alVer: () => void }) {
+function EnQueSeVa({ filas, alVer, alVerCategoria }: { filas: ReturnType<typeof porCategoria>; alVer: () => void; alVerCategoria: (idEtiqueta: string) => void }) {
   const porciones = useMemo(() => {
     const conGasto = filas.filter(f => f.gastado > 0).sort((a, b) => b.gastado - a.gastado)
     const otras = conGasto.slice(5).reduce((t, f) => t + f.gastado, 0)
-    return [...conGasto.slice(0, 5).map(f => ({ nombre: f.nombre, valor: f.gastado })), ...(otras ? [{ nombre: 'Otras', valor: otras }] : [])]
+    return [...conGasto.slice(0, 5).map(f => ({ nombre: f.nombre, valor: f.gastado, id: f.id_etiqueta ?? '' })), ...(otras ? [{ nombre: 'Otras', valor: otras }] : [])]
       .map((p, i) => ({ ...p, color: cssVar(COLORES_DONA[i]) }))
   }, [filas])
   const total = porciones.reduce((t, p) => t + p.valor, 0)
@@ -641,13 +649,13 @@ function EnQueSeVa({ filas, alVer }: { filas: ReturnType<typeof porCategoria>; a
   return (
     <section>
       <div className="bloque-pie"><h2>¿En qué se me va la plata?</h2>{ver(alVer)}</div>
-      <Dona porciones={porciones} total={total} formato={pesos} colorFondo={cssVar('--fondo')}
+      <Dona porciones={porciones} total={total} formato={pesos} colorFondo={cssVar('--fondo')} alElegir={p => alVerCategoria(p.id ?? '')}
         descripcion={`Gasto del mes por categoría: ${porciones.map(p => `${p.nombre} ${pesos(p.valor)}`).join(', ')}`} />
     </section>
   )
 }
 
-function PorCategoria({ filas, alVer }: { filas: ReturnType<typeof porCategoria>; alVer: () => void }) {
+function PorCategoria({ filas, alVer, alVerCategoria }: { filas: ReturnType<typeof porCategoria>; alVer: () => void; alVerCategoria: (idEtiqueta: string) => void }) {
   const color = (e: EstadoPresupuesto, conPresupuesto: boolean) =>
     cssVar(e === 'pasado' ? '--fuera' : e === 'cerca' ? '--cerca' : conPresupuesto ? '--en-meta' : '--tenue')
   const conGasto = useMemo(() => filas.filter(f => f.gastado || f.presupuesto).sort((a, b) => b.gastado - a.gastado), [filas])
@@ -668,7 +676,7 @@ function PorCategoria({ filas, alVer }: { filas: ReturnType<typeof porCategoria>
           const e = estadoPresupuesto(f.gastado, f.presupuesto)
           return (
             <li key={f.id_etiqueta ?? 'sin'} className="tres">
-              <span>{f.nombre}</span>
+              <span><button type="button" className="enlace" title="Ver estos gastos" onClick={() => alVerCategoria(f.id_etiqueta ?? '')}>{f.nombre}</button></span>
               <strong>{pesos(f.gastado)}{f.presupuesto ? <span className="tenue"> de {pesos(f.presupuesto)}</span> : null}</strong>
               {e ? <span className={`estado ${e === 'pasado' ? 'fuera' : 'cerca'}`}>{TEXTO_PRESUPUESTO[e]}</span>
                 : f.presupuesto ? <span className="estado en-meta">✓ Dentro</span> : <span className="tenue">Sin presupuesto</span>}

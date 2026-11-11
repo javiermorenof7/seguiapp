@@ -3,11 +3,12 @@ import { ArcElement, Chart, DoughnutController, Tooltip } from 'chart.js'
 
 Chart.register(DoughnutController, ArcElement, Tooltip)
 
-export interface Porcion { nombre: string; valor: number; color: string }
+export interface Porcion { nombre: string; valor: number; color: string; id?: string }
 
 // Dona de "¿en qué se va?": la lista al lado repite cada porción con su monto y %, así no depende solo del color.
-export default function Dona({ porciones, total, formato, descripcion, colorFondo }: {
+export default function Dona({ porciones, total, formato, descripcion, colorFondo, alElegir }: {
   porciones: Porcion[]; total: number; formato: (valor: number) => string; descripcion: string; colorFondo: string
+  alElegir?: (porcion: Porcion) => void
 }) {
   const lienzo = useRef<HTMLCanvasElement>(null)
 
@@ -37,14 +38,21 @@ export default function Dona({ porciones, total, formato, descripcion, colorFond
         <p className="dona-centro"><span className="tenue">Gastado</span><strong>{formato(total)}</strong></p>
       </div>
       <ul className="dona-leyenda">
-        {porciones.map(p => (
-          <li key={p.nombre}>
-            <span className="muestra" style={{ background: p.color }} aria-hidden="true" />
-            <span>{p.nombre}</span>
-            <strong>{formato(p.valor)}</strong>
-            <span className="tenue">{Math.round((p.valor / total) * 100)} %</span>
-          </li>
-        ))}
+        {porciones.map(p => {
+          const fila = (
+            <>
+              <span className="muestra" style={{ background: p.color }} aria-hidden="true" />
+              <span>{p.nombre}</span>
+              <strong>{formato(p.valor)}</strong>
+              <span className="tenue">{Math.round((p.valor / total) * 100)} %</span>
+            </>
+          )
+          return (
+            <li key={p.nombre}>
+              {alElegir ? <button type="button" title="Ver estos gastos" onClick={() => alElegir(p)}>{fila}<span aria-hidden="true">›</span></button> : fila}
+            </li>
+          )
+        })}
       </ul>
     </div>
   )

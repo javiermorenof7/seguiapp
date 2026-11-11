@@ -39,7 +39,7 @@ const diasDelMes = (fecha: string) => new Date(Date.UTC(Number(fecha.slice(0, 4)
 // Un ícono por lo que filtra; los demás llevan la etiqueta.
 const ICONOS: Record<string, string> = { Tipo: '🗂️', 'Categoría o fuente': '🏷️', Origen: '✍️', Ejercicio: '🏋️', Hábito: '🎯' }
 
-export default function Historial({ ids, registros, filtros, buscar, suma, formato = v => Number.isInteger(v) ? String(v) : '', total, fila, vista }: {
+export default function Historial({ ids, registros, filtros, buscar, suma, formato = v => Number.isInteger(v) ? String(v) : '', total, fila, vista, escalaInicial = 'mes', anclaInicial }: {
   ids: string[]
   registros: RegistroGuardado[]
   filtros: Filtro[]
@@ -49,10 +49,13 @@ export default function Historial({ ids, registros, filtros, buscar, suma, forma
   total: (lista: RegistroGuardado[]) => string
   fila: (r: RegistroGuardado) => ReactNode
   vista?: (elegidos: Record<string, string>) => Vista
+  // para abrir en un período que no es el actual
+  escalaInicial?: Escala
+  anclaInicial?: string
 }) {
   const hoy = hoyIso()
-  const [escala, setEscala] = useState<Escala>('mes')
-  const [ancla, setAncla] = useState(hoy)
+  const [escala, setEscala] = useState<Escala>(escalaInicial)
+  const [ancla, setAncla] = useState(anclaInicial ?? hoy)
   const [elegidos, setElegidos] = useState<Record<string, string>>(() => Object.fromEntries(filtros.map(f => [f.nombre, f.inicial ?? ''])))
   const [texto, setTexto] = useState('')
   const [antiguos, setAntiguos] = useState<{ desde: string; registros: RegistroGuardado[] } | null>(null)

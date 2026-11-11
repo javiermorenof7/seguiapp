@@ -478,30 +478,12 @@ export async function pagarRecibo(pago: {
   // fecha: a qué día va el gasto; fecha_pago es cuándo se pagó
   gasto: { id_seguimiento: string; id_etiqueta: string | null; grupo: 'basico' | null; nota: string; fecha: string } | null
 }) {
-  const { error: fallo } = await supabase.rpc('pagar_recibo', {
+  revisar(await supabase.rpc('pagar_recibo', {
     p_id_recibo: pago.id_recibo, p_fecha_periodo: pago.fecha_periodo, p_valor: pago.valor, p_fecha_pago: pago.fecha_pago,
     ...(pago.gasto && {
       p_id_seguimiento: pago.gasto.id_seguimiento, p_id_etiqueta: pago.gasto.id_etiqueta, p_grupo: pago.gasto.grupo, p_nota: pago.gasto.nota, p_fecha_gasto: pago.gasto.fecha,
     }),
-  })
-  // shortcut: si la base aún no tiene la función (PGRST202) sigue con las dos llamadas de antes; quitar este respaldo cuando la migración esté aplicada.
-  if (fallo?.code !== 'PGRST202') {
-    revisar({ data: null, error: fallo })
-    if (pago.dia_pago) await supabase.from('recibo').update({ dia_pago: pago.dia_pago }).eq('id_recibo', pago.id_recibo)
-    return
-  }
-  const id_registro = pago.gasto ? crypto.randomUUID() : null
-  if (pago.gasto) {
-    const { fecha, ...gasto } = pago.gasto
-    revisar(await supabase.from('registro').insert({ ...gasto, id_registro, fecha_registro: fecha, valor: pago.valor }))
-  }
-  const { error } = await supabase.from('pago_recibo').upsert({
-    id_recibo: pago.id_recibo, fecha_periodo: pago.fecha_periodo, valor: pago.valor, fecha_pago: pago.fecha_pago, estado: 'pagado', id_registro,
-  }, { onConflict: 'id_usuario,id_recibo,fecha_periodo' })
-  if (error) {
-    if (id_registro) await eliminarRegistro(id_registro).catch(() => {})
-    revisar({ data: null, error })
-  }
+  }))
   if (pago.dia_pago) await supabase.from('recibo').update({ dia_pago: pago.dia_pago }).eq('id_recibo', pago.id_recibo)
 }
 

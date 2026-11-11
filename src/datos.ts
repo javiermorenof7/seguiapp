@@ -412,7 +412,7 @@ export async function verNumeroCuenta(idRecibo: string): Promise<string | null> 
 // Si ya existe en pausa o quitada, la vuelve a usar con el estado pedido en vez de fallar.
 export async function crearRecibo(datos: {
   nombre_servicio: string; tipo_recibo: 'hogar' | 'personal'; nombre_ubicacion: string | null; numero_cuenta: string | null; requiere_numero_pago: boolean
-  estado: 'activo' | 'no_se_paga'
+  descuenta_saldo: boolean; estado: 'activo' | 'no_se_paga'
 }) {
   const { error, data } = await supabase.from('recibo').insert(datos).select('id_recibo').single()
   if (error?.code !== '23505') return revisar({ data, error }).id_recibo as string
@@ -445,30 +445,45 @@ export async function editarRecibo(idRecibo: string, cambios: {
   revisar({ data: null, error })
 }
 
+// Gastos vigentes que la factura creó al pagarse, para ofrecer quitarlos cuando deja de descontar.
+export async function gastosDeRecibo(idRecibo: string) {
+  const pagos = revisar(await supabase.from('pago_recibo').select('id_registro').eq('id_recibo', idRecibo).not('id_registro', 'is', null))
+  if (!pagos.length) return []
+  return revisar(await supabase.from('registro').select('id_registro, valor')
+    .in('id_registro', pagos.map(p => p.id_registro)).eq('estado', 'activo')) as { id_registro: string; valor: number }[]
+}
+
+// Quita esos gastos (borrado lógico); los pagos de la factura quedan como pagados.
+export async function quitarGastos(ids: string[]) {
+  revisar(await supabase.from('registro').update({ estado: 'eliminado' }).in('id_registro', ids))
+}
+
+// Pasa esos gastos a otra categoría (la factura dejó de ser de hogar); toman el grupo de la categoría, como un gasto normal.
+export async function moverGastos(ids: string[], idEtiqueta: string) {
+  revisar(await supabase.from('registro').update({ id_etiqueta: idEtiqueta, grupo: null }).in('id_registro', ids))
+}
+
+export async function cambiarDescuentaRecibo(idRecibo: string, descuenta: boolean) {
+  revisar(await supabase.from('recibo').update({ descuenta_saldo: descuenta }).eq('id_recibo', idRecibo))
+}
+
 // Borrado lógico: conserva su historial de pagos.
 export async function quitarRecibo(idRecibo: string) {
   revisar(await supabase.from('recibo').update({ estado: 'eliminado' }).eq('id_recibo', idRecibo))
 }
 
-// Crea el gasto (si la factura descuenta del saldo) y marca el período pagado; si el pago falla, quita el gasto para no contarlo sin recibo.
-// shortcut: dos llamadas sin transacción y sin cola; pasar a una función SQL si un fallo entre las dos llega a dejar huérfanos.
+// Crea el gasto (si la factura descuenta del saldo) y marca el período pagado, los dos en una sola transacción (función pagar_recibo).
 export async function pagarRecibo(pago: {
   id_recibo: string; fecha_periodo: string; valor: number; fecha_pago: string; dia_pago: number | null
   // fecha: a qué día va el gasto; fecha_pago es cuándo se pagó
   gasto: { id_seguimiento: string; id_etiqueta: string | null; grupo: 'basico' | null; nota: string; fecha: string } | null
 }) {
-  const id_registro = pago.gasto ? crypto.randomUUID() : null
-  if (pago.gasto) {
-    const { fecha, ...gasto } = pago.gasto
-    revisar(await supabase.from('registro').insert({ ...gasto, id_registro, fecha_registro: fecha, valor: pago.valor }))
-  }
-  const { error } = await supabase.from('pago_recibo').upsert({
-    id_recibo: pago.id_recibo, fecha_periodo: pago.fecha_periodo, valor: pago.valor, fecha_pago: pago.fecha_pago, estado: 'pagado', id_registro,
-  }, { onConflict: 'id_usuario,id_recibo,fecha_periodo' })
-  if (error) {
-    if (id_registro) await eliminarRegistro(id_registro).catch(() => {})
-    revisar({ data: null, error })
-  }
+  revisar(await supabase.rpc('pagar_recibo', {
+    p_id_recibo: pago.id_recibo, p_fecha_periodo: pago.fecha_periodo, p_valor: pago.valor, p_fecha_pago: pago.fecha_pago,
+    ...(pago.gasto && {
+      p_id_seguimiento: pago.gasto.id_seguimiento, p_id_etiqueta: pago.gasto.id_etiqueta, p_grupo: pago.gasto.grupo, p_nota: pago.gasto.nota, p_fecha_gasto: pago.gasto.fecha,
+    }),
+  }))
   if (pago.dia_pago) await supabase.from('recibo').update({ dia_pago: pago.dia_pago }).eq('id_recibo', pago.id_recibo)
 }
 
@@ -533,7 +548,7 @@ export async function deshacerMovimientoPrestamo(m: Pick<MovimientoPrestamo, 'id
   if (m.id_registro) await eliminarRegistro(m.id_registro)
 }
 
-// Ejercicios (etiquetas de Gym), series del último año y nombres aprendidos; las fechas salen de los registros.
+// Ejercicios (etiquetas de Gym), series creadas desde una fecha y nombres aprendidos; las fechas salen de los registros.
 export async function obtenerSalud(idGym: string, desde: string) {
   const [ejercicios, series, alias] = await Promise.all([
     // también los quitados: sus series pasadas siguen contando y se ven con su nombre
@@ -599,25 +614,22 @@ export async function quitarCategoria(idEtiqueta: string, idDestino: string | nu
   revisar(await supabase.from('etiqueta').update({ estado: 'eliminado' }).eq('id_etiqueta', idEtiqueta))
 }
 
-// El registro guarda el peso (o las repeticiones si es sin peso) para la tendencia; la serie, el detalle.
-// shortcut: dos llamadas sin transacción y sin cola; pasar a una función SQL si un fallo entre las dos deja huérfanos.
-export async function registrarSerie(s: {
-  id_seguimiento: string; id_etiqueta: string; fecha: string; series: number; repeticiones: number; peso: number | null
-}) {
-  const id_registro = crypto.randomUUID()
-  revisar(await supabase.from('registro').insert({
-    id_registro, id_seguimiento: s.id_seguimiento, id_etiqueta: s.id_etiqueta, fecha_registro: s.fecha, valor: s.peso ?? s.repeticiones,
-  }))
-  const { error } = await supabase.from('serie_gym').insert({
-    id_registro, cantidad_series: s.series, cantidad_repeticiones: s.repeticiones, peso_kilogramos: s.peso,
-  })
+// Todas las filas de un ejercicio en dos llamadas (registros y series): o entran todas o ninguna, así un fallo de red no deja la mitad.
+export async function registrarSeries(base: { id_seguimiento: string; id_etiqueta: string; fecha: string }, filas: { series: number; repeticiones: number; peso: number | null }[]) {
+  const conId = filas.map(f => ({ ...f, id_registro: crypto.randomUUID() }))
+  revisar(await supabase.from('registro').insert(conId.map(f => ({
+    id_registro: f.id_registro, id_seguimiento: base.id_seguimiento, id_etiqueta: base.id_etiqueta, fecha_registro: base.fecha, valor: f.peso ?? f.repeticiones,
+  }))))
+  const { error } = await supabase.from('serie_gym').insert(conId.map(f => ({
+    id_registro: f.id_registro, cantidad_series: f.series, cantidad_repeticiones: f.repeticiones, peso_kilogramos: f.peso,
+  })))
   if (error) {
-    await eliminarRegistro(id_registro).catch(() => {})
+    await supabase.from('registro').update({ estado: 'eliminado' }).in('id_registro', conId.map(f => f.id_registro))
     revisar({ data: null, error })
   }
 }
 
-// Corrige una serie ya guardada con el mismo reparto de registrarSerie.
+// Corrige una serie ya guardada con el mismo reparto de registrarSeries.
 export async function corregirSerie(idRegistro: string, s: { series: number; repeticiones: number; peso: number | null }) {
   revisar(await supabase.from('serie_gym')
     .update({ cantidad_series: s.series, cantidad_repeticiones: s.repeticiones, peso_kilogramos: s.peso }).eq('id_registro', idRegistro))

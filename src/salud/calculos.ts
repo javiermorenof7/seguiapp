@@ -86,6 +86,19 @@ export function progreso(sesiones: Sesion[], ejercicio: string) {
   }
 }
 
+// Botones − y + de un campo: suma el paso a lo escrito sin bajar del mínimo; 0 queda vacío (peso con tu cuerpo).
+export function conPaso(texto: string, paso: number, minimo: number) {
+  const nuevo = Math.max(minimo, (aNumero(texto.replace(/[^\d.,]/g, '')) || 0) + paso)
+  return nuevo ? String(nuevo).replace('.', ',') : ''
+}
+
+// Varias series de un ejercicio en un renglón: "25, 10, 50 kg × 10" si solo cambió el peso; si no, una por una.
+export function textoSeries(series: Omit<Sesion, 'fecha' | 'ejercicio'>[]) {
+  const [una] = series
+  const soloPeso = series.length > 1 && series.every(s => s.series === 1 && s.repeticiones === una.repeticiones && s.peso !== null)
+  return soloPeso ? `${series.map(s => s.peso!.toLocaleString('es-CO', { maximumFractionDigits: 2 })).join(', ')} kg × ${una.repeticiones}` : series.map(textoSerie).join(', ')
+}
+
 // Una serie como se lee en el gimnasio: "60 kg × 10"; las viejas que juntaban varias series, "4 × 10 · 60 kg".
 export const textoSerie = (s: Omit<Sesion, 'fecha' | 'ejercicio'>) => s.series === 1
   ? `${s.peso === null ? 'Tu cuerpo' : kg(s.peso)} × ${s.repeticiones}`
@@ -101,10 +114,16 @@ export function sesionesPorDia(sesiones: Sesion[], ejercicio: string, n = 3) {
   return [...dias].slice(0, n).map(([fecha, lista]) => ({ fecha, series: [...lista].reverse() }))
 }
 
-// La última sesión serie por serie, para precargar el formulario (las viejas "4 × 10" se abren en 4 series iguales).
+// La última sesión para precargar el formulario: las series seguidas iguales van juntas en una fila ("4 × 10 · 60 kg").
 export function seriesDeUltima(sesiones: Sesion[], ejercicio: string) {
   const [dia] = sesionesPorDia(sesiones, ejercicio, 1)
-  return dia ? dia.series.flatMap(s => Array.from({ length: s.series }, () => ({ repeticiones: s.repeticiones, peso: s.peso }))) : []
+  const filas: { series: number; repeticiones: number; peso: number | null }[] = []
+  for (const s of dia?.series ?? []) {
+    const ultima = filas[filas.length - 1]
+    if (ultima && ultima.repeticiones === s.repeticiones && ultima.peso === s.peso) ultima.series += s.series
+    else filas.push({ series: s.series, repeticiones: s.repeticiones, peso: s.peso })
+  }
+  return filas
 }
 
 // Mayor peso de cada día en un ejercicio desde una fecha.

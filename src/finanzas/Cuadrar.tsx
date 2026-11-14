@@ -7,8 +7,8 @@ import {
 import { formatoValor } from '../indicadores'
 import { facturaParecida } from './aprende'
 import { queDescuentan } from './estadoRecibos'
-import { conciliar, diferencia, enPesos, leerExtracto, limpiarOcr, type Anotado, type ExtractoLeido, type Formato, type MovimientoBanco } from './extracto'
-import { categoriaDe, normalizar } from './parseo'
+import { categoriaDeBanco, comercio, conciliar, diferencia, enPesos, leerExtracto, limpiarOcr, type Anotado, type ExtractoLeido, type Formato, type MovimientoBanco } from './extracto'
+import { normalizar } from './parseo'
 
 type Datos = Awaited<ReturnType<typeof obtenerFinanzas>>
 type Traslados = Awaited<ReturnType<typeof crearTraslados>>
@@ -53,6 +53,12 @@ export default function Extracto({ ids, datos, banco, registros, desdeRegistros,
     Promise.all([aprendidoDeExtracto('traslado'), aprendidoDeExtracto('formato_extracto')]).then(([t, f]) => setSabidos({ traslados: t, formatos: f }), () => {})
   }, [])
   useEffect(() => { if (ids.traslados) crearTraslados().then(setTraslados, () => {}) }, [ids.traslados])
+
+  // dónde anotó antes cada comercio, para sugerir la categoría de lo que trae el banco
+  const historia = useMemo(() => registros.flatMap(r => {
+    const texto = r.nota && r.id_etiqueta ? comercio(r.nota) : ''
+    return texto ? [{ texto, id_etiqueta: r.id_etiqueta! }] : []
+  }), [registros])
 
   // el signo con que cada registro mueve la cuenta
   const signo = (r: RegistroGuardado) => r.id_seguimiento === ids.ingreso || (traslados && r.id_etiqueta === traslados.entrada) ? 1 : -1
@@ -126,7 +132,7 @@ export default function Extracto({ ids, datos, banco, registros, desdeRegistros,
       )}
       {estado.paso === 'cuadre' && (
         <Cuadre key={estado.extracto.desde + estado.extracto.hasta + estado.extracto.saldoFinal} extracto={estado.extracto} ids={ids} datos={datos} banco={banco}
-          sabidos={sabidos.traslados} signo={signo} deFinanzas={deFinanzas} alCambiar={alCambiar}
+          sabidos={sabidos.traslados} historia={historia} signo={signo} deFinanzas={deFinanzas} alCambiar={alCambiar}
           alCancelar={() => setEstado({ paso: 'inicio' })}
           alTerminar={mensaje => { setEstado({ paso: 'inicio' }); setAviso(mensaje) }} />
       )}
@@ -179,8 +185,8 @@ function Columnas({ ejemplo, alElegir, alCancelar }: { ejemplo: { descripcion: s
   )
 }
 
-function Cuadre({ extracto: e, ids, datos, banco, sabidos, signo, deFinanzas, alCambiar, alCancelar, alTerminar }: {
-  extracto: ExtractoLeido; ids: Ids; datos: Datos; banco: Banco; sabidos: Map<string, string>
+function Cuadre({ extracto: e, ids, datos, banco, sabidos, historia, signo, deFinanzas, alCambiar, alCancelar, alTerminar }: {
+  extracto: ExtractoLeido; ids: Ids; datos: Datos; banco: Banco; sabidos: Map<string, string>; historia: { texto: string; id_etiqueta: string }[]
   signo: (r: RegistroGuardado) => number; deFinanzas: (r: RegistroGuardado) => boolean
   alCambiar: () => Promise<void>; alCancelar: () => void; alTerminar: (mensaje: string) => void
 }) {
@@ -220,13 +226,30 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, signo, deFinanzas, al
 
   const propuesta = (m: MovimientoBanco): Decision => {
     if (sabidos.has(normalizar(m.descripcion).slice(0, 100))) return { incluir: true, destino: 't', valor: m.valor }
-    if (m.valor > 0) return { incluir: true, destino: `i:${categoriaDe(m.descripcion, datos.aprendido, datos.fuentes)?.id_etiqueta ?? ''}`, valor: m.valor }
-    const factura = facturaParecida(queDescuentan(datos.recibos), m.descripcion)
-    const categoria = factura ? datos.categorias.find(c => normalizar(c.nombre) === 'hogar') : categoriaDe(m.descripcion, datos.aprendido, datos.categorias)
+    if (m.valor > 0) return { incluir: true, destino: `i:${categoriaDeBanco(m.descripcion, datos.aprendido, datos.fuentes, historia)?.id_etiqueta ?? ''}`, valor: m.valor }
+    // el banco pega las palabras con puntos ("NAL.CLARO"): se separan antes de buscar la factura
+    const factura = facturaParecida(queDescuentan(datos.recibos), normalizar(m.descripcion).replace(/[^a-z0-9ñ]+/g, ' '))
+    const categoria = factura ? datos.categorias.find(c => normalizar(c.nombre) === 'hogar') : categoriaDeBanco(m.descripcion, datos.aprendido, datos.categorias, historia)
     return { incluir: true, destino: `g:${categoria?.id_etiqueta ?? ''}`, id_recibo: factura?.id_recibo, valor: m.valor }
   }
-  const decision = (m: MovimientoBanco) => decisiones.get(m.huella) ?? propuesta(m)
-  const decidir = (m: MovimientoBanco, cambio: Partial<Decision>) => setDecisiones(new Map(decisiones).set(m.huella, { ...decision(m), ...cambio }))
+  // las propuestas se calculan una vez por extracto: comparan cada fila con todo lo anotado
+  const propuestas = useMemo(() => new Map(cuadre.faltan.map(m => [m.huella, propuesta(m)])), [cuadre.faltan, sabidos, historia, datos])
+  const decision = (m: MovimientoBanco) => decisiones.get(m.huella) ?? propuestas.get(m.huella) ?? propuesta(m)
+  // movimientos iguales: misma descripción y mismo sentido
+  const igual = (m: MovimientoBanco) => `${Math.sign(m.valor)}|${normalizar(m.descripcion)}`
+  // elegir a dónde va uno lo pone en todos sus iguales; marcar o corregir el monto es de cada fila
+  const decidir = (m: MovimientoBanco, cambio: Partial<Decision>) => {
+    const nuevas = new Map(decisiones)
+    for (const o of cambio.destino === undefined ? [m] : cuadre.faltan.filter(x => igual(x) === igual(m))) nuevas.set(o.huella, { ...decision(o), ...cambio })
+    setDecisiones(nuevas)
+  }
+  const grupos = useMemo(() => {
+    const porClave = new Map<string, MovimientoBanco[]>()
+    for (const m of cuadre.faltan) porClave.set(igual(m), [...(porClave.get(igual(m)) ?? []), m])
+    return [...porClave.values()]
+  }, [cuadre.faltan])
+  // con un extracto más reciente de esta cuenta ya subido, este solo carga movimientos: el saldo se cuadra con el último
+  const esReciente = !banco.extractos.some(x => x.id_cuenta === idCuenta && x.fecha_hasta > e.hasta)
 
   const porGuardar = cuadre.faltan.filter(m => decision(m).incluir)
   const falta = diferencia(cuadre) + centavos.reduce((t, m) => t + m.valor, 0)
@@ -264,20 +287,24 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, signo, deFinanzas, al
         ...centavos.map(m => ({ huella: m.huella, fecha: m.fecha, valor_banco: m.valor / 100 })),
       ]
       await guardarCarga(id, { desde: e.desde, hasta: e.hasta, saldoInicial: e.saldoInicial / 100, saldoFinal: e.saldoFinal / 100 }, filas)
-      // aprende de lo que la persona cambió frente a lo propuesto
+      // aprende de lo que la persona cambió frente a lo propuesto, una vez por grupo de iguales
+      const aprendidas = new Set<string>()
       for (const m of porGuardar) {
         const d = decision(m)
-        if (d.destino === propuesta(m).destino) continue
-        const clave = normalizar(m.descripcion).slice(0, 100)
+        if (d.destino === propuestas.get(m.huella)?.destino || aprendidas.has(igual(m))) continue
+        aprendidas.add(igual(m))
+        const completa = normalizar(m.descripcion).slice(0, 100)
         const elegida = [...datos.categorias, ...datos.fuentes].find(c => c.id_etiqueta === d.destino.slice(2))
-        if (d.destino === 't') await aprenderDeExtracto('traslado', clave, 'si').catch(() => {})
-        else if (elegida && clave) await aprenderCategoria(clave, elegida.nombre).catch(() => {})
+        // un traslado se recuerda con el texto entero (lleva la cuenta); una categoría, con el comercio
+        if (d.destino === 't') await aprenderDeExtracto('traslado', completa, 'si').catch(() => {})
+        else if (elegida && completa) await aprenderCategoria((comercio(m.descripcion) || completa).slice(0, 100), elegida.nombre).catch(() => {})
       }
       await alCambiar()
       const quedan = cuadre.faltan.length - porGuardar.length + cuadre.montoDistinto.length - resueltos.length + cuadre.soloApp.length
       alTerminar(quedan
         ? `Guardado. Quedan ${quedan} por resolver en ${periodo(e.desde, e.hasta)}: vuelve a subir el extracto cuando quieras.`
-        : `✓ ${periodo(e.desde, e.hasta)} cuadra con el banco · Saldo ${dePesos(e.saldoFinal)}.`)
+        : esReciente ? `✓ ${periodo(e.desde, e.hasta)} cuadra con el banco · Saldo ${dePesos(e.saldoFinal)} al ${dia(e.hasta)}.`
+          : `✓ Movimientos de ${periodo(e.desde, e.hasta)} cargados.`)
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -297,11 +324,20 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, signo, deFinanzas, al
     <>
       <div className="cuadre-titular" role="status">
         <p className="tenue">{periodo(e.desde, e.hasta)} · {cuenta?.nombre ?? (e.ultimos4 ? `cuenta terminada en ${e.ultimos4}` : 'cuenta nueva')}</p>
-        <p className="cuadre-numero">{falta === 0 && pendientes === 0 ? '✓ Cuadra con el banco' : `Te faltan ${dePesos(Math.abs(falta))} para cuadrar`}</p>
-        <p className="con-estado">
-          <span className={`estado ${falta === 0 ? 'en-meta' : 'fuera'}`}>{falta === 0 ? '✓' : '✕'} Saldo</span>
-          banco {dePesos(e.saldoFinal)} · app {dePesos(e.saldoFinal - falta)}
-        </p>
+        {esReciente ? (
+          <>
+            <p className="cuadre-numero">{falta === 0 && pendientes === 0 ? '✓ Cuadra con el banco' : `Te faltan ${dePesos(Math.abs(falta))} para cuadrar`}</p>
+            <p className="con-estado">
+              <span className={`estado ${falta === 0 ? 'en-meta' : 'fuera'}`}>{falta === 0 ? '✓' : '✕'} Saldo al {dia(e.hasta)}</span>
+              banco {dePesos(e.saldoFinal)} · app {dePesos(e.saldoFinal - falta)}
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="cuadre-numero">{pendientes === 0 ? '✓ Movimientos cargados' : `Faltan ${cuadre.faltan.length} por agregar`}</p>
+            <p>Ya subiste un extracto más reciente de esta cuenta: este solo carga movimientos. El saldo se cuadra con el último.</p>
+          </>
+        )}
         <p className="tenue">{todos - pendientes} de {todos} movimientos resueltos</p>
       </div>
       {error && <p role="alert" className="error">{error}</p>}
@@ -327,21 +363,41 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, signo, deFinanzas, al
           <summary>Faltan en la app · {cuadre.faltan.length}</summary>
           {dudosos > 0 && <p className="aviso">{dudosos === 1 ? 'Hay un monto' : `Hay ${dudosos} montos`} que no sigue el saldo: revísalo antes de guardar.</p>}
           <ul className="lista">
-            {cuadre.faltan.map(m => {
-              const d = decision(m)
-              const factura = d.id_recibo && datos.recibos.find(r => r.id_recibo === d.id_recibo)
-              return (
-                <li key={m.huella} className="ultimo fila-extracto">
-                  <label className="marca"><input type="checkbox" checked={d.incluir} onChange={ev => decidir(m, { incluir: ev.target.checked })} aria-label={`Agregar ${m.descripcion}`} /> {dia(m.fecha)}</label>
-                  <strong>{dePesos(d.valor)}</strong>
-                  <span className="tenue">{factura ? `Pago de ${factura.nombre_servicio} · ` : ''}{m.descripcion || 'Sin descripción'}</span>
-                  <span className="chips">
-                    {m.dudoso && (
-                      <input className="monto-dudoso" inputMode="decimal" aria-label="Monto correcto, en pesos" defaultValue={Math.abs(d.valor) / 100}
-                        onBlur={ev => { const n = Number(ev.target.value.replace(',', '.')); if (n > 0) decidir(m, { valor: Math.sign(m.valor) * Math.round(n * 100) }) }} />
+            {grupos.map(iguales => {
+              const fila = (m: MovimientoBanco, conDestino: boolean) => {
+                const d = decision(m)
+                const factura = d.id_recibo && datos.recibos.find(r => r.id_recibo === d.id_recibo)
+                return (
+                  <li key={m.huella} className="ultimo fila-extracto">
+                    <label className="marca"><input type="checkbox" checked={d.incluir} onChange={ev => decidir(m, { incluir: ev.target.checked })} aria-label={`Agregar ${m.descripcion}`} /> {dia(m.fecha)}</label>
+                    <strong>{dePesos(d.valor)}</strong>
+                    <span className="tenue">{factura ? `Pago de ${factura.nombre_servicio} · ` : ''}{m.descripcion || 'Sin descripción'}</span>
+                    {(m.dudoso || conDestino) && (
+                      <span className="chips">
+                        {m.dudoso && (
+                          <input className="monto-dudoso" inputMode="decimal" aria-label="Monto correcto, en pesos" defaultValue={Math.abs(d.valor) / 100}
+                            onBlur={ev => { const n = Number(ev.target.value.replace(',', '.')); if (n > 0) decidir(m, { valor: Math.sign(m.valor) * Math.round(n * 100) }) }} />
+                        )}
+                        {conDestino && <select aria-label="A dónde va" value={d.destino} onChange={ev => decidir(m, { destino: ev.target.value, id_recibo: undefined })}>{opciones(m)}</select>}
+                      </span>
                     )}
-                    <select aria-label="A dónde va" value={d.destino} onChange={ev => decidir(m, { destino: ev.target.value, id_recibo: undefined })}>{opciones(m)}</select>
+                  </li>
+                )
+              }
+              if (iguales.length === 1) return fila(iguales[0], true)
+              const [primero] = iguales
+              return (
+                <li key={primero.huella} className="ultimo fila-extracto iguales">
+                  <span>{iguales.length} iguales</span>
+                  <strong>{dePesos(iguales.reduce((s, m) => s + decision(m).valor, 0))}</strong>
+                  <span className="tenue">{primero.descripcion || 'Sin descripción'}</span>
+                  <span className="chips">
+                    <select aria-label={`A dónde van los ${iguales.length}`} value={decision(primero).destino} onChange={ev => decidir(primero, { destino: ev.target.value, id_recibo: undefined })}>{opciones(primero)}</select>
                   </span>
+                  <details>
+                    <summary>Ver los {iguales.length}</summary>
+                    <ul className="lista">{iguales.map(m => fila(m, false))}</ul>
+                  </details>
                 </li>
               )
             })}
@@ -460,21 +516,30 @@ function Subidos({ banco, registros, desdeRegistros, signo, alQuitar }: {
       ? [`En ${c.nombre} falta un extracto entre el ${dia(suyos[i].fecha_hasta)} y el ${dia(x.fecha_desde)}.`] : [])
   })
 
+  // el saldo de cada cuenta es el de su extracto más reciente: si ya es viejo, se avisa
+  const limite = diasAntes(new Date().toLocaleDateString('en-CA'), 45)
+  const atrasadas = banco.cuentas.flatMap(c => {
+    const ultimo = banco.extractos.filter(x => x.id_cuenta === c.id_cuenta).map(x => x.fecha_hasta).sort().pop()
+    return ultimo && ultimo < limite ? [`El saldo de ${c.nombre} está al ${dia(ultimo)}: sube el extracto más reciente para cuadrar.`] : []
+  })
+
   return (
     <>
       <h2>Extractos subidos</h2>
       {error && <p role="alert" className="error">{error}</p>}
       {huecos.map(h => <p key={h} className="aviso">{h}</p>)}
+      {atrasadas.map(a => <p key={a} className="aviso">{a}</p>)}
       <ul className="lista con-estado">
         {banco.extractos.map(x => {
-          const f = falta(x)
+          const reciente = !banco.extractos.some(o => o.id_cuenta === x.id_cuenta && o.fecha_hasta > x.fecha_hasta)
+          const f = reciente ? falta(x) : null
           return (
             <li key={x.id_extracto} className="ultimo fila-extracto">
               <span>{banco.cuentas.find(c => c.id_cuenta === x.id_cuenta)?.nombre ?? 'Cuenta quitada'}</span>
               <strong>{periodo(x.fecha_desde, x.fecha_hasta)}</strong>
               <span className="tenue">
                 {f !== null && <span className={`estado ${f === 0 ? 'en-meta' : 'fuera'}`}>{f === 0 ? '✓ Cuadra' : `✕ Faltan ${dePesos(Math.abs(f))}`}</span>}
-                Saldo {pesos(Math.round(x.valor_saldo_final))}
+                {reciente ? `Saldo ${pesos(Math.round(x.valor_saldo_final))} al ${dia(x.fecha_hasta)}` : 'Movimientos cargados'}
               </span>
               {confirmar === x.id_extracto ? (
                 <span className="chips">

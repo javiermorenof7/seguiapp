@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { conciliar, diferencia, leerCentavos, leerExtracto, limpiarOcr, type Anotado, type ExtractoLeido } from './extracto'
+import { categoriaDeBanco, comercio, conciliar, diferencia, leerCentavos, leerExtracto, limpiarOcr, type Anotado, type ExtractoLeido } from './extracto'
 
 // Extracto inventado: saldo anterior 1.000.000,00 y cuatro movimientos.
 const POR_LINEA = [
@@ -139,5 +139,31 @@ describe('limpiarOcr', () => {
     expect(e.movimientos.some(m => m.dudoso)).toBe(false)
     expect(e.movimientos[1]).toMatchObject({ fecha: '2026-04-05', saldo: 330000000 })
     expect(e.saldoInicial).toBe(100000000)
+  })
+})
+
+describe('sugerir la categoría de un movimiento del banco', () => {
+  const categorias = [
+    { id_etiqueta: 't', nombre: 'Transporte', grupo: null, palabras_clave: ['uber', 'taxi'] },
+    { id_etiqueta: 'm', nombre: 'Mercado', grupo: null, palabras_clave: [] },
+  ]
+
+  it('quita el ruido del banco', () => {
+    expect(comercio('COMPRA NAL.UBER 123')).toBe('uber')
+    expect(comercio('Abono Transf. desde cta 000111222')).toBe('')
+    expect(comercio('COMPRA NAL.TIENDAS LA ESQUINA')).toBe('tiendas esquina')
+  })
+
+  it('encuentra la palabra clave aunque venga pegada', () => {
+    expect(categoriaDeBanco('COMPRA NAL.UBER 123', new Map(), categorias, [])?.nombre).toBe('Transporte')
+  })
+
+  it('usa lo aprendido con el comercio y, si no, donde más se anotó', () => {
+    expect(categoriaDeBanco('COMPRA NAL.PANADERIA SOL 9', new Map([['panaderia sol', 'Mercado']]), categorias, [])?.nombre).toBe('Mercado')
+    const historia = [{ texto: 'tiendas esquina', id_etiqueta: 'm' }, { texto: 'esquina', id_etiqueta: 'm' }, { texto: 'esquina', id_etiqueta: 't' }, { texto: 'esquina', id_etiqueta: 'otra' }]
+    expect(categoriaDeBanco('COMPRA NAL.TIENDAS LA ESQUINA', new Map(), categorias, historia)?.nombre).toBe('Mercado')
+    expect(categoriaDeBanco('COMPRA NAL.FERRETERIA', new Map(), categorias, historia)).toBeNull()
+    expect(categoriaDeBanco('COMPRA NAL.TIENDAS LA ESQUINA', new Map(), categorias, historia.slice(1, 3))).toBeNull()
+    expect(categoriaDeBanco('COMPRA NAL.MERCADO CENTRAL', new Map(), categorias, [])?.nombre).toBe('Mercado')
   })
 })

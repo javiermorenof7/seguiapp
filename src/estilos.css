@@ -537,3 +537,7 @@ section .enlace, form .enlace, li .enlace { display: inline-flex; align-items: c
   .lista li.fila-extracto > .chips { grid-row: 3; }
   .cuadre-titular { position: static; }
 }
+.lista li.iguales > details { grid-column: 1 / -1; }
+.lista li.iguales > details > summary { min-height: 44px; display: flex; align-items: center; color: var(--acento); font-weight: 600; cursor: pointer; }
+.lista li.iguales .lista { margin: 0 0 0 12px; }
+@media (max-width: 420px) { .lista li.iguales > details { grid-row: 4; } }

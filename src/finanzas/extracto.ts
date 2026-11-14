@@ -1,4 +1,4 @@
-import { normalizar } from './parseo'
+import { categoriaDe, normalizar, type Categoria } from './parseo'
 
 // Montos en centavos con signo: positivo entra a la cuenta, negativo sale.
 export interface MovimientoBanco {
@@ -241,3 +241,36 @@ export function conciliar(extracto: ExtractoLeido, anotados: Anotado[], idCuenta
 /** Cuánto falta para que la app diga lo mismo que el banco; 0 es que cuadra. */
 export const diferencia = (c: Cuadre) =>
   c.faltan.reduce((t, m) => t + m.valor, 0) + c.montoDistinto.reduce((t, p) => t + p.banco.valor - p.app.valor, 0) - c.soloApp.reduce((t, a) => t + a.valor, 0)
+
+// Palabras del banco que no dicen en qué se gastó.
+const RUIDO = new Set(['compra', 'compras', 'nal', 'nacional', 'internacional', 'intl', 'boton', 'pse', 'pago', 'pagos', 'transf', 'transferencia', 'transferencias',
+  'transferen', 'abono', 'debito', 'credito', 'a', 'de', 'del', 'desde', 'en', 'la', 'el', 'por', 'cta', 'cuenta', 'ahorros', 'ahorro', 'corriente', 'suc', 'sucursal', 'virtual'])
+
+/** Lo que escribe el banco sin su ruido ni sus números: "COMPRA NAL.UBER 123" queda en "uber". */
+export function comercio(descripcion: string): string {
+  return normalizar(descripcion).replace(/[^a-z0-9ñ]+/g, ' ').split(' ').filter(p => p && !/\d/.test(p) && !RUIDO.has(p)).join(' ')
+}
+
+/**
+ * La categoría (o fuente) para un movimiento del banco: lo aprendido y las palabras clave, con el texto tal cual y limpio;
+ * si no, la categoría donde más veces se anotó ese comercio. `historia` trae las notas ya pasadas por `comercio`.
+ */
+export function categoriaDeBanco(
+  descripcion: string, aprendido: Map<string, string>, categorias: Categoria[], historia: { texto: string; id_etiqueta: string }[],
+): Categoria | null {
+  const limpio = comercio(descripcion)
+  const directa = categoriaDe(descripcion, aprendido, categorias) ?? (limpio ? categoriaDe(limpio, aprendido, categorias) : null)
+  if (directa || !limpio) return directa
+  // el nombre de la categoría dentro del texto: "mercado central" va a Mercado
+  const porNombre = categorias.find(c => ` ${limpio} `.includes(` ${normalizar(c.nombre)} `))
+  if (porNombre) return porNombre
+  const suyas = limpio.split(' ').filter(p => p.length >= 4)
+  const votos = new Map<string, number>()
+  for (const h of historia) {
+    if (suyas.some(p => ` ${h.texto} `.includes(` ${p} `))) votos.set(h.id_etiqueta, (votos.get(h.id_etiqueta) ?? 0) + 1)
+  }
+  const elegibles = [...votos].filter(([id]) => categorias.some(c => c.id_etiqueta === id)).sort((a, b) => b[1] - a[1])
+  const total = elegibles.reduce((s, [, n]) => s + n, 0)
+  // solo si se anotó al menos dos veces y casi siempre en la misma: una coincidencia suelta no alcanza
+  return elegibles.length && elegibles[0][1] >= 2 && elegibles[0][1] >= total * 0.6 ? categorias.find(c => c.id_etiqueta === elegibles[0][0])! : null
+}

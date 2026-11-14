@@ -121,6 +121,9 @@ export function avanceDelMes(filas: FilaRecibo[]) {
   return { pagadas, total: filas.filter(f => f.estado !== 'sin_pendiente' && f.estado !== 'omitida').length, falta: t.porPagar + t.vencido }
 }
 
+// Las que tocan el saldo: una factura con "¿Descuenta de mi saldo?" en No no entra en las cuentas del Resumen.
+export const queDescuentan = <R extends { descuenta_saldo?: boolean }>(recibos: R[]) => recibos.filter(r => r.descuenta_saldo !== false)
+
 export const numeroParaCopiar = (numero: string) => numero.replace(/\s+/g, '')
 
 export function totalesDelMes(filas: FilaRecibo[]) {

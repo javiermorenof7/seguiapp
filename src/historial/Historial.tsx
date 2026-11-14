@@ -37,7 +37,7 @@ const diasDelMes = (fecha: string) => new Date(Date.UTC(Number(fecha.slice(0, 4)
 
 // Todos los registros del módulo por semana, mes o año, con sus filtros, totales y un gráfico del período.
 // Un ícono por lo que filtra; los demás llevan la etiqueta.
-const ICONOS: Record<string, string> = { Tipo: '🗂️', 'Categoría o fuente': '🏷️', Origen: '✍️', Ejercicio: '🏋️', Hábito: '🎯' }
+const ICONOS: Record<string, string> = { Tipo: '🗂️', 'Categoría o fuente': '🏷️', Origen: '✍️', Ejercicio: '🏋️', 'Parte del cuerpo': '💪', Hábito: '🎯' }
 
 export default function Historial({ ids, registros, filtros, buscar, suma, formato = v => Number.isInteger(v) ? String(v) : '', total, fila, vista, escalaInicial = 'mes', anclaInicial }: {
   ids: string[]

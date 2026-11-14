@@ -13,12 +13,42 @@ const diasEntre = (desde: string, hasta: string) => Math.round((Date.parse(hasta
 export const restarDias = (fecha: string, dias: number) => new Date(Date.parse(fecha) - dias * DIA_MS).toISOString().slice(0, 10)
 const masReciente = <T extends { fecha: string }>(a: T, b: T) => b.fecha.localeCompare(a.fecha)
 
-// Cada campo del formulario por separado; peso vacío = propio cuerpo ("60", "82,5 kg"). null si algo no se entiende o se sale de rango.
-export function leerSerie(ejercicio: string, series: string, repeticiones: string, peso: string): Omit<Sesion, 'fecha'> | null {
+export type Unidad = 'kg' | 'lb'
+const KG_POR_LB = 0.45359237
+// Lo escrito en la unidad del ejercicio pasa a kg con 2 decimales, que es como se guarda.
+export const aKg = (valor: number, unidad: Unidad = 'kg') => unidad === 'lb' ? Math.round(valor * KG_POR_LB * 100) / 100 : valor
+// Los kg guardados, en la unidad del ejercicio; las libras a 1 decimal para que 45 lb vuelva como 45.
+export const enUnidad = (kilos: number, unidad: Unidad = 'kg') => unidad === 'lb' ? Math.round(kilos / KG_POR_LB * 10) / 10 : kilos
+// Lo que sube el peso con − y +, y lo que propone la sugerencia.
+export const pasoDe = (unidad: Unidad) => unidad === 'lb' ? 5 : 2.5
+
+export const PARTES = {
+  pecho: 'Pecho', espalda: 'Espalda', hombros: 'Hombros', biceps: 'Bíceps', triceps: 'Tríceps',
+  abdomen: 'Abdomen', piernas: 'Piernas', gluteos: 'Glúteos', pantorrillas: 'Pantorrillas', cardio: 'Cardio',
+} as const
+export type Parte = keyof typeof PARTES
+// Del más específico al más general: "press francés" es tríceps antes que "press" sea pecho, "curl femoral" es piernas antes que bíceps.
+const PISTAS: [Parte, RegExp][] = [
+  ['cardio', /cardio|caminadora|trotadora|bicicleta|eliptica|trote|correr|escaladora/],
+  ['pantorrillas', /pantorrilla|gemelo|talon/],
+  ['triceps', /tricep|frances|copa|rompecraneo/],
+  ['gluteos', /gluteo|hip thrust|patada|puente/],
+  ['abdomen', /abdom|crunch|plancha|oblicuo/],
+  ['hombros', /hombro|militar|lateral|elevacion|deltoid|arnold|encogimiento/],
+  ['piernas', /pierna|isquio|sentadilla|prensa|zancada|femoral|cuadricep|peso muerto|extension|abductor|aductor|desplante/],
+  ['espalda', /espalda|remo|dominada|jalon|pull|dorsal/],
+  ['biceps', /bicep|curl|martillo|predicador/],
+  ['pecho', /pecho|banca|press|apertura|fondo|flexion|pec/],
+]
+// La parte del cuerpo que sugiere el nombre de un ejercicio; null si no se reconoce.
+export const parteDe = (nombre: string): Parte | null => PISTAS.find(([, pista]) => pista.test(normalizar(nombre)))?.[0] ?? null
+
+// Cada campo del formulario por separado, el peso en la unidad del ejercicio; vacío = propio cuerpo ("60", "82,5 kg", "45 lb"). El peso sale en kg. null si algo no se entiende o se sale de rango.
+export function leerSerie(ejercicio: string, series: string, repeticiones: string, peso: string, unidad: Unidad = 'kg'): Omit<Sesion, 'fecha'> | null {
   const nombre = normalizar(ejercicio)
   const entero = (texto: string) => /^\d+$/.test(texto.trim()) ? Number(texto) : NaN
-  const kilos = peso.trim().match(new RegExp(String.raw`^(${NUMERO})\s*(?:kg)?$`, 'i'))
-  const s = { ejercicio: nombre, series: entero(series), repeticiones: entero(repeticiones), peso: peso.trim() ? (kilos ? aNumero(kilos[1]) : NaN) : null }
+  const kilos = peso.trim().match(new RegExp(String.raw`^(${NUMERO})\s*(?:${unidad})?$`, 'i'))
+  const s = { ejercicio: nombre, series: entero(series), repeticiones: entero(repeticiones), peso: peso.trim() ? (kilos ? aKg(aNumero(kilos[1]), unidad) : NaN) : null }
   if (!nombre || nombre.length > 60 || !(s.series >= 1 && s.series <= 100) || !(s.repeticiones >= 1 && s.repeticiones <= 1000)) return null
   if (s.peso !== null && !(s.peso > 0 && s.peso < 1e4)) return null
   return s
@@ -27,18 +57,20 @@ export function leerSerie(ejercicio: string, series: string, repeticiones: strin
 export const anteriorDe = (sesiones: Sesion[], ejercicio: string) =>
   sesiones.filter(s => s.ejercicio === ejercicio).sort(masReciente)[0] ?? null
 
-// Dos sesiones seguidas iguales: subir 2,5 kg (o una repetición si es sin peso).
-export function sugerencia(nuevo: Omit<Sesion, 'fecha'>, sesiones: Sesion[]): string | null {
+// Dos sesiones seguidas iguales: subir 2,5 kg o 5 lb (o una repetición si es sin peso).
+export function sugerencia(nuevo: Omit<Sesion, 'fecha'>, sesiones: Sesion[], unidad: Unidad = 'kg'): string | null {
   const a = anteriorDe(sesiones, nuevo.ejercicio)
   if (!a || a.series !== nuevo.series || a.repeticiones !== nuevo.repeticiones || a.peso !== nuevo.peso) return null
   return nuevo.peso === null
     ? `Dos sesiones iguales: prueba ${nuevo.series}x${nuevo.repeticiones + 1} la próxima.`
-    : `Dos sesiones iguales con ${kg(nuevo.peso)}: prueba ${kg(nuevo.peso + 2.5)} la próxima.`
+    : `Dos sesiones iguales con ${kg(nuevo.peso, unidad)}: prueba ${kg(aKg(enUnidad(nuevo.peso, unidad) + pasoDe(unidad), unidad), unidad)} la próxima.`
 }
 
 export const conSigno = (v: number, unidad: string | null) =>
   `${v > 0 ? '+' : v < 0 ? '−' : ''}${formatoValor('numero', Math.abs(Math.round(v * 100) / 100), unidad)}`
-export const kg = (v: number) => `${v.toLocaleString('es-CO', { maximumFractionDigits: 2 })} kg`
+const numero = (v: number) => v.toLocaleString('es-CO', { maximumFractionDigits: 2 })
+// Un peso guardado en kg, escrito en la unidad del ejercicio.
+export const kg = (v: number, unidad: Unidad = 'kg') => `${numero(enUnidad(v, unidad))} ${unidad}`
 
 function distancia(a: string, b: string): number {
   let fila = Array.from({ length: b.length + 1 }, (_, j) => j)
@@ -93,16 +125,16 @@ export function conPaso(texto: string, paso: number, minimo: number) {
 }
 
 // Varias series de un ejercicio en un renglón: "25, 10, 50 kg × 10" si solo cambió el peso; si no, una por una.
-export function textoSeries(series: Omit<Sesion, 'fecha' | 'ejercicio'>[]) {
+export function textoSeries(series: Omit<Sesion, 'fecha' | 'ejercicio'>[], unidad: Unidad = 'kg') {
   const [una] = series
   const soloPeso = series.length > 1 && series.every(s => s.series === 1 && s.repeticiones === una.repeticiones && s.peso !== null)
-  return soloPeso ? `${series.map(s => s.peso!.toLocaleString('es-CO', { maximumFractionDigits: 2 })).join(', ')} kg × ${una.repeticiones}` : series.map(textoSerie).join(', ')
+  return soloPeso ? `${series.map(s => numero(enUnidad(s.peso!, unidad))).join(', ')} ${unidad} × ${una.repeticiones}` : series.map(s => textoSerie(s, unidad)).join(', ')
 }
 
 // Una serie como se lee en el gimnasio: "60 kg × 10"; las viejas que juntaban varias series, "4 × 10 · 60 kg".
-export const textoSerie = (s: Omit<Sesion, 'fecha' | 'ejercicio'>) => s.series === 1
-  ? `${s.peso === null ? 'Tu cuerpo' : kg(s.peso)} × ${s.repeticiones}`
-  : `${s.series} × ${s.repeticiones}${s.peso === null ? '' : ` · ${kg(s.peso)}`}`
+export const textoSerie = (s: Omit<Sesion, 'fecha' | 'ejercicio'>, unidad: Unidad = 'kg') => s.series === 1
+  ? `${s.peso === null ? 'Tu cuerpo' : kg(s.peso, unidad)} × ${s.repeticiones}`
+  : `${s.series} × ${s.repeticiones}${s.peso === null ? '' : ` · ${kg(s.peso, unidad)}`}`
 
 // Las últimas n sesiones (días) de un ejercicio, la más reciente primero; las series de cada día en el orden en que se hicieron.
 export function sesionesPorDia(sesiones: Sesion[], ejercicio: string, n = 3) {

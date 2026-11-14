@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  anteriorDe, cambioPeso, coincidencias, comparar, fechasDeRecord, recordsSegunMeta, constancia, seriesPorDia, diasEntrenados, faltaParaMeta, estadoSemana, leerSerie, conPaso, textoSeries, parecido, pesoPorDia, progreso, seriesDeUltima, sesionesPorDia, sugerencia, textoSerie, type Sesion,
+  aKg, anteriorDe, cambioPeso, coincidencias, comparar, fechasDeRecord, recordsSegunMeta, constancia, seriesPorDia, diasEntrenados, faltaParaMeta, estadoSemana, leerSerie, conPaso, textoSeries, parecido, parteDe, enUnidad, pesoPorDia, progreso, seriesDeUltima, sesionesPorDia, sugerencia, textoSerie, type Sesion,
 } from './calculos'
 
 const s = (fecha: string, ejercicio: string, series: number, repeticiones: number, peso: number | null): Sesion =>
@@ -158,4 +158,40 @@ describe('series individuales', () => {
     expect(textoSerie({ series: 1, repeticiones: 12, peso: null })).toBe('Tu cuerpo × 12')
     expect(textoSerie({ series: 4, repeticiones: 10, peso: 60 })).toBe('4 × 10 · 60 kg')
   })
+})
+
+describe('kilos y libras', () => {
+  it('las libras se guardan en kg con 2 decimales y vuelven como se escribieron', () => {
+    expect(aKg(45, 'lb')).toBe(20.41)
+    for (const lb of [2.5, 5, 12.5, 45, 100, 135, 225, 405]) expect(enUnidad(aKg(lb, 'lb'), 'lb')).toBe(lb)
+  })
+  it('los kilos no cambian', () => {
+    expect(aKg(82.5)).toBe(82.5)
+    expect(enUnidad(82.5)).toBe(82.5)
+  })
+  it('lee el peso en la unidad del ejercicio y lo deja en kg', () => {
+    expect(leerSerie('curl', '1', '10', '45', 'lb')?.peso).toBe(20.41)
+    expect(leerSerie('curl', '1', '10', '45 lb', 'lb')?.peso).toBe(20.41)
+    expect(leerSerie('curl', '1', '10', '45 lb')).toBeNull()
+  })
+  it('escribe las series y la sugerencia en la unidad del ejercicio', () => {
+    const serie = { series: 1, repeticiones: 10, peso: aKg(45, 'lb') }
+    expect(textoSerie(serie, 'lb')).toBe('45 lb × 10')
+    expect(textoSeries([serie, { ...serie, peso: aKg(50, 'lb') }], 'lb')).toBe('45, 50 lb × 10')
+    expect(sugerencia({ ejercicio: 'curl', ...serie }, [{ fecha: '2026-11-01', ejercicio: 'curl', ...serie }], 'lb')).toContain('prueba 50 lb')
+  })
+})
+
+describe('parteDe', () => {
+  it('deduce la parte del cuerpo por el nombre, de lo específico a lo general', () => {
+    expect(parteDe('Press banca')).toBe('pecho')
+    expect(parteDe('Press francés')).toBe('triceps')
+    expect(parteDe('Press militar')).toBe('hombros')
+    expect(parteDe('Curl femoral')).toBe('piernas')
+    expect(parteDe('Curl martillo')).toBe('biceps')
+    expect(parteDe('Patada de tríceps')).toBe('triceps')
+    expect(parteDe('Elevación de talones')).toBe('pantorrillas')
+    expect(parteDe('Dominadas')).toBe('espalda')
+  })
+  it('sin pista no adivina', () => expect(parteDe('Máquina 7')).toBeNull())
 })

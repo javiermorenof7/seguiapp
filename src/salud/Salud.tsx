@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import Selector from '../Selector'
 import {
-  aprenderNombre, crearEjercicio, crearMedida, crearSeguimiento, eliminarRegistro, guardarMeta, obtenerSalud, quitarEjercicio, quitarSeguimiento, registrar, registrarSeries, renombrarEjercicio, editarMedida, corregirSerie,
-  type RegistroGuardado, type Seguimiento,
+  aprenderNombre, crearEjercicio, crearMedida, crearSeguimiento, eliminarRegistro, guardarFichaEjercicio, guardarMeta, obtenerSalud, quitarEjercicio, quitarSeguimiento, registrar, registrarSeries, renombrarEjercicio, editarMedida, corregirSerie,
+  type FichaEjercicio, type RegistroGuardado, type Seguimiento,
 } from '../datos'
 import { formatoValor, type Direccion } from '../indicadores'
 import Grafico from '../Grafico'
@@ -11,12 +11,11 @@ import { mover, rango as rangoDe } from '../historial/periodo'
 import SinDatos from '../SinDatos'
 import Historial, { FilaSimple } from '../historial/Historial'
 import Barras from '../finanzas/Barras'
-import CambiarNombre from '../CambiarNombre'
 import { normalizar } from '../finanzas/parseo'
 import {
-  cambioPeso, coincidencias, comparar, conPaso, conSigno, constancia, faltaParaMeta, fechasDeRecord, recordsSegunMeta, indicesRecord, kg, leerSerie, parecido, pesoPorDia,
-  progreso, restarDias, seriesDeUltima, textoSerie, textoSeries,
-  type Sesion,
+  cambioPeso, coincidencias, comparar, conPaso, conSigno, constancia, enUnidad, faltaParaMeta, fechasDeRecord, recordsSegunMeta, indicesRecord, kg, leerSerie, parecido, parteDe, pasoDe, pesoPorDia,
+  PARTES, progreso, restarDias, seriesDeUltima, textoSerie, textoSeries,
+  type Parte, type Sesion, type Unidad,
 } from './calculos'
 
 type Datos = Awaited<ReturnType<typeof obtenerSalud>>
@@ -110,6 +109,10 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
   const autollenadas = useRef(false)
   // una fila por grupo de series iguales: cuántas, con qué peso y cuántas repeticiones
   const [filas, setFilas] = useState([{ series: '1', repeticiones: '', peso: '' }])
+  // el peso se escribe en la unidad elegida y se guarda en kg; la parte se propone por el nombre hasta que la elija a mano
+  const [unidad, setUnidad] = useState<Unidad>('kg')
+  const [parte, setParte] = useState<Parte | ''>('')
+  const parteAMano = useRef(false)
   const [pregunta, setPregunta] = useState<{ leidas: Leido[]; sugerido: string } | null>(null)
   const [aviso, setAviso] = useState('')
   const [abierto, setAbierto] = useState(!!enfocar)
@@ -143,7 +146,9 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
     })
   }, [datos, registros])
 
-  const leidas = filas.map(f => leerSerie(ejercicio, f.series, f.repeticiones, f.peso))
+  const leidas = filas.map(f => leerSerie(ejercicio, f.series, f.repeticiones, f.peso, unidad))
+  const unidadDe = (nombre: string): Unidad => datos?.fichas.get(nombre)?.unidad_peso ?? 'kg'
+  const parteGuardada = (nombre: string) => (datos?.fichas.get(nombre)?.parte_cuerpo as Parte | null | undefined) ?? parteDe(nombre)
   const totalSeries = filas.reduce((t, f) => t + (/^\d+$/.test(f.series.trim()) ? Number(f.series) : 0), 0)
   const escrito = ejercicio.replace(/\s+/g, ' ').trim()
   const cambiarFila = (i: number, cambio: Partial<typeof filas[number]>) => { autollenadas.current = false; setFilas(filas.map((f, j) => j === i ? { ...f, ...cambio } : f)); setPregunta(null) }
@@ -170,9 +175,13 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
     setEjercicio(texto)
     setPregunta(null)
     const nombre = normalizar(texto)
-    const previas = seriesDeUltima(sesiones, nombreGuardado(texto) ?? nombreGuardado(datos?.alias.get(nombre) ?? '') ?? nombre)
+    const guardado = nombreGuardado(texto) ?? nombreGuardado(datos?.alias.get(nombre) ?? '')
+    const suya = guardado ? unidadDe(guardado) : unidad
+    if (guardado) { setUnidad(suya); setParte(parteGuardada(guardado) ?? ''); parteAMano.current = false }
+    else if (!parteAMano.current) setParte(parteDe(texto) ?? '')
+    const previas = seriesDeUltima(sesiones, guardado ?? nombre)
     if (previas.length) {
-      setFilas(previas.map(p => ({ series: String(p.series), repeticiones: String(p.repeticiones), peso: p.peso === null ? '' : String(p.peso).replace('.', ',') })))
+      setFilas(previas.map(p => ({ series: String(p.series), repeticiones: String(p.repeticiones), peso: p.peso === null ? '' : String(enUnidad(p.peso, suya)).replace('.', ',') })))
       autollenadas.current = true
     } else if (autollenadas.current) {
       // las series eran de otro ejercicio; lo escrito a mano no se toca
@@ -182,25 +191,32 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
   }
 
   // Cada fila es un registro con sus series iguales; el aviso compara el peso máximo con la sesión anterior.
-  async function guardar(escrito: string, lista: Leido[]) {
+  // Desde el formulario llega la ficha (parte y unidad elegidas) y el ejercicio la recuerda; "igual que la última vez" no la cambia.
+  async function guardar(escrito: string, lista: Leido[], elegida?: { parte: Parte | ''; unidad: Unidad }) {
     if (!datos) return
     const nombre = nombreGuardado(escrito) ?? escrito
+    const u = elegida?.unidad ?? unidadDe(nombre)
     setEnviando(true)
     try {
       const existente = datos.ejercicios.find(e => e.nombre === nombre)
-      const idEtiqueta = existente?.id_etiqueta ?? await crearEjercicio(idGym, nombre)
+      const ficha = elegida && { parte_cuerpo: elegida.parte || null, unidad_peso: elegida.unidad }
+      const idEtiqueta = existente?.id_etiqueta ?? await crearEjercicio(idGym, nombre, ficha)
+      if (existente && ficha && (existente.parte_cuerpo !== ficha.parte_cuerpo || (existente.unidad_peso ?? 'kg') !== ficha.unidad_peso)) await guardarFichaEjercicio(idEtiqueta, ficha)
       const antes = pesoPorDia(sesiones, nombre).filter(p => p.fecha < hoy).pop()
       await registrarSeries({ id_seguimiento: idGym, id_etiqueta: idEtiqueta, fecha: hoy }, lista)
       const hechas = lista.reduce((t, x) => t + x.series, 0)
       const pesos = lista.flatMap(x => x.peso === null ? [] : [x.peso])
       const maximo = pesos.length ? Math.max(...pesos) : null
       setAviso([
-        `${nombre}: ${hechas} ${hechas === 1 ? 'serie' : 'series'} (${lista.map(textoSerie).join(', ')}).`,
-        maximo !== null && antes ? `Peso máximo ${kg(maximo)} (${conSigno(maximo - antes.valor, 'kg')} frente al ${diaMes(antes.fecha)}).` : '',
+        `${nombre}: ${hechas} ${hechas === 1 ? 'serie' : 'series'} (${lista.map(x => textoSerie(x, u)).join(', ')}).`,
+        maximo !== null && antes ? `Peso máximo ${kg(maximo, u)} (${conSigno(enUnidad(maximo, u) - enUnidad(antes.valor, u), u)} frente al ${diaMes(antes.fecha)}).` : '',
       ].filter(Boolean).join(' '))
       setEjercicio('')
       setFilas([{ series: '1', repeticiones: '', peso: '' }])
       autollenadas.current = false
+      setUnidad('kg')
+      setParte('')
+      parteAMano.current = false
       setPregunta(null)
       setError('')
       await Promise.all([cargar(), alCambiar()])
@@ -214,25 +230,30 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
   // Nombre conocido → lo aprendido → "¿Quisiste decir…?" si se parece a uno conocido → nuevo.
   function enviar(evento: FormEvent) {
     evento.preventDefault()
-    if (leidas.some(l => !l)) return setError('Revisa cada fila: series de 1 a 100, repeticiones de 1 a 1.000 y el peso en kg (vacío si es con tu cuerpo).')
+    if (leidas.some(l => !l)) return setError(`Revisa cada fila: series de 1 a 100, repeticiones de 1 a 1.000 y el peso en ${unidad} (vacío si es con tu cuerpo).`)
     if (!datos) return
     const lista = leidas as Leido[]
     const nombre = lista[0].ejercicio
     const aprendido = datos.alias.get(nombre)
-    if (conocidos.some(c => normalizar(c) === nombre)) return guardar(nombre, lista)
-    if (aprendido) return guardar(aprendido, lista)
+    const elegida = { parte, unidad }
+    if (conocidos.some(c => normalizar(c) === nombre)) return guardar(nombre, lista, elegida)
+    if (aprendido) return guardar(aprendido, lista, elegida)
     const sugerido = parecido(nombre, conocidos.map(normalizar))
     const conocido = sugerido && conocidos.find(c => normalizar(c) === sugerido)
     if (conocido) return setPregunta({ leidas: lista, sugerido: conocido })
-    guardar(escrito, lista)
+    guardar(escrito, lista, elegida)
   }
 
   // Se guardan como los escribe y se comparan normalizados; escribir el nombre viejo sigue llevando a este.
-  async function renombrar(viejo: string, nuevo: string) {
-    if (nuevo === viejo || !datos) return
-    if ([...datos.nombres.values()].some(n => n !== viejo && normalizar(n) === normalizar(nuevo))) throw new Error(`Ya existe un ejercicio llamado ${nuevo} (o lo tuviste antes).`)
-    await renombrarEjercicio(datos.ejercicios.find(e => e.nombre === viejo)!.id_etiqueta, viejo, nuevo)
-    await aprenderNombre('ejercicio', normalizar(viejo), nuevo).catch(() => {})
+  async function editarEjercicio(viejo: string, nuevo: string, ficha: FichaEjercicio) {
+    if (!datos) return
+    const id = datos.ejercicios.find(e => e.nombre === viejo)!.id_etiqueta
+    if (nuevo !== viejo) {
+      if ([...datos.nombres.values()].some(n => n !== viejo && normalizar(n) === normalizar(nuevo))) throw new Error(`Ya existe un ejercicio llamado ${nuevo} (o lo tuviste antes).`)
+      await renombrarEjercicio(id, viejo, nuevo)
+      await aprenderNombre('ejercicio', normalizar(viejo), nuevo).catch(() => {})
+    }
+    await guardarFichaEjercicio(id, ficha)
     setRenombrando(null)
     await cargar()
   }
@@ -250,12 +271,12 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
   async function responder(correcto: string) {
     if (!pregunta) return
     await aprenderNombre('ejercicio', pregunta.leidas[0].ejercicio, correcto).catch(() => {})
-    await guardar(correcto, pregunta.leidas)
+    await guardar(correcto, pregunta.leidas, { parte, unidad })
   }
 
   if (!datos) return error ? <p role="alert" className="error">{error}</p> : <p className="tenue">Cargando…</p>
   if (vista === 'resumen') return (
-    <ResumenSalud sesiones={sesiones} hoy={hoy} metaDias={metaDias} ejercicios={conocidos} medidas={medidas}
+    <ResumenSalud sesiones={sesiones} hoy={hoy} metaDias={metaDias} ejercicios={conocidos} fichas={datos.fichas} medidas={medidas}
       registros={registrosCuerpo} ventana={ventana} alCambiarVentana={setVentana} alVer={p => alVer?.(p)} />
   )
   const nombres = datos.nombres
@@ -279,7 +300,7 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
           <li key={clave} className="ultimo grupo-gym">
             <span>{g.fecha.split('-').reverse().join('/')}</span>
             <strong>{g.ejercicio}</strong>
-            <span className="tenue">{textoSeries(g.series)}</span>
+            <span className="tenue">{textoSeries(g.series, unidadDe(g.ejercicio))}</span>
             <span className="chips">
               <button className="secundario" aria-expanded={grupoAbierto === clave} onClick={() => { setGrupoAbierto(grupoAbierto === clave ? null : clave); setEditando(null) }}>
                 {grupoAbierto === clave ? 'Cerrar' : 'Editar'}
@@ -290,10 +311,10 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
                 {g.series.map((s, i) => {
                   const actual = { ejercicio: g.ejercicio, series: s.series, repeticiones: s.repeticiones, peso: s.peso }
                   return (
-                    <FilaSimple key={s.id} fecha="" titulo={`Fila ${i + 1}`} detalle={textoSerie(actual)}
+                    <FilaSimple key={s.id} fecha="" titulo={`Fila ${i + 1}`} detalle={textoSerie(actual, unidadDe(g.ejercicio))}
                       alBorrar={() => eliminarRegistro(s.id).then(alCambiar)} sinAcciones={editando === s.id} alEditar={() => setEditando(s.id)}>
                       {editando === s.id && (
-                        <EditarSerie actual={actual} alCancelar={() => setEditando(null)}
+                        <EditarSerie actual={actual} unidad={unidadDe(g.ejercicio)} alCancelar={() => setEditando(null)}
                           alGuardar={async nueva => { await corregirSerie(s.id, nueva); setEditando(null); await Promise.all([cargar(), alCambiar()]) }} />
                       )}
                     </FilaSimple>
@@ -309,19 +330,29 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
   const misEjercicios = conocidos.length > 0 && (
     <section>
       <h2>Mis ejercicios</h2>
-      <ul className="lista">
-        {conocidos.map(e => (
-          <li key={e} className="dos">
-            <span>{e}</span>
-            <span>
-              <button className="enlace" aria-expanded={renombrando === e} onClick={() => setRenombrando(renombrando === e ? null : e)}>Renombrar</button>
-              {' · '}
-              <button className="enlace" onClick={() => quitar(e)}>Quitar</button>
-            </span>
-            {renombrando === e && <CambiarNombre inicial={e} alCancelar={() => setRenombrando(null)} alGuardar={nuevo => renombrar(e, nuevo)} />}
-          </li>
-        ))}
-      </ul>
+      {[...Object.keys(PARTES) as Parte[], null].map(c => {
+        const suyos = conocidos.filter(e => (parteGuardada(e) ?? null) === c)
+        return suyos.length > 0 && (
+          <div key={c ?? 'sin'} className="parte-cuerpo">
+            <h3>{c ? PARTES[c] : 'Sin parte del cuerpo'} <span className="tenue">{suyos.length}</span></h3>
+            <ul className="lista">
+              {suyos.map(e => (
+                <li key={e} className="dos">
+                  <span>{e}{unidadDe(e) === 'lb' && <small className="tenue"> · en libras</small>}</span>
+                  {renombrando !== e && (
+                    <span>
+                      <button className="enlace" onClick={() => setRenombrando(e)}>Editar</button>
+                      {' · '}
+                      <button className="enlace" onClick={() => quitar(e)}>Quitar</button>
+                    </span>
+                  )}
+                  {renombrando === e && <EditarEjercicio nombre={e} parte={c} unidad={unidadDe(e)} alCancelar={() => setRenombrando(null)} alGuardar={(nuevo, ficha) => editarEjercicio(e, nuevo, ficha)} />}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
+      })}
     </section>
   )
   if (!abierto) return (
@@ -338,7 +369,7 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
               {frecuentes.map(f => {
                 const previas = seriesDeUltima(sesiones, f.ejercicio)
                 return <button key={f.ejercicio} type="button" className="chip" disabled={enviando}
-                  onClick={() => guardar(f.ejercicio, previas.map(p => ({ ejercicio: f.ejercicio, ...p })))}>{f.ejercicio} · {textoSeries(previas)}</button>
+                  onClick={() => guardar(f.ejercicio, previas.map(p => ({ ejercicio: f.ejercicio, ...p })))}>{f.ejercicio} · {textoSeries(previas, unidadDe(f.ejercicio))}</button>
               })}
             </div>
           </div>
@@ -374,19 +405,30 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
           <div className="sugeridos">
             <span className="tenue">Usar otra vez (con tu última serie)</span>
             <div className="chips">
-              {frecuentes.map(f => <button key={f.ejercicio} type="button" className="chip" onClick={() => elegirEjercicio(f.ejercicio)}>{f.ejercicio} · {textoSerie(f)}</button>)}
+              {frecuentes.map(f => <button key={f.ejercicio} type="button" className="chip" onClick={() => elegirEjercicio(f.ejercicio)}>{f.ejercicio} · {textoSerie(f, unidadDe(f.ejercicio))}</button>)}
             </div>
           </div>
         )}
+        <label>Parte del cuerpo
+          <select value={parte} onChange={ev => { parteAMano.current = true; setParte(ev.target.value as Parte | '') }}>
+            <option value="">Sin elegir</option>
+            {Object.entries(PARTES).map(([c, n]) => <option key={c} value={c}>{n}</option>)}
+          </select>
+        </label>
         <fieldset className="series-gym">
           <legend>Series</legend>
+          <div className="chips segmentado" role="radiogroup" aria-label="Unidad del peso">
+            {(['kg', 'lb'] as const).map(u => (
+              <button key={u} type="button" role="radio" aria-checked={unidad === u} className="chip" onClick={() => { setUnidad(u); setPregunta(null) }}>{u === 'kg' ? 'Kilos' : 'Libras'}</button>
+            ))}
+          </div>
           {filas.map((f, i) => (
             <div key={i} className="serie-fila">
               <Pasos titulo="Series" que={`series de la fila ${i + 1}`} alSumar={paso => cambiarFila(i, { series: conPaso(f.series, paso, 1) })}>
                 <input required inputMode="numeric" maxLength={3} value={f.series} aria-label={`Cuántas series iguales en la fila ${i + 1}`}
                   onChange={ev => cambiarFila(i, { series: ev.target.value })} />
               </Pasos>
-              <Pasos titulo="Peso (kg)" que={`peso de la fila ${i + 1}`} alSumar={paso => cambiarFila(i, { peso: conPaso(f.peso, paso * 2.5, 0) })}>
+              <Pasos titulo={`Peso (${unidad})`} que={`peso de la fila ${i + 1}`} alSumar={paso => cambiarFila(i, { peso: conPaso(f.peso, paso * pasoDe(unidad), 0) })}>
                 <input inputMode="decimal" maxLength={8} value={f.peso} placeholder="Tu cuerpo" aria-label={`Peso de la fila ${i + 1}`}
                   onChange={ev => cambiarFila(i, { peso: ev.target.value })} />
               </Pasos>
@@ -400,7 +442,7 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
           ))}
           <button type="button" className="secundario" disabled={filas.length >= 30}
             onClick={() => { autollenadas.current = false; setFilas([...filas, { ...filas[filas.length - 1], series: '1' }]); setPregunta(null) }}>+ Serie distinta</button>
-          <small className="ayuda">Si todas salieron iguales, una sola fila: 4 series, 60 kg, 10 reps. Si alguna varió, "+ Serie distinta" copia la anterior para que cambies solo eso. Con − y + el peso va de 2,5 en 2,5; vacío es con tu cuerpo.</small>
+          <small className="ayuda">Si todas salieron iguales, una sola fila: 4 series, {unidad === 'lb' ? '135 lb' : '60 kg'}, 10 reps. Si alguna varió, "+ Serie distinta" copia la anterior para que cambies solo eso. Con − y + el peso va de {unidad === 'lb' ? '5 en 5' : '2,5 en 2,5'}; vacío es con tu cuerpo. El ejercicio recuerda si lo registras en kilos o en libras.</small>
         </fieldset>
         {pregunta ? (
           <div className="chips" role="group" aria-label="¿Quisiste decir…?">
@@ -435,17 +477,67 @@ function Pasos({ titulo, que, alSumar, children }: { titulo: string; que: string
 }
 
 // Corrige series, repeticiones y kilos; se valida igual que al registrar.
-function EditarSerie({ actual, alGuardar, alCancelar }: {
-  actual: Omit<Sesion, 'fecha'>; alGuardar: (s: Omit<Sesion, 'fecha'>) => Promise<void>; alCancelar: () => void
+// Nombre, parte del cuerpo y unidad de un ejercicio; cambiar la unidad no toca lo guardado, solo cómo se escribe y se lee.
+function EditarEjercicio({ nombre, parte, unidad, alGuardar, alCancelar }: {
+  nombre: string; parte: Parte | null; unidad: Unidad; alGuardar: (nombre: string, ficha: FichaEjercicio) => Promise<void>; alCancelar: () => void
 }) {
-  const [campos, setCampos] = useState({ series: String(actual.series), repeticiones: String(actual.repeticiones), peso: actual.peso === null ? '' : String(actual.peso).replace('.', ',') })
+  const [campos, setCampos] = useState({ nombre, parte: parte ?? '', unidad })
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
 
   async function guardar(evento: FormEvent) {
     evento.preventDefault()
-    const s = leerSerie(actual.ejercicio, campos.series, campos.repeticiones, campos.peso)
-    if (!s) return setError('Revisa: series de 1 a 100, repeticiones de 1 a 1.000 y el peso en kg (vacío si es con tu cuerpo).')
+    const nuevo = campos.nombre.replace(/\s+/g, ' ').trim()
+    if (!nuevo) return setError('Escribe el nombre del ejercicio.')
+    setEnviando(true)
+    try {
+      await alGuardar(nuevo, { parte_cuerpo: campos.parte || null, unidad_peso: campos.unidad })
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  return (
+    <form className="formulario corregir" onSubmit={guardar}>
+      <label>Nombre
+        <input required maxLength={60} value={campos.nombre} autoComplete="off" autoFocus onChange={ev => setCampos({ ...campos, nombre: ev.target.value })} />
+      </label>
+      <div className="campos">
+        <label>Parte del cuerpo
+          <select value={campos.parte} onChange={ev => setCampos({ ...campos, parte: ev.target.value })}>
+            <option value="">Sin elegir</option>
+            {Object.entries(PARTES).map(([c, n]) => <option key={c} value={c}>{n}</option>)}
+          </select>
+        </label>
+        <label>Peso en
+          <select value={campos.unidad} onChange={ev => setCampos({ ...campos, unidad: ev.target.value as Unidad })}>
+            <option value="kg">Kilos</option>
+            <option value="lb">Libras</option>
+          </select>
+        </label>
+      </div>
+      <div className="chips">
+        <button className="principal" disabled={enviando}>Guardar</button>
+        <button type="button" className="secundario" onClick={alCancelar}>Cancelar</button>
+      </div>
+      {error && <p role="alert" className="error">{error}</p>}
+    </form>
+  )
+}
+
+function EditarSerie({ actual, unidad, alGuardar, alCancelar }: {
+  actual: Omit<Sesion, 'fecha'>; unidad: Unidad; alGuardar: (s: Omit<Sesion, 'fecha'>) => Promise<void>; alCancelar: () => void
+}) {
+  const [campos, setCampos] = useState({ series: String(actual.series), repeticiones: String(actual.repeticiones), peso: actual.peso === null ? '' : String(enUnidad(actual.peso, unidad)).replace('.', ',') })
+  const [error, setError] = useState('')
+  const [enviando, setEnviando] = useState(false)
+
+  async function guardar(evento: FormEvent) {
+    evento.preventDefault()
+    const s = leerSerie(actual.ejercicio, campos.series, campos.repeticiones, campos.peso, unidad)
+    if (!s) return setError(`Revisa: series de 1 a 100, repeticiones de 1 a 1.000 y el peso en ${unidad} (vacío si es con tu cuerpo).`)
     setEnviando(true)
     try {
       await alGuardar(s)
@@ -461,7 +553,7 @@ function EditarSerie({ actual, alGuardar, alCancelar }: {
       <div className="campos">
         <label>Series<input required inputMode="numeric" maxLength={3} value={campos.series} onChange={ev => setCampos({ ...campos, series: ev.target.value })} /></label>
         <label>Repeticiones<input required inputMode="numeric" maxLength={4} value={campos.repeticiones} onChange={ev => setCampos({ ...campos, repeticiones: ev.target.value })} /></label>
-        <label>Kilos<input inputMode="decimal" maxLength={8} value={campos.peso} placeholder="tu cuerpo" onChange={ev => setCampos({ ...campos, peso: ev.target.value })} /></label>
+        <label>{unidad === 'lb' ? 'Libras' : 'Kilos'}<input inputMode="decimal" maxLength={8} value={campos.peso} placeholder="tu cuerpo" onChange={ev => setCampos({ ...campos, peso: ev.target.value })} /></label>
       </div>
       <div className="chips">
         <button className="principal" disabled={enviando}>Guardar</button>
@@ -532,8 +624,8 @@ function PanelSalud({ ventana, alCambiar, hoy, fechas }: { ventana: Ventana; alC
 }
 
 // Todo lo de Salud que se mira vive aquí; las pestañas Gym y Cuerpo son para registrar y corregir.
-function ResumenSalud({ sesiones, hoy, metaDias, ejercicios, medidas, registros, ventana, alCambiarVentana, alVer }: {
-  sesiones: Sesion[]; hoy: string; metaDias?: number; ejercicios: string[]; medidas: Seguimiento[]; registros: RegistroGuardado[]
+function ResumenSalud({ sesiones, hoy, metaDias, ejercicios, fichas, medidas, registros, ventana, alCambiarVentana, alVer }: {
+  sesiones: Sesion[]; hoy: string; metaDias?: number; ejercicios: string[]; fichas: Datos['fichas']; medidas: Seguimiento[]; registros: RegistroGuardado[]
   ventana: Ventana; alCambiarVentana: (v: Ventana) => void; alVer: (pestana: 'gym' | 'cuerpo' | 'historial') => void
 }) {
   const r = rangoDe(ventana.escala, ventana.ancla)
@@ -568,7 +660,7 @@ function ResumenSalud({ sesiones, hoy, metaDias, ejercicios, medidas, registros,
             </div>
           </section>
           <Constancia sesiones={sesiones} hoy={hoy} ventana={ventana} alVer={() => alVer('gym')} />
-          <Progreso sesiones={sesiones} hoy={hoy} ejercicios={ejercicios} ventana={ventana} alVer={() => alVer('historial')} />
+          <Progreso sesiones={sesiones} hoy={hoy} ejercicios={ejercicios} fichas={fichas} ventana={ventana} alVer={() => alVer('historial')} />
         </>
       )}
       <CuerpoHoy medidas={medidas} registros={registros} ventana={ventana} hoy={hoy} alVer={() => alVer('cuerpo')} />
@@ -717,7 +809,7 @@ function MetaGym({ idGym, meta, alCambiar }: { idGym: string; meta?: number; alC
 }
 
 const TODOS = '*'
-function Progreso({ sesiones, hoy, ejercicios, ventana, alVer }: { sesiones: Sesion[]; hoy: string; ejercicios: string[]; ventana: Ventana; alVer: () => void }) {
+function Progreso({ sesiones, hoy, ejercicios, fichas, ventana, alVer }: { sesiones: Sesion[]; hoy: string; ejercicios: string[]; fichas: Datos['fichas']; ventana: Ventana; alVer: () => void }) {
   const r = rangoDe(ventana.escala, ventana.ancla)
   const [elegido, setElegido] = useState('')
   // abre en el último ejercicio entrenado (las sesiones llegan de la más reciente a la más antigua)
@@ -734,14 +826,21 @@ function Progreso({ sesiones, hoy, ejercicios, ventana, alVer }: { sesiones: Ses
   if (!actual || !p) return null
   const cambio = cambioPeso(puntos)
   const cuando = enPeriodo(ventana, hoy)
-  const record = p.record !== null ? ` · récord ${kg(p.record)}` : ''
+  // un ejercicio se lee en su unidad; "Todos" compara en kg, que es como se guarda
+  const u: Unidad = fichas.get(actual)?.unidad_peso ?? 'kg'
+  const record = p.record !== null ? ` · récord ${kg(p.record, u)}` : ''
+  const partes = [...Object.keys(PARTES) as Parte[], null].map(c => ({ parte: c, suyos: ejercicios.filter(e => ((fichas.get(e)?.parte_cuerpo as Parte | null | undefined) ?? parteDe(e)) === c) })).filter(g => g.suyos.length)
   const subieron = cambios.filter(c => c.cambio > 0).length
   return (
     <section>
       <div className="bloque-pie"><h2>¿Estoy subiendo de peso?</h2><button className="enlace" onClick={alVer}>Ver →</button></div>
       <Selector id="filtro-ejercicio" titulo="Ejercicio" icono="🏋️" valor={todos ? TODOS : actual} alCambiar={setElegido}>
         <option value={TODOS}>Todos</option>
-        {ejercicios.map(e => <option key={e}>{e}</option>)}
+        {partes.map(g => (
+          <optgroup key={g.parte ?? 'sin'} label={g.parte ? PARTES[g.parte] : 'Sin parte del cuerpo'}>
+            {g.suyos.map(e => <option key={e}>{e}</option>)}
+          </optgroup>
+        ))}
       </Selector>
       {todos ? (cambios.length ? (
         <>
@@ -753,10 +852,10 @@ function Progreso({ sesiones, hoy, ejercicios, ventana, alVer }: { sesiones: Ses
       ) : <p className="tenue">Pocos registros con peso {cuando}: hacen falta 2 días con peso en un mismo ejercicio.</p>) : (
         <>
           {cambio !== null
-            ? <p><strong className="cifra-media">{conSigno(cambio, 'kg')}</strong> <span className="tenue">{cuando}{record}</span></p>
+            ? <p><strong className="cifra-media">{conSigno(enUnidad(puntos[puntos.length - 1].valor, u) - enUnidad(puntos[0].valor, u), u)}</strong> <span className="tenue">{cuando}{record}</span></p>
             : <p className="tenue">Pocos registros con peso {cuando}{record}.</p>}
           {puntos.length > 0 && (
-            <Grafico puntos={puntos} color={cssVar('--c1')} colorMeta={cssVar('--tenue')} formato={kg} destacados={records} desde={r.desde} hasta={r.hasta}
+            <Grafico puntos={puntos} color={cssVar('--c1')} colorMeta={cssVar('--tenue')} formato={v => kg(v, u)} destacados={records} desde={r.desde} hasta={r.hasta}
               descripcion={`Mayor peso de cada día en ${actual}; los puntos grandes son cada récord nuevo`} />
           )}
         </>
@@ -969,6 +1068,11 @@ function HistorialSalud({ gym, medidas, registros, alCambiar }: {
   const ejercicios = datos.nombres
   const series = new Map(datos.series.map(s => [s.id_registro, s]))
   const seguimientos = [gym, ...medidas]
+  const unidadDe = (idEtiqueta: string | null): Unidad => datos.fichas.get(ejercicios.get(idEtiqueta ?? '') ?? '')?.unidad_peso ?? 'kg'
+  const parteDeRegistro = (r: RegistroGuardado) => {
+    const nombre = r.id_seguimiento === gym.id_seguimiento ? ejercicios.get(r.id_etiqueta ?? '') : undefined
+    return nombre ? (datos.fichas.get(nombre)?.parte_cuerpo ?? parteDe(nombre) ?? '') : ''
+  }
   const nombreDe = (r: RegistroGuardado) => r.id_seguimiento === gym.id_seguimiento
     ? ejercicios.get(r.id_etiqueta ?? '') ?? 'Ejercicio'
     : seguimientos.find(s => s.id_seguimiento === r.id_seguimiento)?.nombre ?? ''
@@ -978,12 +1082,13 @@ function HistorialSalud({ gym, medidas, registros, alCambiar }: {
       registros={registros}
       filtros={[
         { nombre: 'Tipo', opciones: seguimientos.map(s => [s.id_seguimiento, s.nombre] as [string, string]), de: r => r.id_seguimiento },
+        { nombre: 'Parte del cuerpo', opciones: Object.entries(PARTES), de: parteDeRegistro },
         { nombre: 'Ejercicio', opciones: [...ejercicios].sort((a, b) => a[1].localeCompare(b[1])), de: r => r.id_etiqueta ?? '' },
       ]}
       suma={false}
       vista={elegidos => {
         const medida = medidas.find(m => m.id_seguimiento === elegidos.Tipo)
-        if (elegidos.Ejercicio) return { modo: 'maximo', pregunta: `Peso máximo en ${ejercicios.get(elegidos.Ejercicio) ?? 'el ejercicio'}`, formato: kg }
+        if (elegidos.Ejercicio) return { modo: 'maximo', pregunta: `Peso máximo en ${ejercicios.get(elegidos.Ejercicio) ?? 'el ejercicio'}`, formato: (v: number) => kg(v, unidadDe(elegidos.Ejercicio)) }
         if (medida) return { modo: 'maximo', pregunta: `Tu ${medida.nombre.toLowerCase()}`, formato: (v: number) => formatoValor('numero', v, medida.unidad) }
         // sin filtro: series del gym (las viejas "4 × 10" cuentan 4)
         return { modo: 'conteo', pregunta: 'Series de gym de cada día', cuanto: (r: RegistroGuardado) => r.id_seguimiento === gym.id_seguimiento ? series.get(r.id_registro)?.cantidad_series ?? 1 : 0 }
@@ -995,7 +1100,7 @@ function HistorialSalud({ gym, medidas, registros, alCambiar }: {
       fila={r => {
         const s = series.get(r.id_registro)
         const medida = seguimientos.find(x => x.id_seguimiento === r.id_seguimiento)
-        const detalle = s ? textoSerie({ series: s.cantidad_series, repeticiones: s.cantidad_repeticiones, peso: s.peso_kilogramos === null ? null : Number(s.peso_kilogramos) })
+        const detalle = s ? textoSerie({ series: s.cantidad_series, repeticiones: s.cantidad_repeticiones, peso: s.peso_kilogramos === null ? null : Number(s.peso_kilogramos) }, unidadDe(r.id_etiqueta))
           : formatoValor('numero', r.valor, medida?.unidad)
         return <FilaSimple key={r.id_registro} fecha={r.fecha} titulo={nombreDe(r)} detalle={detalle} alBorrar={() => eliminarRegistro(r.id_registro).then(alCambiar)} />
       }}

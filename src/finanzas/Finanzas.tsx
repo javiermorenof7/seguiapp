@@ -13,7 +13,7 @@ import Barras from './Barras'
 import Dona from './Dona'
 import SinDatos from '../SinDatos'
 import { Apilada, Avance } from './Medidas'
-import { recibosDelMes, totalesDelMes } from './estadoRecibos'
+import { queDescuentan, recibosDelMes, totalesDelMes } from './estadoRecibos'
 import { avanceMeta } from './metas'
 import { amortizacion, estadoPrestamo, nombrePrestamo } from './prestamos'
 import Ultimos, { FilaMovimiento } from './Ultimos'
@@ -149,7 +149,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
     const movs = esAno ? todos.filter(m => m.fecha.startsWith(periodo)).map(m => ({ ...m, fecha: `${periodo}-01-01` })) : todos
     const meses = esAno ? (periodo === hoyIso().slice(0, 4) ? Number(hoyIso().slice(5, 7)) : 12) : 1
     const presupuestos = new Map(datos.presupuestos.map(p => [p.id_etiqueta, Number(p.valor) * meses]))
-    const pendientes = esAno ? [] : recibosPendientes(datos.recibos.filter(r => r.descuenta_saldo !== false), datos.pagos, mes)
+    const pendientes = esAno ? [] : recibosPendientes(queDescuentan(datos.recibos), datos.pagos, mes)
     const idHogar = datos.categorias.find(c => normalizar(c.nombre).startsWith('hogar'))?.id_etiqueta ?? null
     const filas = porCategoria(movs, mes, datos.categorias, presupuestos, pendientes, idHogar)
     const delMes = resumenMes(movs, mes)
@@ -167,7 +167,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
   }, [todos])
   const primerMes = periodosDisponibles.at(-1)?.[1].at(-1) ?? mes
   const cuentasVer = useMemo(() => mesVer === mes ? cuentas : cuentasDe(mesVer), [cuentasDe, cuentas, mes, mesVer])
-  const facturasVer = useMemo(() => recibosVer && totalesDelMes(recibosDelMes(recibosVer.recibos.filter(r => r.estado !== 'no_se_paga'), recibosVer.pagos,
+  const facturasVer = useMemo(() => recibosVer && totalesDelMes(recibosDelMes(queDescuentan(recibosVer.recibos).filter(r => r.estado !== 'no_se_paga'), recibosVer.pagos,
     mesVer === mes ? hoyIso() : finDeMes(mesVer.length === 4 ? `${mesVer}-12` : mesVer))), [recibosVer, mes, mesVer])
 
   // "+ Registrar …" de cada pestaña; al tocarlo se abre el formulario de ese tipo

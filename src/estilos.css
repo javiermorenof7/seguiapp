@@ -442,6 +442,9 @@ section:not([class]) + form.formulario { margin-top: 40px; }
 .repetir-gym { margin-top: 14px; }
 .lista li.grupo-gym > .series-del-grupo { grid-column: 1 / -1; margin: 0; padding: 0; }
 .series-gym > .secundario { justify-self: start; }
+.series-gym > .segmentado { justify-self: start; }
+.parte-cuerpo { margin-top: 20px; }
+.parte-cuerpo h3 { font-size: 15px; font-weight: 700; margin: 0 0 4px; }
 .series-dia { text-align: right; }
 .pregunta-grafico { margin: 16px 0 4px; font-size: 1rem; }
 

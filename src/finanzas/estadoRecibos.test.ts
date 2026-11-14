@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { avanceDelMes, diaAprendido, mosaicoRecibos, finDeMes, numeroParaCopiar, recibosDelMes, totalesDelMes, ubicacionDe, parecidoExistente, ubicacionesConConteo, ubicacionesDe, vencidasAnteriores, vencidasPorFactura, type FilaRecibo, type PagoGuardado, type ReciboVisible } from './estadoRecibos'
+import { avanceDelMes, diaAprendido, mosaicoRecibos, finDeMes, numeroParaCopiar, queDescuentan, recibosDelMes, totalesDelMes, ubicacionDe, parecidoExistente, ubicacionesConConteo, ubicacionesDe, vencidasAnteriores, vencidasPorFactura, type FilaRecibo, type PagoGuardado, type ReciboVisible } from './estadoRecibos'
 
 const r = (id: string, extra: Partial<ReciboVisible> = {}): ReciboVisible => ({
   id_recibo: id, nombre_servicio: id, nombre_ubicacion: null, tipo_recibo: 'personal', dia_pago: null, numero_cuenta_enmascarado: null, ...extra,
@@ -75,6 +75,11 @@ describe('recibosDelMes', () => {
   })
   it('suma pagado, por pagar y vencido', () =>
     expect(totalesDelMes(filas)).toEqual({ pagado: 85000, porPagar: 60000, vencido: 130000 }))
+  it('las que no descuentan del saldo no entran en los totales del resumen', () => {
+    const recibos = [r('net'), r('seguro', { descuenta_saldo: false })]
+    const pagos = [p('net', '2026-10', 85000), p('seguro', '2026-10', 40000)]
+    expect(totalesDelMes(recibosDelMes(queDescuentan(recibos), pagos, '2026-10-20'))).toEqual({ pagado: 85000, porPagar: 0, vencido: 0 })
+  })
 })
 
 describe('vencidasAnteriores', () => {

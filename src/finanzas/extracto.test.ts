@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { conciliar, diferencia, leerCentavos, leerExtracto, type Anotado, type ExtractoLeido } from './extracto'
+import { conciliar, diferencia, leerCentavos, leerExtracto, limpiarOcr, type Anotado, type ExtractoLeido } from './extracto'
 
 // Extracto inventado: saldo anterior 1.000.000,00 y cuatro movimientos.
 const POR_LINEA = [
@@ -121,5 +121,23 @@ describe('conciliar', () => {
     const c = conciliar(e, e.movimientos.map((m, i) => ({ id_registro: `r${i}`, fecha: m.fecha, valor: m.valor, id_cuenta: 'c1', nota: m.descripcion })), 'c1', cargados)
     expect(c.cuadran).toHaveLength(5)
     expect(diferencia(c)).toBe(0)
+  })
+})
+
+describe('limpiarOcr', () => {
+  it('deja leer una tabla sacada de una imagen', () => {
+    const lineas = [
+      'Periodo: Abril 2026', 'Saldo Anterior: 1,000,000.00',
+      '02/04 | AB1 |Deposito nomina [0012 |Suc Centro 01 2,500,000.00| 3,500,000.00|',
+      'a 05/04 | CD2 (Retiro en cajero [0012 |Suc Norte 02 -200,000.00| 3,300,000.00/',
+      '" 09/04 | EF3 |Comision manejo [0012 |Suc Norte 02 -11.90| 3,299,988.10|',
+      '9 12/04 | AB1 [Deposito nomina [0012 [Suc Centro 01 100,000.00| 3,399,988.10',
+      '(1) Los pagos del 12/04 se abonan al día siguiente.',
+    ]
+    const e = leido(limpiarOcr(lineas))
+    expect(e.movimientos.map(m => m.valor)).toEqual([250000000, -20000000, -1190, 10000000])
+    expect(e.movimientos.some(m => m.dudoso)).toBe(false)
+    expect(e.movimientos[1]).toMatchObject({ fecha: '2026-04-05', saldo: 330000000 })
+    expect(e.saldoInicial).toBe(100000000)
   })
 })

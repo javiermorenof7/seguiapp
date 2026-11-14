@@ -11,15 +11,18 @@ export class PdfConClave extends Error {
  * Las líneas de texto de un PDF, de arriba abajo. El archivo se lee en el equipo: no sale a ningún lado.
  * Lanza PdfConClave si pide clave o la que se dio no es.
  */
-export async function lineasDePdf(archivo: File, clave: string | undefined, alAvanzar: (pagina: number, total: number) => void): Promise<string[]> {
+async function abrir(archivo: File, clave: string | undefined) {
   const tarea = pdfjs.getDocument({ data: new Uint8Array(await archivo.arrayBuffer()), password: clave })
-  let documento: Awaited<typeof tarea.promise>
   try {
-    documento = await tarea.promise
+    return { tarea, documento: await tarea.promise }
   } catch (e) {
     if ((e as Error).name === 'PasswordException') throw new PdfConClave(clave !== undefined)
     throw e
   }
+}
+
+export async function lineasDePdf(archivo: File, clave: string | undefined, alAvanzar: (pagina: number, total: number) => void): Promise<string[]> {
+  const { tarea, documento } = await abrir(archivo, clave)
   const lineas: string[] = []
   try {
     for (let n = 1; n <= documento.numPages; n++) {
@@ -36,6 +39,44 @@ export async function lineasDePdf(archivo: File, clave: string | undefined, alAv
         lineas.push(partes.sort((a, b) => a.x - b.x).map(p => p.texto).join(' ').replace(/\s+/g, ' ').trim())
     }
   } finally {
+    await tarea.destroy()
+  }
+  return lineas
+}
+
+/**
+ * Lo mismo cuando el PDF trae los movimientos como imagen: dibuja cada página y la lee con OCR, también en el equipo.
+ * El lector, su núcleo y el idioma son archivos de la propia app y solo se descargan aquí.
+ */
+export async function lineasPorOcr(archivo: File, clave: string | undefined, alAvanzar: (pagina: number, total: number) => void): Promise<string[]> {
+  const [{ createWorker }, trabajador, nucleo, idioma] = await Promise.all([
+    import('tesseract.js'),
+    import('tesseract.js/dist/worker.min.js?url'),
+    // shortcut: solo el núcleo con SIMD (navegadores desde 2023); sumar el de respaldo si alguien no puede leer
+    import('tesseract.js-core/tesseract-core-simd-lstm.wasm.js?url'),
+    import('@tesseract.js-data/spa/4.0.0_best_int/spa.traineddata.gz?url'),
+  ])
+  // el lector corre en otro hilo y resuelve las rutas desde su propio archivo: se le dan completas
+  const completa = (ruta: string) => new URL(ruta, location.href).href
+  const datos = new Uint8Array(await (await fetch(completa(idioma.default))).arrayBuffer())
+  const { tarea, documento } = await abrir(archivo, clave)
+  const lector = await createWorker([{ code: 'spa', data: datos }] as never, 1, {
+    workerPath: completa(trabajador.default), corePath: completa(nucleo.default), workerBlobURL: false, cacheMethod: 'none',
+  })
+  const lineas: string[] = []
+  try {
+    for (let n = 1; n <= documento.numPages; n++) {
+      alAvanzar(n, documento.numPages)
+      const pagina = await documento.getPage(n)
+      const vista = pagina.getViewport({ scale: 2.5 })
+      const lienzo = document.createElement('canvas')
+      lienzo.width = vista.width; lienzo.height = vista.height
+      await pagina.render({ canvas: lienzo, viewport: vista }).promise
+      const { data } = await lector.recognize(lienzo)
+      lineas.push(...data.text.split('\n').map(l => l.trim()).filter(Boolean))
+    }
+  } finally {
+    await lector.terminate()
     await tarea.destroy()
   }
   return lineas

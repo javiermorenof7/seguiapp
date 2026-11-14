@@ -90,13 +90,16 @@ function armar(base: Fila[], formato: Formato, antes: number[]): { movimientos: 
   const movimientos: MovimientoBanco[] = []
   let saltos = 0
   let saldoInicial = 0
+  const conSigno = 'valor' in formato && base.some(f => f.montos[formato.valor] < 0)
   base.forEach((f, i) => {
     const saldo = f.montos[formato.saldo]
     const anterior = i ? movimientos[i - 1].saldo : null
     let valor: number
     if ('valor' in formato) {
       const bruto = f.montos[formato.valor]
-      if (bruto < 0 || anterior === null) {
+      // si la columna trae los débitos con menos, lo que no lo lleva es un crédito
+      if (conSigno) valor = bruto
+      else if (bruto < 0 || anterior === null) {
         // primera fila sin signo: lo da el saldo anterior si aparece antes de la tabla
         valor = bruto < 0 ? bruto : antes.includes(saldo - bruto) ? bruto : -bruto
       } else valor = saldo >= anterior ? Math.abs(bruto) : -Math.abs(bruto)
@@ -166,6 +169,19 @@ export function leerExtracto(lineas: string[], formato?: Formato): Lectura {
       saldoInicial, saldoFinal: movimientos[movimientos.length - 1].saldo, movimientos,
     },
   }
+}
+
+/**
+ * Deja las líneas leídas de una imagen como las de un PDF con texto:
+ * quita las rayas de la tabla y la basura que queda antes de la fecha de cada fila.
+ */
+export function limpiarOcr(lineas: string[]): string[] {
+  return lineas.map(l => {
+    const limpia = l.replace(/[|[\]{}_—]+/g, ' ').replace(/\s+/g, ' ').trim()
+    const fila = /^.{0,5}?(?<![\d/])(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)(?=\s)(.*)$/.exec(limpia)
+    // search y no test: MONTO es global y test recordaría dónde quedó
+    return fila && fila[2].search(MONTO) >= 0 ? fila[1] + fila[2] : limpia
+  })
 }
 
 // Lo que ya está en la app, con el mismo signo que el banco.

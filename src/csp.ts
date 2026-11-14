@@ -1,7 +1,8 @@
 // Política de contenido: solo la propia web, Supabase y las fotos de perfil de Google.
 export const CSP = [
   "default-src 'self'",
-  "script-src 'self'",
+  // wasm-unsafe-eval deja compilar WebAssembly propio (leer extractos en imagen); no abre eval ni código en línea
+  "script-src 'self' 'wasm-unsafe-eval'",
   "style-src 'self'",
   "font-src 'self'",
   "img-src 'self' data: https://lh3.googleusercontent.com",

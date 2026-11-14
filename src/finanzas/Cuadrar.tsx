@@ -7,7 +7,7 @@ import {
 import { formatoValor } from '../indicadores'
 import { facturaParecida } from './aprende'
 import { queDescuentan } from './estadoRecibos'
-import { conciliar, diferencia, enPesos, leerExtracto, type Anotado, type ExtractoLeido, type Formato, type MovimientoBanco } from './extracto'
+import { conciliar, diferencia, enPesos, leerExtracto, limpiarOcr, type Anotado, type ExtractoLeido, type Formato, type MovimientoBanco } from './extracto'
 import { categoriaDe, normalizar } from './parseo'
 
 type Datos = Awaited<ReturnType<typeof obtenerFinanzas>>
@@ -62,15 +62,20 @@ export default function Extracto({ ids, datos, banco, registros, desdeRegistros,
     setError(''); setAviso('')
     setEstado({ paso: 'leyendo', texto: 'Abriendo el extracto…' })
     try {
-      const { lineasDePdf, PdfConClave } = await import('./leerPdf')
-      let lineas: string[]
+      const { lineasDePdf, lineasPorOcr, PdfConClave } = await import('./leerPdf')
       try {
-        lineas = await lineasDePdf(archivo, clave, (n, total) => setEstado({ paso: 'leyendo', texto: `Leyendo página ${n} de ${total}` }))
+        const lineas = await lineasDePdf(archivo, clave, (n, total) => setEstado({ paso: 'leyendo', texto: `Leyendo página ${n} de ${total}` }))
+        if (interpretar(lineas)) return
+        // sin movimientos en el texto: vienen como imagen
+        setEstado({ paso: 'leyendo', texto: 'Los movimientos vienen como imagen: preparando el lector, tarda unos segundos…' })
+        const leidas = await lineasPorOcr(archivo, clave, (n, total) => setEstado({ paso: 'leyendo', texto: `Leyendo la imagen de la página ${n} de ${total}` }))
+        if (interpretar(limpiarOcr(leidas))) return
+        setEstado({ paso: 'inicio' })
+        setError('No encontré movimientos en este PDF. Revisa que sea el extracto de una cuenta de ahorros o corriente.')
       } catch (e) {
         if (e instanceof PdfConClave) return setEstado({ paso: 'clave', archivo, equivocada: e.equivocada })
         throw e
       }
-      interpretar(lineas)
     } catch {
       setEstado({ paso: 'inicio' })
       setError('No pude leer ese archivo. Revisa que sea el PDF del extracto tal como lo entrega el banco.')
@@ -80,18 +85,20 @@ export default function Extracto({ ids, datos, banco, registros, desdeRegistros,
   // la firma de un formato: sus primeras líneas sin números, para recordar qué es cada columna
   const firma = (lineas: string[]) => normalizar(lineas.filter(l => !/\d/.test(l)).slice(0, 4).join('|')).slice(0, 100)
 
-  function interpretar(lineas: string[], formato?: Formato) {
+  // true si con esas líneas ya hay algo que mostrar (el cuadre o la pregunta de las columnas)
+  function interpretar(lineas: string[], formato?: Formato): boolean {
     const guardado = sabidos.formatos.get(firma(lineas))
     const lectura = leerExtracto(lineas, formato ?? (guardado ? JSON.parse(guardado) as Formato : undefined))
     if (lectura.ok) {
       if (formato) aprenderDeExtracto('formato_extracto', firma(lineas), JSON.stringify(formato)).catch(() => {})
-      return setEstado({ paso: 'cuadre', extracto: lectura.extracto, lineas })
+      setEstado({ paso: 'cuadre', extracto: lectura.extracto, lineas })
+      return true
     }
-    if (lectura.motivo === 'columnas' && lectura.ejemplo.montos.length >= 2) return setEstado({ paso: 'columnas', lineas, ejemplo: lectura.ejemplo })
-    setEstado({ paso: 'inicio' })
-    setError(lineas.join('').length < 200
-      ? 'Este PDF trae los movimientos como imagen y todavía no los puedo leer.'
-      : 'No encontré movimientos en este PDF. Revisa que sea el extracto de una cuenta de ahorros o corriente.')
+    if (lectura.motivo === 'columnas' && lectura.ejemplo.montos.length >= 2) {
+      setEstado({ paso: 'columnas', lineas, ejemplo: lectura.ejemplo })
+      return true
+    }
+    return false
   }
 
   return (
@@ -115,7 +122,7 @@ export default function Extracto({ ids, datos, banco, registros, desdeRegistros,
         <Clave equivocada={estado.equivocada} alCancelar={() => setEstado({ paso: 'inicio' })} alEnviar={clave => leer(estado.archivo, clave)} />
       )}
       {estado.paso === 'columnas' && (
-        <Columnas ejemplo={estado.ejemplo} alCancelar={() => setEstado({ paso: 'inicio' })} alElegir={formato => interpretar(estado.lineas, formato)} />
+        <Columnas ejemplo={estado.ejemplo} alCancelar={() => setEstado({ paso: 'inicio' })} alElegir={formato => { if (!interpretar(estado.lineas, formato)) { setEstado({ paso: 'inicio' }); setError('Con esas columnas el saldo no cuadra. Sube el extracto otra vez y elige otras.') } }} />
       )}
       {estado.paso === 'cuadre' && (
         <Cuadre key={estado.extracto.desde + estado.extracto.hasta + estado.extracto.saldoFinal} extracto={estado.extracto} ids={ids} datos={datos} banco={banco}

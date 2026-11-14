@@ -1,3 +1,4 @@
+import ComoFunciona from '../ComoFunciona'
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { normalizar } from '../finanzas/parseo'
 import { cambiarRecordatorio, crearRecordatorio, crearTarea, editarTarea, marcarTarea, obtenerTareas, quitarTarea } from '../datos'
@@ -108,6 +109,7 @@ export default function Tareas({ abrir, alVolver }: { abrir?: AccionTareas; alVo
           <p className="tenue">{new Date(`${hoy}T12:00`).toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
         </div>
       </header>
+      <ComoFunciona modulo="tareas" pasos={['En Tareas anotas lo que tienes que hacer y para cuándo.', 'En Recordatorios pones lo que se repite, con su hora.', 'Hoy junta lo vencido, los recordatorios y las tareas del día.']} />
       {error && <p role="alert" className="error">{error}</p>}
       {aviso && <p role="status" className="aviso">{aviso}</p>}
       <div className="chips pestanas" role="radiogroup" aria-label="Sección de Tareas">

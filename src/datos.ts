@@ -33,6 +33,7 @@ interface NuevoRegistro {
   id_seguimiento: string
   id_etiqueta?: string | null
   grupo?: 'basico' | 'personal' | null
+  id_cuenta?: string | null
   fecha_registro: string
   valor: number
   nota: string | null
@@ -43,6 +44,17 @@ class ErrorDatos extends Error {}
 function revisar<T>(respuesta: { data: T; error: unknown }): NonNullable<T> {
   if (respuesta.error) throw new ErrorDatos('No se pudo completar. Revisa tu conexión e inténtalo de nuevo.')
   return respuesta.data as NonNullable<T>
+}
+
+// La API entrega hasta 1000 filas por pedido: se piden por páginas hasta que no haya más.
+async function porPaginas<T>(pagina: (desde: number, hasta: number) => PromiseLike<{ data: T[] | null; error: unknown }>): Promise<{ data: T[]; error: unknown }> {
+  const filas: T[] = []
+  for (let i = 0; ; i += 1000) {
+    const { data, error } = await pagina(i, i + 999)
+    if (error) return { data: [], error }
+    filas.push(...(data ?? []))
+    if ((data ?? []).length < 1000) return { data: filas, error: null }
+  }
 }
 
 const sinConexion = (error: { message?: string } | null) =>
@@ -76,15 +88,19 @@ export async function activarPlantillas(codigos: string[]) {
 }
 
 export async function obtenerRegistros(desde: string, idSeguimiento?: string): Promise<RegistroGuardado[]> {
-  let consulta = supabase
-    .from('registro')
-    .select('id_registro, id_seguimiento, id_etiqueta, grupo, fecha_registro, valor, nota')
-    .eq('estado', 'activo')
-    .gte('fecha_registro', desde)
-    .order('fecha_registro', { ascending: false })
-    .order('fecha_creacion', { ascending: false })
-  if (idSeguimiento) consulta = consulta.eq('id_seguimiento', idSeguimiento)
-  return revisar(await consulta).map(({ fecha_registro, ...r }) => ({ ...r, fecha: fecha_registro }))
+  const filas = await porPaginas((a, b) => {
+    let consulta = supabase
+      .from('registro')
+      .select('id_registro, id_seguimiento, id_etiqueta, grupo, fecha_registro, valor, nota')
+      .eq('estado', 'activo')
+      .gte('fecha_registro', desde)
+      .order('fecha_registro', { ascending: false })
+      .order('fecha_creacion', { ascending: false })
+      .order('id_registro')
+    if (idSeguimiento) consulta = consulta.eq('id_seguimiento', idSeguimiento)
+    return consulta.range(a, b)
+  })
+  return revisar(filas).map(({ fecha_registro, ...r }) => ({ ...r, fecha: fecha_registro }))
 }
 
 export async function crearSeguimiento(
@@ -181,8 +197,8 @@ export async function eliminarRegistro(id: string) {
   revisar(await supabase.from('registro').update({ estado: 'eliminado' }).eq('id_registro', id))
 }
 
-export type Origen = 'factura' | 'prestamo'
-export const TEXTO_ORIGEN: Record<Origen, string> = { factura: 'Factura', prestamo: 'Cuota de préstamo' }
+export type Origen = 'factura' | 'prestamo' | 'extracto'
+export const TEXTO_ORIGEN: Record<Origen, string> = { factura: 'Factura', prestamo: 'Cuota de préstamo', extracto: 'Extracto' }
 
 export interface Presupuesto { id_meta: string; id_etiqueta: string; valor: number }
 
@@ -221,7 +237,7 @@ export async function obtenerFinanzas(idGastos: string, desdePagos: string, idIn
 export const aprenderCategoria = (textoEscrito: string, categoria: string) => aprenderNombre('categoria', textoEscrito, categoria)
 
 // Un "no" a "¿quisiste decir…?" se guarda con el mismo texto como correcto.
-export async function aprenderNombre(tipo: 'categoria' | 'ejercicio' | 'habito', textoEscrito: string, correcto: string) {
+export async function aprenderNombre(tipo: 'categoria' | 'ejercicio' | 'habito' | 'traslado' | 'formato_extracto', textoEscrito: string, correcto: string) {
   revisar(await supabase.from('alias').upsert(
     { tipo, texto_escrito: textoEscrito.slice(0, 100), texto_correcto: correcto.slice(0, 100), estado: 'activo' },
     { onConflict: 'id_usuario,tipo,texto_escrito' },
@@ -701,7 +717,9 @@ export async function obtenerDescarga(modulo: ModuloDescarga) {
   const tablas = async (...t: [string, string, string?][]) =>
     Promise.all(t.map(async ([titulo, tabla, orden]) => ({ titulo, filas: await todas(tabla, orden) })))
   switch (modulo) {
-    case 'finanzas': return [...await deSeguimientos(modulo), ...await tablas(['Recibos', 'recibo_visible', 'id_recibo'], ['Pagos de recibos', 'pago_recibo'])]
+    case 'finanzas': return [...await deSeguimientos(modulo), ...await tablas(['Recibos', 'recibo_visible', 'id_recibo'], ['Pagos de recibos', 'pago_recibo']),
+      // shortcut: sin las tablas de cuentas en la base, la descarga sale sin ellas
+      ...await tablas(['Cuentas', 'cuenta'], ['Extractos', 'extracto'], ['Movimientos de extractos', 'registro_extracto']).catch(() => [])]
     case 'deudas': return tablas(['Préstamos', 'prestamo'], ['Movimientos de préstamos', 'movimiento_prestamo'])
     case 'salud': return [...await deSeguimientos(modulo), ...await tablas(['Series de gym', 'serie_gym'])]
     case 'habitos': return deSeguimientos(modulo)
@@ -769,4 +787,112 @@ export async function borrarMiCuenta() {
   if (error?.message === 'administrador') throw new ErrorDatos('La cuenta del administrador no se borra desde la app.')
   revisar({ data: null, error })
   await cerrarSesion()
+}
+
+// ---------- Cuentas y extractos bancarios ----------
+
+export interface Cuenta { id_cuenta: string; nombre: string; ultimos_digitos: string | null }
+export interface ExtractoGuardado { id_extracto: string; id_cuenta: string; fecha_desde: string; fecha_hasta: string; valor_saldo_inicial: number; valor_saldo_final: number }
+export interface Vinculo { id_extracto: string; id_registro: string | null; huella: string; fecha_movimiento: string; valor_banco: number; creado_por_carga: boolean }
+export type Banco = NonNullable<Awaited<ReturnType<typeof obtenerBanco>>>
+
+// Cuentas, la cuenta de cada registro y lo cargado de extractos.
+// shortcut: devuelve null si la base aún no tiene estas tablas y la app sigue sin cuentas; quitar el respaldo cuando la migración esté en producción.
+export async function obtenerBanco() {
+  const [cuentas, conCuenta, extractos, vinculos] = await Promise.all([
+    supabase.from('cuenta').select('id_cuenta, nombre, ultimos_digitos').eq('estado', 'activo').order('fecha_creacion'),
+    porPaginas((a, b) => supabase.from('registro').select('id_registro, id_cuenta').eq('estado', 'activo').not('id_cuenta', 'is', null).order('id_registro').range(a, b)),
+    supabase.from('extracto').select('id_extracto, id_cuenta, fecha_desde, fecha_hasta, valor_saldo_inicial, valor_saldo_final').order('fecha_hasta', { ascending: false }),
+    porPaginas((a, b) => supabase.from('registro_extracto').select('id_extracto, id_registro, huella, fecha_movimiento, valor_banco, creado_por_carga').order('id_registro_extracto').range(a, b)),
+  ])
+  if (cuentas.error || conCuenta.error || extractos.error || vinculos.error) return null
+  return {
+    cuentas: cuentas.data as Cuenta[],
+    deRegistro: new Map((conCuenta.data as { id_registro: string; id_cuenta: string }[]).map(r => [r.id_registro, r.id_cuenta])),
+    extractos: extractos.data as ExtractoGuardado[],
+    vinculos: vinculos.data as Vinculo[],
+  }
+}
+
+// Una cuenta con ese nombre que se había quitado vuelve en vez de crearse otra.
+export async function crearCuenta(nombre: string, ultimosDigitos: string | null = null): Promise<string> {
+  const { id_cuenta } = revisar(await supabase.from('cuenta')
+    .upsert({ nombre, ultimos_digitos: ultimosDigitos, estado: 'activo' }, { onConflict: 'id_usuario,nombre' }).select('id_cuenta').single())
+  return id_cuenta as string
+}
+
+export async function ponerCuenta(ids: string[], idCuenta: string | null) {
+  for (let i = 0; i < ids.length; i += 100)
+    revisar(await supabase.from('registro').update({ id_cuenta: idCuenta }).in('id_registro', ids.slice(i, i + 100)))
+}
+
+// Traslados entre cuentas propias: cuarto seguimiento de Finanzas, con Entrada y Salida; no cuenta como gasto ni ingreso.
+export async function crearTraslados(): Promise<{ id_seguimiento: string; entrada: string; salida: string }> {
+  const { data } = await supabase.from('seguimiento').select('id_seguimiento').eq('codigo_plantilla', 'finanzas').eq('nombre', 'Traslados').maybeSingle()
+  const id_seguimiento = (data?.id_seguimiento as string | undefined)
+    ?? await crearSeguimiento({ nombre: 'Traslados', unidad: null, codigo_plantilla: 'finanzas', tipo_medida: 'dinero', frecuencia: 'registro' }, null)
+  revisar(await supabase.from('seguimiento').update({ estado: 'activo' }).eq('id_seguimiento', id_seguimiento))
+  const etiquetas = revisar(await supabase.from('etiqueta')
+    .upsert(['Entrada', 'Salida'].map(nombre => ({ id_seguimiento, nombre, estado: 'activo' })), { onConflict: 'id_seguimiento,nombre' }).select('id_etiqueta, nombre'))
+  const de = (nombre: string) => etiquetas.find(e => e.nombre === nombre)!.id_etiqueta as string
+  return { id_seguimiento, entrada: de('Entrada'), salida: de('Salida') }
+}
+
+export interface FilaCarga {
+  huella: string
+  fecha: string
+  /** pesos con centavos y signo, como lo trae el banco */
+  valor_banco: number
+  /** el registro que ya estaba anotado y se emparejó */
+  id_registro?: string
+  /** el registro nuevo; sin él (menos de un peso) solo cuenta en el saldo */
+  nuevo?: { id_seguimiento: string; id_etiqueta: string | null; valor: number; nota: string; id_recibo?: string }
+}
+
+// Guarda lo que se cuadró de un extracto: crea los registros que faltaban, pone la cuenta a los que ya estaban y deja el vínculo de cada uno.
+export async function guardarCarga(
+  idCuenta: string, extracto: { desde: string; hasta: string; saldoInicial: number; saldoFinal: number }, filas: FilaCarga[],
+) {
+  if (!navigator.onLine) throw new ErrorDatos('Sin conexión: el extracto se guarda cuando vuelvas a tener internet.')
+  const { id_extracto } = revisar(await supabase.from('extracto').upsert({
+    id_cuenta: idCuenta, fecha_desde: extracto.desde, fecha_hasta: extracto.hasta, valor_saldo_inicial: extracto.saldoInicial, valor_saldo_final: extracto.saldoFinal,
+  }, { onConflict: 'id_usuario,id_cuenta,fecha_desde,fecha_hasta' }).select('id_extracto').single())
+  const conId = filas.map(f => ({ ...f, id: f.id_registro ?? (f.nuevo ? crypto.randomUUID() : null) }))
+  const nuevos = conId.filter(f => f.nuevo)
+  for (let i = 0; i < nuevos.length; i += 500) {
+    revisar(await supabase.from('registro').insert(nuevos.slice(i, i + 500).map(f => ({
+      id_registro: f.id!, id_seguimiento: f.nuevo!.id_seguimiento, id_etiqueta: f.nuevo!.id_etiqueta, id_cuenta: idCuenta,
+      fecha_registro: f.fecha, valor: f.nuevo!.valor, nota: f.nuevo!.nota.slice(0, 500) || null,
+    }))))
+  }
+  await ponerCuenta(conId.filter(f => f.id_registro).map(f => f.id_registro!), idCuenta)
+  for (let i = 0; i < conId.length; i += 500) {
+    revisar(await supabase.from('registro_extracto').upsert(conId.slice(i, i + 500).map(f => ({
+      id_extracto, id_registro: f.id, huella: f.huella, fecha_movimiento: f.fecha, valor_banco: f.valor_banco, creado_por_carga: !!f.nuevo,
+    })), { onConflict: 'id_usuario,id_extracto,huella' }))
+  }
+  // las salidas que eran el pago de una factura la dejan pagada en su mes
+  const facturas = nuevos.filter(f => f.nuevo!.id_recibo)
+  if (facturas.length) {
+    revisar(await supabase.from('pago_recibo').upsert(facturas.map(f => ({
+      id_recibo: f.nuevo!.id_recibo!, fecha_periodo: `${f.fecha.slice(0, 7)}-01`, valor: f.nuevo!.valor, fecha_pago: f.fecha, estado: 'pagado', id_registro: f.id!,
+    })), { onConflict: 'id_usuario,id_recibo,fecha_periodo' }))
+  }
+}
+
+// Deshace una carga: quita los registros que creó y el extracto; lo que ya estaba anotado a mano se queda.
+export async function quitarCarga(idExtracto: string) {
+  const creados = revisar(await porPaginas((a, b) => supabase.from('registro_extracto').select('id_registro')
+    .eq('id_extracto', idExtracto).eq('creado_por_carga', true).not('id_registro', 'is', null).order('id_registro_extracto').range(a, b)))
+  const ids = creados.map(c => c.id_registro as string)
+  for (let i = 0; i < ids.length; i += 100)
+    revisar(await supabase.from('registro').update({ estado: 'eliminado' }).in('id_registro', ids.slice(i, i + 100)))
+  revisar(await supabase.from('extracto').delete().eq('id_extracto', idExtracto))
+}
+
+// Lo aprendido de los extractos: descripciones que son traslados y qué es cada columna de un formato.
+export const aprenderDeExtracto = (tipo: 'traslado' | 'formato_extracto', texto: string, valor: string) => aprenderNombre(tipo, texto, valor)
+export async function aprendidoDeExtracto(tipo: 'traslado' | 'formato_extracto'): Promise<Map<string, string>> {
+  const { data } = await supabase.from('alias').select('texto_escrito, texto_correcto').eq('tipo', tipo).eq('estado', 'activo')
+  return new Map((data ?? []).map(a => [a.texto_escrito as string, a.texto_correcto as string]))
 }

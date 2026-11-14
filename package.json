@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node -e \"require('fs').cpSync('node_modules/@tesseract.js-data/spa/4.0.0_best_int/spa.traineddata.gz','public/ocr/spa.traineddata.gz')\"",
     "dev": "vite",
+    "prebuild": "node -e \"require('fs').cpSync('node_modules/@tesseract.js-data/spa/4.0.0_best_int/spa.traineddata.gz','public/ocr/spa.traineddata.gz')\"",
     "build": "tsc -b && vite build",
     "funcion:avisos": "rolldown supabase/functions/avisos/index.ts -f esm -p neutral -e npm:@supabase/supabase-js@2 -e npm:web-push@3 -o dist/funcion-avisos.js",
     "preview": "vite preview",
@@ -12,9 +14,12 @@
   "dependencies": {
     "@fontsource-variable/bricolage-grotesque": "5.3.0",
     "@supabase/supabase-js": "2.118.0",
+    "@tesseract.js-data/spa": "1.0.0",
     "chart.js": "4.6.1",
+    "pdfjs-dist": "6.5.438",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "tesseract.js": "7.0.0"
   },
   "devDependencies": {
     "@types/react": "19.3.0",

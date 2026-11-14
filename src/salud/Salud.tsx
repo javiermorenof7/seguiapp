@@ -1,3 +1,4 @@
+import ComoFunciona from '../ComoFunciona'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import Selector from '../Selector'
 import {
@@ -60,6 +61,7 @@ export default function Salud({ seguimientos, registros, abrir, alVolver, alCamb
     <>
       <button className="volver" onClick={alVolver}>← Mi seguimiento</button>
       <header className="encabezado"><div><h1>Salud</h1></div></header>
+      <ComoFunciona modulo="salud" pasos={['En Gym anotas cada ejercicio con sus series, repeticiones y peso.', 'En Cuerpo llevas tu peso y las medidas que quieras seguir.', 'El Resumen muestra cuánto entrenaste y si vas subiendo; en Historial corriges lo anotado.']} />
       {error && <p role="alert" className="error">{error}</p>}
       <div className="chips pestanas" role="radiogroup" aria-label="Sección de Salud">
         {(['resumen', 'gym', 'cuerpo', 'historial'] as const).map(p => (

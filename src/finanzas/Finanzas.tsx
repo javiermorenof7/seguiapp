@@ -1,7 +1,8 @@
+import ComoFunciona from '../ComoFunciona'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import Selector from '../Selector'
 import {
-  aprenderCategoria, crearCategoriasIniciales, crearEtiqueta, guardarPresupuesto, obtenerFinanzas, obtenerMetasAhorro, obtenerPrestamos, obtenerRecibos, obtenerRegistros, registrar, type RegistroGuardado, type Seguimiento,
+  aprenderCategoria, crearCategoriasIniciales, crearEtiqueta, guardarPresupuesto, obtenerBanco, obtenerFinanzas, obtenerMetasAhorro, obtenerPrestamos, obtenerRecibos, obtenerRegistros, registrar, type Banco, type Cuenta, type Origen, type RegistroGuardado, type Seguimiento,
 } from '../datos'
 import { formatoValor } from '../indicadores'
 import { categoriaDe, leerMonto, leidoDe, MONTO_INVALIDO, normalizar, type Categoria } from './parseo'
@@ -23,6 +24,7 @@ import Recibos from './Recibos'
 import Deudas from './Deudas'
 import Ahorro from './Ahorro'
 import Categorias from './Categorias'
+import Extracto from './Cuadrar'
 import { puedeCrear, TOPE } from './reglasCategorias'
 import type { MetaAhorro } from './metas'
 import { cincuentaTreintaVeinte, facturaParecida, gastoInusual, posibleRepetido, sugeridos } from './aprende'
@@ -47,6 +49,8 @@ const pesos = (v: number) => (v < 0 ? '−' : '') + formatoValor('dinero', Math.
 const nombreMesLargo = (mes: string) => new Date(`${mes}-15T12:00`).toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })
 const finDeMes = (mes: string) => new Date(Date.UTC(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 0)).toISOString().slice(0, 10)
 const pesosEje = (v: number) => Math.abs(v) >= 10_000 ? `$${new Intl.NumberFormat('es-CO', { notation: 'compact', maximumFractionDigits: 1 }).format(v)}` : pesos(v)
+// valor del filtro del Historial para lo que no tiene categoría ('' es "todas")
+const SIN_CATEGORIA = 'sin'
 const ver = (alVer: () => void) => <button className="enlace" onClick={alVer}>Ver →</button>
 const cssVar = (nombre: string) => getComputedStyle(document.documentElement).getPropertyValue(nombre).trim()
 const hoyIso = () => new Date().toLocaleDateString('en-CA')
@@ -54,7 +58,7 @@ const nombreMes = (mes: string) => new Date(`${mes}-15T12:00`).toLocaleDateStrin
 const ESTADO_FIJO: Record<EstadoFijo, { texto: string; clase: string }> = {
   recibido: { texto: '✓ Recibido', clase: 'en-meta' }, pendiente: { texto: '◐ Pendiente', clase: 'cerca' }, atrasado: { texto: '✕ Atrasado', clase: 'fuera' },
 }
-const PESTANAS = { resumen: 'Resumen', gastos: 'Gastos', ingresos: 'Ingresos', ahorro: 'Ahorro', recibos: 'Facturas', deudas: 'Deudas', categorias: 'Categorías', historial: 'Historial' }
+const PESTANAS = { resumen: 'Resumen', gastos: 'Gastos', ingresos: 'Ingresos', ahorro: 'Ahorro', recibos: 'Facturas', deudas: 'Deudas', categorias: 'Categorías', extracto: 'Extracto', historial: 'Historial' }
 
 export default function Finanzas({ seguimientos, registros, abrir, alVolver, alCambiar }: {
   seguimientos: Seguimiento[]
@@ -109,6 +113,16 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
     }
   }, [idGastos, idIngresos, mes])
   useEffect(() => { cargar() }, [cargar])
+
+  // cuentas y lo cargado de extractos; null si la base aún no los tiene
+  const [banco, setBanco] = useState<Banco | null>(null)
+  const cargarBanco = useCallback(() => obtenerBanco().then(setBanco, () => {}), [])
+  useEffect(() => { cargarBanco() }, [cargarBanco, registros])
+  const idTraslados = seguimientos.find(s => s.codigo_plantilla === 'finanzas' && s.nombre === 'Traslados')?.id_seguimiento
+  const origenes = useMemo(() => new Map<string, Origen>([
+    ...(banco?.vinculos ?? []).flatMap(v => v.creado_por_carga && v.id_registro ? [[v.id_registro, 'extracto'] as [string, Origen]] : []),
+    ...(datos?.origenes ?? []),
+  ]), [banco, datos])
 
   // metas y todos los ahorros; los registros cambian tras cada guardado, así que se vuelven a pedir con ellos
   const idAhorro = id('ahorro')
@@ -177,6 +191,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
       metas={metasAhorro?.metas ?? []}
       anteriores={movimientos}
       tipoInicial={tipo}
+      cuentasPago={banco?.cuentas ?? []}
       ids={{ gasto: idGastos, ingreso: id('ingreso'), ahorro: id('ahorro') }}
       gastadoDe={idEtiqueta => cuentas.filas.find(f => f.id_etiqueta === idEtiqueta)?.gastado ?? 0}
       presupuestos={cuentas.presupuestos}
@@ -214,24 +229,32 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
           <p className="tenue">{new Date().toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })}</p>
         </div>
       </header>
+      <ComoFunciona modulo="finanzas" pasos={['En Gastos, Ingresos y Ahorro anotas cada movimiento: cuánto, en qué y listo.', 'En Facturas van los pagos de cada mes; al pagarlas quedan anotadas como gasto.', 'En Categorías pones un tope a cada una para saber si vas dentro del presupuesto.', 'El Resumen muestra cómo va el mes y el Historial, todo lo que has anotado.']} />
       {error && <p role="alert" className="error">{error}</p>}
       <div ref={filaPestanas} className={`chips pestanas ${ocultas}`} role="radiogroup" aria-label="Sección de Finanzas"
         onScroll={ev => revisarFila(ev.currentTarget)}>
-        {(Object.keys(PESTANAS) as (keyof typeof PESTANAS)[]).filter(p => (p !== 'ingresos' || idIngresos) && (p !== 'ahorro' || idAhorro)).map(p => (
+        {(Object.keys(PESTANAS) as (keyof typeof PESTANAS)[]).filter(p => (p !== 'ingresos' || idIngresos) && (p !== 'ahorro' || idAhorro) && (p !== 'extracto' || banco)).map(p => (
           <button key={p} type="button" role="radio" aria-checked={pestana === p} className="chip" onClick={() => setPestana(p)}>{PESTANAS[p]}</button>
         ))}
       </div>
+      {datos && banco && idGastos && pestana === 'extracto' && (
+        <Extracto ids={{ gasto: idGastos, ingreso: idIngresos, ahorro: idAhorro, traslados: idTraslados }} datos={datos} banco={banco}
+          registros={registros} desdeRegistros={registros.reduce((min, r) => (r.fecha < min ? r.fecha : min), hoyIso())}
+          alCambiar={async () => { await Promise.all([alCambiar(), cargar(), cargarBanco()]) }}
+          alVerHistorial={() => { setTipoHistorial(''); setOrigenHistorial('extracto'); setCategoriaHistorial(''); setPeriodoHistorial(''); setPestana('historial') }} />
+      )}
       {datos && pestana === 'historial' && (
         <Historial
           key={`${tipoHistorial}-${origenHistorial}-${categoriaHistorial}-${periodoHistorial}`}
           escalaInicial={periodoHistorial.length === 4 ? 'ano' : 'mes'}
           anclaInicial={periodoHistorial ? `${periodoHistorial}${periodoHistorial.length === 4 ? '-01' : ''}-01` : undefined}
-          ids={(['gasto', 'ingreso', 'ahorro'] as const).flatMap(t => id(t) ?? [])}
+          ids={[...(['gasto', 'ingreso', 'ahorro'] as const).flatMap(t => id(t) ?? []), ...(idTraslados ? [idTraslados] : [])]}
           registros={registros}
           filtros={[
-            { nombre: 'Tipo', inicial: tipoHistorial, opciones: (['gasto', 'ingreso', 'ahorro'] as const).flatMap(t => id(t) ? [[id(t)!, NOMBRES[t]] as [string, string]] : []), de: r => r.id_seguimiento },
-            { nombre: 'Categoría o fuente', inicial: categoriaHistorial, opciones: [...datos.categorias, ...datos.fuentes].map(c => [c.id_etiqueta, c.nombre] as [string, string]), de: r => r.id_etiqueta ?? '' },
-            { nombre: 'Origen', inicial: origenHistorial, opciones: [['factura', 'Facturas'], ['prestamo', 'Préstamos'], ['manual', 'A mano']], de: r => datos.origenes.get(r.id_registro) ?? 'manual' },
+            { nombre: 'Tipo', inicial: tipoHistorial, opciones: [...(['gasto', 'ingreso', 'ahorro'] as const).flatMap(t => id(t) ? [[id(t)!, NOMBRES[t]] as [string, string]] : []), ...(idTraslados ? [[idTraslados, 'Traslados'] as [string, string]] : [])], de: r => r.id_seguimiento },
+            { nombre: 'Categoría o fuente', inicial: categoriaHistorial, opciones: [...[...datos.categorias, ...datos.fuentes].map(c => [c.id_etiqueta, c.nombre] as [string, string]), [SIN_CATEGORIA, 'Sin categoría']], de: r => r.id_etiqueta ?? SIN_CATEGORIA },
+            { nombre: 'Origen', inicial: origenHistorial, opciones: [['factura', 'Facturas'], ['prestamo', 'Préstamos'], ...(banco?.extractos.length ? [['extracto', 'Extractos'] as [string, string]] : []), ['manual', 'A mano']], de: r => origenes.get(r.id_registro) ?? 'manual' },
+            ...(banco && banco.cuentas.length > 1 ? [{ nombre: 'Cuenta', opciones: banco.cuentas.map(c => [c.id_cuenta, c.nombre] as [string, string]), de: (r: RegistroGuardado) => banco.deRegistro.get(r.id_registro) ?? '' }] : []),
           ]}
           buscar={r => r.nota ?? ''}
           suma
@@ -247,7 +270,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
             .map(t => [NOMBRES[t], lista.filter(r => r.id_seguimiento === id(t)).reduce((s, r) => s + r.valor, 0)] as const)
             .filter(([, v]) => v > 0).map(([n, v]) => `${n} ${pesos(v)}`).join(' · ') || 'Sin movimientos'}
           fila={r => (
-            <FilaMovimiento key={r.id_registro} registro={r} idGastos={idGastos} categorias={datos.categorias} origen={datos.origenes.get(r.id_registro)}
+            <FilaMovimiento key={r.id_registro} registro={r} idGastos={idGastos} categorias={datos.categorias} origen={origenes.get(r.id_registro)}
               tipo={r.id_seguimiento === idGastos ? undefined : TEXTO[r.id_seguimiento === id('ingreso') ? 'ingreso' : 'ahorro']}
               alCambiar={async () => { await Promise.all([alCambiar(), cargar()]) }} />
           )}
@@ -348,7 +371,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
             tipos={[]}
             idGastos={idGastos}
             categorias={datos.categorias}
-            origenes={datos.origenes}
+            origenes={origenes}
             mes={mes}
             alVerTodos={(idTipo, origen) => { setTipoHistorial(idTipo || idGastos); setOrigenHistorial(origen); setCategoriaHistorial(''); setPeriodoHistorial(''); setPestana('historial') }}
             alCambiar={async () => { await Promise.all([alCambiar(), cargar()]) }}
@@ -369,11 +392,12 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
   )
 }
 
-function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe, presupuestos, inusual, alCerrar, alIrAFacturas, alIrADeudas, prestamos, alCrearIniciales, alGuardar }: {
+function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, ids, gastadoDe, presupuestos, inusual, alCerrar, alIrAFacturas, alIrADeudas, prestamos, alCrearIniciales, alGuardar }: {
   datos: Datos
   metas: MetaAhorro[]
   anteriores: Movimiento[]
   tipoInicial: TipoMovimiento
+  cuentasPago: Cuenta[]
   ids: Record<TipoMovimiento, string | undefined>
   gastadoDe: (idEtiqueta: string) => number
   presupuestos: Map<string, number>
@@ -393,6 +417,9 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe
   const [idMeta, setIdMeta] = useState<string | null>(null)
   const [grupo, setGrupo] = useState<Grupo>('auto')
   const [otraFecha, setOtraFecha] = useState(false)
+  // viene elegida la última cuenta usada; nunca es obligatoria
+  const [idCuenta, setIdCuenta] = useState(() => { try { return localStorage.getItem('cuenta-usada') ?? '' } catch { return '' } })
+  const cuenta = cuentasPago.find(c => c.id_cuenta === idCuenta)
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
 
@@ -436,7 +463,9 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe
         id_seguimiento: idSeguimiento, fecha_registro: fecha, valor: leido.valor, nota: leido.descripcion || null,
         id_etiqueta: tipo === 'ahorro' ? idMeta : categoria?.id_etiqueta ?? idFuenteNueva,
         grupo: tipo === 'gasto' && grupo !== 'auto' ? grupo : null,
+        ...(cuenta && { id_cuenta: cuenta.id_cuenta }),
       })
+      try { localStorage.setItem('cuenta-usada', cuenta?.id_cuenta ?? '') } catch { /* sin almacenamiento */ }
       // aprende solo cuando la persona eligió algo distinto de lo propuesto
       const aprende = !!categoria && !!leido.descripcion && categoria.id_etiqueta !== propuesta?.id_etiqueta
       if (aprende) await aprenderCategoria(normalizar(leido.descripcion), categoria.nombre).catch(() => {})
@@ -559,6 +588,17 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe
           </div>
         </fieldset>
       )}
+      {cuentasPago.length > 0 && (
+        <fieldset>
+          <legend>{tipo === 'ingreso' ? '¿A dónde llegó?' : tipo === 'ahorro' ? '¿De dónde salió?' : '¿Con qué pagaste?'} (opcional)</legend>
+          <div className="chips">
+            {cuentasPago.map(c => (
+              <button key={c.id_cuenta} type="button" role="radio" aria-checked={cuenta?.id_cuenta === c.id_cuenta}
+                className="chip" onClick={() => setIdCuenta(cuenta?.id_cuenta === c.id_cuenta ? '' : c.id_cuenta)}>{c.nombre}</button>
+            ))}
+          </div>
+        </fieldset>
+      )}
       {otraFecha || fecha !== hoyIso() ? (
         <label>Fecha
           <input type="date" required value={fecha} max={hoyIso()} onChange={ev => setFecha(ev.target.value)} />
@@ -641,7 +681,7 @@ function EnQueSeVa({ filas, alVer, alVerCategoria }: { filas: ReturnType<typeof 
   const porciones = useMemo(() => {
     const conGasto = filas.filter(f => f.gastado > 0).sort((a, b) => b.gastado - a.gastado)
     const otras = conGasto.slice(5).reduce((t, f) => t + f.gastado, 0)
-    return [...conGasto.slice(0, 5).map(f => ({ nombre: f.nombre, valor: f.gastado, id: f.id_etiqueta ?? '' })), ...(otras ? [{ nombre: 'Otras', valor: otras }] : [])]
+    return [...conGasto.slice(0, 5).map(f => ({ nombre: f.nombre, valor: f.gastado, id: f.id_etiqueta ?? SIN_CATEGORIA })), ...(otras ? [{ nombre: 'Otras', valor: otras }] : [])]
       .map((p, i) => ({ ...p, color: cssVar(COLORES_DONA[i]) }))
   }, [filas])
   const total = porciones.reduce((t, p) => t + p.valor, 0)
@@ -676,7 +716,7 @@ function PorCategoria({ filas, alVer, alVerCategoria }: { filas: ReturnType<type
           const e = estadoPresupuesto(f.gastado, f.presupuesto)
           return (
             <li key={f.id_etiqueta ?? 'sin'} className="tres">
-              <span><button type="button" className="enlace" title="Ver estos gastos" onClick={() => alVerCategoria(f.id_etiqueta ?? '')}>{f.nombre}</button></span>
+              <span><button type="button" className="enlace" title="Ver estos gastos" onClick={() => alVerCategoria(f.id_etiqueta ?? SIN_CATEGORIA)}>{f.nombre}</button></span>
               <strong>{pesos(f.gastado)}{f.presupuesto ? <span className="tenue"> de {pesos(f.presupuesto)}</span> : null}</strong>
               {e ? <span className={`estado ${e === 'pasado' ? 'fuera' : 'cerca'}`}>{TEXTO_PRESUPUESTO[e]}</span>
                 : f.presupuesto ? <span className="estado en-meta">✓ Dentro</span> : <span className="tenue">Sin presupuesto</span>}

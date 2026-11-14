@@ -13,6 +13,7 @@ export default function Privacidad({ alVolver }: { alVolver: () => void }) {
       <ul>
         <li>Tu nombre y tu correo, tal como los entrega Google al entrar. No se pide nada más de tu cuenta de Google.</li>
         <li>Lo que tú registras: tus seguimientos, sus metas, los valores que anotas y tus notas.</li>
+        <li>Si subes un extracto bancario: el archivo se lee en tu equipo y no se guarda ni se envía a ningún lado. Solo quedan los movimientos que confirmas (fecha, valor y descripción, que puede traer nombres de otras personas), los saldos del período y los últimos 4 dígitos de la cuenta.</li>
         <li>Los mensajes que envías desde «Contacto» y sus respuestas.</li>
       </ul>
       <p>No hay analítica, rastreadores, publicidad ni scripts de terceros.</p>

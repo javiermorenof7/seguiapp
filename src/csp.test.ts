@@ -3,7 +3,8 @@ import { CABECERAS, CSP } from './csp'
 
 describe('CSP', () => {
   it('no permite código ni estilos en línea', () => {
-    expect(CSP).not.toMatch(/unsafe-inline|unsafe-eval|\*/)
+    expect(CSP).not.toMatch(/unsafe-inline|(?<!wasm-)unsafe-eval|\*/)
+    expect(CSP).toContain("script-src 'self' 'wasm-unsafe-eval';")
   })
 
   it('cierra lo que no se usa', () => {

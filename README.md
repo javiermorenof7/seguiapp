@@ -10,6 +10,7 @@ Web: https://seguiapp.pages.dev/ (acceso solo por invitación).
 - Fuente Bricolage Grotesque servida desde la propia web.
 - Pruebas con Vitest.
 - Supabase (PostgreSQL y autenticación con Google) y Chart.js.
+- pdf.js y tesseract.js para leer extractos bancarios en el navegador; se descargan solo al usarlos.
 - Publicación con GitHub Actions: producción y desarrollo en el mismo proyecto de Cloudflare Pages.
 
 ## Estructura
@@ -21,10 +22,14 @@ Web: https://seguiapp.pages.dev/ (acceso solo por invitación).
   - `cola.ts`: registros hechos sin conexión, guardados en el navegador (IndexedDB) hasta poder enviarlos; se borran al cerrar sesión.
   - `Privacidad.tsx`: política de tratamiento de datos personales (Ley 1581 de 2012).
   - `misdatos/`: pantalla "Mis datos" (descargar los datos de cada módulo en CSV, contacto con el administrador y borrar la cuenta) y pantalla "Mensajes", donde el administrador lee y responde.
+  - `ComoFunciona.tsx`: guía corta de cada módulo; sale abierta la primera vez y después queda plegada.
+  - `finanzas/extracto.ts`: lee los movimientos de un extracto (por su forma, sin plantilla por banco), valida que el saldo de cada fila siga del anterior y los empareja con lo anotado.
+  - `finanzas/leerPdf.ts`: saca el texto del PDF con pdf.js y, si los movimientos vienen como imagen, con tesseract.js. El archivo y su clave no salen del equipo.
+  - `finanzas/Cuadrar.tsx`: pestaña Extracto: qué falta anotar, qué no coincide y si el saldo de la app es el del banco.
   - `Grafico.tsx`: gráfico de línea (Chart.js) con la meta punteada.
   - `csp.ts`: política de seguridad de contenido (se agrega a la página publicada) y cabeceras de seguridad (`_headers`).
 - `supabase/migrations/`: esquema de la base (PostgreSQL en Supabase): tablas del motor de seguimiento y de las plantillas, con seguridad por fila (cada persona ve solo sus datos y solo mientras esté invitada).
-- `public/`: manifiesto, ícono y service worker (guarda solo los archivos de la web, nunca datos).
+- `public/`: manifiesto, ícono y service worker (guarda solo los archivos de la web, nunca datos). El idioma del lector de imágenes se copia a `public/ocr/` al arrancar y al construir.
 - `.github/workflows/publicar.yml`: instala, revisa vulnerabilidades (`npm audit`), corre las pruebas y construye; un push a `main` publica la web en Cloudflare Pages. Los pull requests solo construyen.
 - `.github/workflows/latido.yml`: cada lunes hace una consulta mínima (`latido()`, no lee datos) para que el proyecto gratuito de Supabase no se pause por inactividad.
 - `.github/dependabot.yml`: actualizaciones semanales de dependencias y de Actions, hacia `dev`.

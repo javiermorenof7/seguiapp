@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { activarPlantillas, crearCategoriasIniciales, crearSeguimiento, type Seguimiento } from '../datos'
+import { activarPlantillas, crearCategoriasIniciales, crearCuenta, crearSeguimiento, type Seguimiento } from '../datos'
 import type { AccionFinanzas } from '../finanzas/Finanzas'
 import type { AccionTareas } from '../tareas/Tareas'
 import { INICIALES } from '../salud/Salud'
@@ -51,6 +51,8 @@ export async function activarModulos(modulos: Modulo[], seguimientos: Seguimient
   // Gastos recién creado empieza con categorías para poder registrar desde el primer día
   const idGastos = ids[faltan.findIndex(f => f.codigo_plantilla === 'finanzas' && f.nombre === 'Gastos')]
   if (idGastos) await crearCategoriasIniciales(idGastos)
+  // shortcut: sin la tabla de cuentas en la base, Finanzas se activa igual y sin Efectivo
+  if (modulos.includes('finanzas')) await crearCuenta('Efectivo').catch(() => {})
 }
 
 export function Crear({ activos, modulo, alElegir, alVolver }: {

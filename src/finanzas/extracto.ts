@@ -181,6 +181,8 @@ export interface Cuadre {
   sinCuenta: Anotado[]
 }
 
+// lo anotado va en pesos enteros; el banco trae centavos
+export const enPesos = (centavos: number) => Math.round(centavos / 100) * 100
 const dias = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) / 86_400_000
 const palabras = (texto: string | null) => new Set(normalizar(texto ?? '').split(/[^a-z0-9]+/).filter(p => p.length >= 4))
 
@@ -202,7 +204,7 @@ export function conciliar(extracto: ExtractoLeido, anotados: Anotado[], idCuenta
     return !app
   })
   pendientes = pendientes.filter(banco => {
-    const app = tomar(banco, a => a.valor === banco.valor && dias(a.fecha, banco.fecha) <= 3)
+    const app = tomar(banco, a => a.valor === enPesos(banco.valor) && dias(a.fecha, banco.fecha) <= 3)
     if (app) cuadre.cuadran.push({ banco, app })
     return !app
   })

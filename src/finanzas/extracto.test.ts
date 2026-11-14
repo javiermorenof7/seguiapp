@@ -102,6 +102,11 @@ describe('conciliar', () => {
     expect(c.soloApp).toEqual([])
   })
 
+  it('un monto con centavos cuadra con lo anotado en pesos', () => {
+    const conCentavos = { ...e, movimientos: [{ ...e.movimientos[0], valor: -4500049 }] }
+    expect(conciliar(conCentavos, [anotado('a', '2026-10-02', -45000)], 'c1').cuadran).toHaveLength(1)
+  })
+
   it('separa el monto que no coincide y lo que solo está en la app', () => {
     const c = conciliar(e, [anotado('a', '2026-10-02', -54000, { nota: 'tienda la esquina' }), anotado('x', '2026-10-10', -20000, { id_cuenta: 'c1' }), anotado('o', '2026-10-10', -9000, { id_cuenta: 'otra' })], 'c1')
     expect(c.montoDistinto.map(p => p.app.id_registro)).toEqual(['a'])

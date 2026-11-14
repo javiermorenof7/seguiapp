@@ -2,7 +2,7 @@ import ComoFunciona from '../ComoFunciona'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import Selector from '../Selector'
 import {
-  aprenderCategoria, crearCategoriasIniciales, crearEtiqueta, guardarPresupuesto, obtenerFinanzas, obtenerMetasAhorro, obtenerPrestamos, obtenerRecibos, obtenerRegistros, registrar, type RegistroGuardado, type Seguimiento,
+  aprenderCategoria, crearCategoriasIniciales, crearEtiqueta, guardarPresupuesto, obtenerBanco, obtenerFinanzas, obtenerMetasAhorro, obtenerPrestamos, obtenerRecibos, obtenerRegistros, registrar, type Banco, type Cuenta, type Origen, type RegistroGuardado, type Seguimiento,
 } from '../datos'
 import { formatoValor } from '../indicadores'
 import { categoriaDe, leerMonto, leidoDe, MONTO_INVALIDO, normalizar, type Categoria } from './parseo'
@@ -113,6 +113,16 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
   }, [idGastos, idIngresos, mes])
   useEffect(() => { cargar() }, [cargar])
 
+  // cuentas y lo cargado de extractos; null si la base aún no los tiene
+  const [banco, setBanco] = useState<Banco | null>(null)
+  const cargarBanco = useCallback(() => obtenerBanco().then(setBanco, () => {}), [])
+  useEffect(() => { cargarBanco() }, [cargarBanco, registros])
+  const idTraslados = seguimientos.find(s => s.codigo_plantilla === 'finanzas' && s.nombre === 'Traslados')?.id_seguimiento
+  const origenes = useMemo(() => new Map<string, Origen>([
+    ...(banco?.vinculos ?? []).flatMap(v => v.creado_por_carga && v.id_registro ? [[v.id_registro, 'extracto'] as [string, Origen]] : []),
+    ...(datos?.origenes ?? []),
+  ]), [banco, datos])
+
   // metas y todos los ahorros; los registros cambian tras cada guardado, así que se vuelven a pedir con ellos
   const idAhorro = id('ahorro')
   const [metasAhorro, setMetasAhorro] = useState<Awaited<ReturnType<typeof obtenerMetasAhorro>> | null>(null)
@@ -180,6 +190,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
       metas={metasAhorro?.metas ?? []}
       anteriores={movimientos}
       tipoInicial={tipo}
+      cuentasPago={banco?.cuentas ?? []}
       ids={{ gasto: idGastos, ingreso: id('ingreso'), ahorro: id('ahorro') }}
       gastadoDe={idEtiqueta => cuentas.filas.find(f => f.id_etiqueta === idEtiqueta)?.gastado ?? 0}
       presupuestos={cuentas.presupuestos}
@@ -230,12 +241,13 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
           key={`${tipoHistorial}-${origenHistorial}-${categoriaHistorial}-${periodoHistorial}`}
           escalaInicial={periodoHistorial.length === 4 ? 'ano' : 'mes'}
           anclaInicial={periodoHistorial ? `${periodoHistorial}${periodoHistorial.length === 4 ? '-01' : ''}-01` : undefined}
-          ids={(['gasto', 'ingreso', 'ahorro'] as const).flatMap(t => id(t) ?? [])}
+          ids={[...(['gasto', 'ingreso', 'ahorro'] as const).flatMap(t => id(t) ?? []), ...(idTraslados ? [idTraslados] : [])]}
           registros={registros}
           filtros={[
-            { nombre: 'Tipo', inicial: tipoHistorial, opciones: (['gasto', 'ingreso', 'ahorro'] as const).flatMap(t => id(t) ? [[id(t)!, NOMBRES[t]] as [string, string]] : []), de: r => r.id_seguimiento },
+            { nombre: 'Tipo', inicial: tipoHistorial, opciones: [...(['gasto', 'ingreso', 'ahorro'] as const).flatMap(t => id(t) ? [[id(t)!, NOMBRES[t]] as [string, string]] : []), ...(idTraslados ? [[idTraslados, 'Traslados'] as [string, string]] : [])], de: r => r.id_seguimiento },
             { nombre: 'Categoría o fuente', inicial: categoriaHistorial, opciones: [...[...datos.categorias, ...datos.fuentes].map(c => [c.id_etiqueta, c.nombre] as [string, string]), [SIN_CATEGORIA, 'Sin categoría']], de: r => r.id_etiqueta ?? SIN_CATEGORIA },
-            { nombre: 'Origen', inicial: origenHistorial, opciones: [['factura', 'Facturas'], ['prestamo', 'Préstamos'], ['manual', 'A mano']], de: r => datos.origenes.get(r.id_registro) ?? 'manual' },
+            { nombre: 'Origen', inicial: origenHistorial, opciones: [['factura', 'Facturas'], ['prestamo', 'Préstamos'], ...(banco?.extractos.length ? [['extracto', 'Extractos'] as [string, string]] : []), ['manual', 'A mano']], de: r => origenes.get(r.id_registro) ?? 'manual' },
+            ...(banco && banco.cuentas.length > 1 ? [{ nombre: 'Cuenta', opciones: banco.cuentas.map(c => [c.id_cuenta, c.nombre] as [string, string]), de: (r: RegistroGuardado) => banco.deRegistro.get(r.id_registro) ?? '' }] : []),
           ]}
           buscar={r => r.nota ?? ''}
           suma
@@ -251,7 +263,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
             .map(t => [NOMBRES[t], lista.filter(r => r.id_seguimiento === id(t)).reduce((s, r) => s + r.valor, 0)] as const)
             .filter(([, v]) => v > 0).map(([n, v]) => `${n} ${pesos(v)}`).join(' · ') || 'Sin movimientos'}
           fila={r => (
-            <FilaMovimiento key={r.id_registro} registro={r} idGastos={idGastos} categorias={datos.categorias} origen={datos.origenes.get(r.id_registro)}
+            <FilaMovimiento key={r.id_registro} registro={r} idGastos={idGastos} categorias={datos.categorias} origen={origenes.get(r.id_registro)}
               tipo={r.id_seguimiento === idGastos ? undefined : TEXTO[r.id_seguimiento === id('ingreso') ? 'ingreso' : 'ahorro']}
               alCambiar={async () => { await Promise.all([alCambiar(), cargar()]) }} />
           )}
@@ -352,7 +364,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
             tipos={[]}
             idGastos={idGastos}
             categorias={datos.categorias}
-            origenes={datos.origenes}
+            origenes={origenes}
             mes={mes}
             alVerTodos={(idTipo, origen) => { setTipoHistorial(idTipo || idGastos); setOrigenHistorial(origen); setCategoriaHistorial(''); setPeriodoHistorial(''); setPestana('historial') }}
             alCambiar={async () => { await Promise.all([alCambiar(), cargar()]) }}
@@ -373,11 +385,12 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
   )
 }
 
-function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe, presupuestos, inusual, alCerrar, alIrAFacturas, alIrADeudas, prestamos, alCrearIniciales, alGuardar }: {
+function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, ids, gastadoDe, presupuestos, inusual, alCerrar, alIrAFacturas, alIrADeudas, prestamos, alCrearIniciales, alGuardar }: {
   datos: Datos
   metas: MetaAhorro[]
   anteriores: Movimiento[]
   tipoInicial: TipoMovimiento
+  cuentasPago: Cuenta[]
   ids: Record<TipoMovimiento, string | undefined>
   gastadoDe: (idEtiqueta: string) => number
   presupuestos: Map<string, number>
@@ -397,6 +410,9 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe
   const [idMeta, setIdMeta] = useState<string | null>(null)
   const [grupo, setGrupo] = useState<Grupo>('auto')
   const [otraFecha, setOtraFecha] = useState(false)
+  // viene elegida la última cuenta usada; nunca es obligatoria
+  const [idCuenta, setIdCuenta] = useState(() => { try { return localStorage.getItem('cuenta-usada') ?? '' } catch { return '' } })
+  const cuenta = cuentasPago.find(c => c.id_cuenta === idCuenta)
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
 
@@ -440,7 +456,9 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe
         id_seguimiento: idSeguimiento, fecha_registro: fecha, valor: leido.valor, nota: leido.descripcion || null,
         id_etiqueta: tipo === 'ahorro' ? idMeta : categoria?.id_etiqueta ?? idFuenteNueva,
         grupo: tipo === 'gasto' && grupo !== 'auto' ? grupo : null,
+        ...(cuenta && { id_cuenta: cuenta.id_cuenta }),
       })
+      try { localStorage.setItem('cuenta-usada', cuenta?.id_cuenta ?? '') } catch { /* sin almacenamiento */ }
       // aprende solo cuando la persona eligió algo distinto de lo propuesto
       const aprende = !!categoria && !!leido.descripcion && categoria.id_etiqueta !== propuesta?.id_etiqueta
       if (aprende) await aprenderCategoria(normalizar(leido.descripcion), categoria.nombre).catch(() => {})
@@ -559,6 +577,17 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, ids, gastadoDe
             {[{ id_etiqueta: null, nombre: 'Ninguna' }, ...metas].map(m => (
               <button key={m.id_etiqueta ?? ''} type="button" role="radio" aria-checked={idMeta === m.id_etiqueta}
                 className="chip" onClick={() => setIdMeta(m.id_etiqueta)}>{m.nombre}</button>
+            ))}
+          </div>
+        </fieldset>
+      )}
+      {cuentasPago.length > 0 && (
+        <fieldset>
+          <legend>{tipo === 'ingreso' ? '¿A dónde llegó?' : tipo === 'ahorro' ? '¿De dónde salió?' : '¿Con qué pagaste?'} (opcional)</legend>
+          <div className="chips">
+            {cuentasPago.map(c => (
+              <button key={c.id_cuenta} type="button" role="radio" aria-checked={cuenta?.id_cuenta === c.id_cuenta}
+                className="chip" onClick={() => setIdCuenta(cuenta?.id_cuenta === c.id_cuenta ? '' : c.id_cuenta)}>{c.nombre}</button>
             ))}
           </div>
         </fieldset>

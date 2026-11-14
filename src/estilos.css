@@ -510,3 +510,8 @@ section .enlace, form .enlace, li .enlace { display: inline-flex; align-items: c
 .lista li.recibo:has(> form.corregir), .lista li.ultimo:has(> form.corregir) { display: grid; }
 .formulario { grid-template-columns: minmax(0, 1fr); }
 .lista li.dos > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+
+.como-funciona { margin: -8px 0 16px; }
+.como-funciona .enlace { min-height: 44px; }
+.guia { display: grid; gap: 12px; justify-items: start; padding: 14px 16px; margin-top: 4px; border-radius: 16px; background: color-mix(in srgb, var(--linea) 45%, transparent); }
+.guia ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; }

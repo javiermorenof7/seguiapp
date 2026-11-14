@@ -331,7 +331,7 @@ function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, al
       <header className="encabezado">
         <div>
           <h1>Mi seguimiento</h1>
-          <p className="tenue">{new Date().toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })}</p>
+          <p className="tenue">{new Date().toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
         </div>
         <div className="acciones">
           {activos.length > 0 && <button className="principal crear" onClick={() => alCrear()}>+ Crear</button>}

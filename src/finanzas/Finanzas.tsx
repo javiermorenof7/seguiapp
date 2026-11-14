@@ -1,3 +1,4 @@
+import ComoFunciona from '../ComoFunciona'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import Selector from '../Selector'
 import {
@@ -47,6 +48,8 @@ const pesos = (v: number) => (v < 0 ? '−' : '') + formatoValor('dinero', Math.
 const nombreMesLargo = (mes: string) => new Date(`${mes}-15T12:00`).toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })
 const finDeMes = (mes: string) => new Date(Date.UTC(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 0)).toISOString().slice(0, 10)
 const pesosEje = (v: number) => Math.abs(v) >= 10_000 ? `$${new Intl.NumberFormat('es-CO', { notation: 'compact', maximumFractionDigits: 1 }).format(v)}` : pesos(v)
+// valor del filtro del Historial para lo que no tiene categoría ('' es "todas")
+const SIN_CATEGORIA = 'sin'
 const ver = (alVer: () => void) => <button className="enlace" onClick={alVer}>Ver →</button>
 const cssVar = (nombre: string) => getComputedStyle(document.documentElement).getPropertyValue(nombre).trim()
 const hoyIso = () => new Date().toLocaleDateString('en-CA')
@@ -214,6 +217,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
           <p className="tenue">{new Date().toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })}</p>
         </div>
       </header>
+      <ComoFunciona modulo="finanzas" pasos={['En Gastos, Ingresos y Ahorro anotas cada movimiento: cuánto, en qué y listo.', 'En Facturas van los pagos de cada mes; al pagarlas quedan anotadas como gasto.', 'En Categorías pones un tope a cada una para saber si vas dentro del presupuesto.', 'El Resumen muestra cómo va el mes y el Historial, todo lo que has anotado.']} />
       {error && <p role="alert" className="error">{error}</p>}
       <div ref={filaPestanas} className={`chips pestanas ${ocultas}`} role="radiogroup" aria-label="Sección de Finanzas"
         onScroll={ev => revisarFila(ev.currentTarget)}>
@@ -230,7 +234,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
           registros={registros}
           filtros={[
             { nombre: 'Tipo', inicial: tipoHistorial, opciones: (['gasto', 'ingreso', 'ahorro'] as const).flatMap(t => id(t) ? [[id(t)!, NOMBRES[t]] as [string, string]] : []), de: r => r.id_seguimiento },
-            { nombre: 'Categoría o fuente', inicial: categoriaHistorial, opciones: [...datos.categorias, ...datos.fuentes].map(c => [c.id_etiqueta, c.nombre] as [string, string]), de: r => r.id_etiqueta ?? '' },
+            { nombre: 'Categoría o fuente', inicial: categoriaHistorial, opciones: [...[...datos.categorias, ...datos.fuentes].map(c => [c.id_etiqueta, c.nombre] as [string, string]), [SIN_CATEGORIA, 'Sin categoría']], de: r => r.id_etiqueta ?? SIN_CATEGORIA },
             { nombre: 'Origen', inicial: origenHistorial, opciones: [['factura', 'Facturas'], ['prestamo', 'Préstamos'], ['manual', 'A mano']], de: r => datos.origenes.get(r.id_registro) ?? 'manual' },
           ]}
           buscar={r => r.nota ?? ''}
@@ -641,7 +645,7 @@ function EnQueSeVa({ filas, alVer, alVerCategoria }: { filas: ReturnType<typeof 
   const porciones = useMemo(() => {
     const conGasto = filas.filter(f => f.gastado > 0).sort((a, b) => b.gastado - a.gastado)
     const otras = conGasto.slice(5).reduce((t, f) => t + f.gastado, 0)
-    return [...conGasto.slice(0, 5).map(f => ({ nombre: f.nombre, valor: f.gastado, id: f.id_etiqueta ?? '' })), ...(otras ? [{ nombre: 'Otras', valor: otras }] : [])]
+    return [...conGasto.slice(0, 5).map(f => ({ nombre: f.nombre, valor: f.gastado, id: f.id_etiqueta ?? SIN_CATEGORIA })), ...(otras ? [{ nombre: 'Otras', valor: otras }] : [])]
       .map((p, i) => ({ ...p, color: cssVar(COLORES_DONA[i]) }))
   }, [filas])
   const total = porciones.reduce((t, p) => t + p.valor, 0)
@@ -676,7 +680,7 @@ function PorCategoria({ filas, alVer, alVerCategoria }: { filas: ReturnType<type
           const e = estadoPresupuesto(f.gastado, f.presupuesto)
           return (
             <li key={f.id_etiqueta ?? 'sin'} className="tres">
-              <span><button type="button" className="enlace" title="Ver estos gastos" onClick={() => alVerCategoria(f.id_etiqueta ?? '')}>{f.nombre}</button></span>
+              <span><button type="button" className="enlace" title="Ver estos gastos" onClick={() => alVerCategoria(f.id_etiqueta ?? SIN_CATEGORIA)}>{f.nombre}</button></span>
               <strong>{pesos(f.gastado)}{f.presupuesto ? <span className="tenue"> de {pesos(f.presupuesto)}</span> : null}</strong>
               {e ? <span className={`estado ${e === 'pasado' ? 'fuera' : 'cerca'}`}>{TEXTO_PRESUPUESTO[e]}</span>
                 : f.presupuesto ? <span className="estado en-meta">✓ Dentro</span> : <span className="tenue">Sin presupuesto</span>}

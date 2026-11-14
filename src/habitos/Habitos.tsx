@@ -1,3 +1,4 @@
+import ComoFunciona from '../ComoFunciona'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import Selector from '../Selector'
 import {
@@ -153,6 +154,7 @@ export default function Habitos({ seguimientos, registros, enfocar, alVolver, al
     <>
       <button className="volver" onClick={alVolver}>← Mi seguimiento</button>
       <header className="encabezado"><div><h1>Hábitos</h1></div></header>
+      <ComoFunciona modulo="habitos" pasos={['En Hábitos creas lo que quieres cumplir y lo marcas cada día.', 'El Resumen muestra cuántos días los cumples.', 'En Historial ves y corriges lo que marcaste.']} />
       <div className="chips pestanas" role="radiogroup" aria-label="Sección de Hábitos">
         {(['resumen', 'habitos', 'historial'] as const).map(p => (
           <button key={p} type="button" role="radio" aria-checked={pestana === p} className="chip" onClick={() => setPestana(p)}>

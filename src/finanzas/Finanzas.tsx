@@ -24,6 +24,7 @@ import Recibos from './Recibos'
 import Deudas from './Deudas'
 import Ahorro from './Ahorro'
 import Categorias from './Categorias'
+import Extracto from './Cuadrar'
 import { puedeCrear, TOPE } from './reglasCategorias'
 import type { MetaAhorro } from './metas'
 import { cincuentaTreintaVeinte, facturaParecida, gastoInusual, posibleRepetido, sugeridos } from './aprende'
@@ -57,7 +58,7 @@ const nombreMes = (mes: string) => new Date(`${mes}-15T12:00`).toLocaleDateStrin
 const ESTADO_FIJO: Record<EstadoFijo, { texto: string; clase: string }> = {
   recibido: { texto: '✓ Recibido', clase: 'en-meta' }, pendiente: { texto: '◐ Pendiente', clase: 'cerca' }, atrasado: { texto: '✕ Atrasado', clase: 'fuera' },
 }
-const PESTANAS = { resumen: 'Resumen', gastos: 'Gastos', ingresos: 'Ingresos', ahorro: 'Ahorro', recibos: 'Facturas', deudas: 'Deudas', categorias: 'Categorías', historial: 'Historial' }
+const PESTANAS = { resumen: 'Resumen', gastos: 'Gastos', ingresos: 'Ingresos', ahorro: 'Ahorro', recibos: 'Facturas', deudas: 'Deudas', categorias: 'Categorías', extracto: 'Extracto', historial: 'Historial' }
 
 export default function Finanzas({ seguimientos, registros, abrir, alVolver, alCambiar }: {
   seguimientos: Seguimiento[]
@@ -232,10 +233,16 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
       {error && <p role="alert" className="error">{error}</p>}
       <div ref={filaPestanas} className={`chips pestanas ${ocultas}`} role="radiogroup" aria-label="Sección de Finanzas"
         onScroll={ev => revisarFila(ev.currentTarget)}>
-        {(Object.keys(PESTANAS) as (keyof typeof PESTANAS)[]).filter(p => (p !== 'ingresos' || idIngresos) && (p !== 'ahorro' || idAhorro)).map(p => (
+        {(Object.keys(PESTANAS) as (keyof typeof PESTANAS)[]).filter(p => (p !== 'ingresos' || idIngresos) && (p !== 'ahorro' || idAhorro) && (p !== 'extracto' || banco)).map(p => (
           <button key={p} type="button" role="radio" aria-checked={pestana === p} className="chip" onClick={() => setPestana(p)}>{PESTANAS[p]}</button>
         ))}
       </div>
+      {datos && banco && idGastos && pestana === 'extracto' && (
+        <Extracto ids={{ gasto: idGastos, ingreso: idIngresos, ahorro: idAhorro, traslados: idTraslados }} datos={datos} banco={banco}
+          registros={registros} desdeRegistros={registros.reduce((min, r) => (r.fecha < min ? r.fecha : min), hoyIso())}
+          alCambiar={async () => { await Promise.all([alCambiar(), cargar(), cargarBanco()]) }}
+          alVerHistorial={() => { setTipoHistorial(''); setOrigenHistorial('extracto'); setCategoriaHistorial(''); setPeriodoHistorial(''); setPestana('historial') }} />
+      )}
       {datos && pestana === 'historial' && (
         <Historial
           key={`${tipoHistorial}-${origenHistorial}-${categoriaHistorial}-${periodoHistorial}`}

@@ -428,13 +428,13 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
                 <input required inputMode="numeric" maxLength={3} value={f.series} aria-label={`Cuántas series iguales en la fila ${i + 1}`}
                   onChange={ev => cambiarFila(i, { series: ev.target.value })} />
               </Pasos>
-              <Pasos titulo={`Peso (${unidad})`} que={`peso de la fila ${i + 1}`} alSumar={paso => cambiarFila(i, { peso: conPaso(f.peso, paso * pasoDe(unidad), 0) })}>
-                <input inputMode="decimal" maxLength={8} value={f.peso} placeholder="Tu cuerpo" aria-label={`Peso de la fila ${i + 1}`}
-                  onChange={ev => cambiarFila(i, { peso: ev.target.value })} />
-              </Pasos>
               <Pasos titulo="Repeticiones" que={`repeticiones de la fila ${i + 1}`} alSumar={paso => cambiarFila(i, { repeticiones: conPaso(f.repeticiones, paso, 1) })}>
                 <input required inputMode="numeric" maxLength={4} value={f.repeticiones} placeholder="Reps" aria-label={`Repeticiones de la fila ${i + 1}`}
                   onChange={ev => cambiarFila(i, { repeticiones: ev.target.value })} />
+              </Pasos>
+              <Pasos titulo={`Peso (${unidad})`} que={`peso de la fila ${i + 1}`} alSumar={paso => cambiarFila(i, { peso: conPaso(f.peso, paso * pasoDe(unidad), 0) })}>
+                <input inputMode="decimal" maxLength={8} value={f.peso} placeholder="Peso de la máquina" aria-label={`Peso de la fila ${i + 1}`}
+                  onChange={ev => cambiarFila(i, { peso: ev.target.value })} />
               </Pasos>
               {filas.length > 1 && <button type="button" className="quitar" aria-label={`Quitar la fila ${i + 1}`}
                 onClick={() => { autollenadas.current = false; setFilas(filas.filter((_, j) => j !== i)); setPregunta(null) }}>✕</button>}
@@ -550,10 +550,10 @@ function EditarSerie({ actual, unidad, alGuardar, alCancelar }: {
 
   return (
     <form className="formulario corregir" onSubmit={guardar}>
-      <div className="campos">
+      <div className="campos campos-serie">
         <label>Series<input required inputMode="numeric" maxLength={3} value={campos.series} onChange={ev => setCampos({ ...campos, series: ev.target.value })} /></label>
         <label>Repeticiones<input required inputMode="numeric" maxLength={4} value={campos.repeticiones} onChange={ev => setCampos({ ...campos, repeticiones: ev.target.value })} /></label>
-        <label>{unidad === 'lb' ? 'Libras' : 'Kilos'}<input inputMode="decimal" maxLength={8} value={campos.peso} placeholder="tu cuerpo" onChange={ev => setCampos({ ...campos, peso: ev.target.value })} /></label>
+        <label>{unidad === 'lb' ? 'Libras' : 'Kilos'}<input inputMode="decimal" maxLength={8} value={campos.peso} placeholder="Peso de la máquina" onChange={ev => setCampos({ ...campos, peso: ev.target.value })} /></label>
       </div>
       <div className="chips">
         <button className="principal" disabled={enviando}>Guardar</button>

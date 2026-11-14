@@ -274,3 +274,9 @@ export function categoriaDeBanco(
   // solo si se anotó al menos dos veces y casi siempre en la misma: una coincidencia suelta no alcanza
   return elegibles.length && elegibles[0][1] >= 2 && elegibles[0][1] >= total * 0.6 ? categorias.find(c => c.id_etiqueta === elegibles[0][0])! : null
 }
+
+/** El saldo de hoy de una cuenta: el del último extracto más lo anotado después de su fecha. Montos con signo. */
+export function saldoEstimado(saldoFinal: number, hasta: string, anotados: { fecha: string; valor: number }[]) {
+  const despues = anotados.filter(a => a.fecha > hasta)
+  return { saldo: saldoFinal + despues.reduce((t, a) => t + a.valor, 0), cuantos: despues.length }
+}

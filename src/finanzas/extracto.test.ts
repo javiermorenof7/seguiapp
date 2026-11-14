@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { categoriaDeBanco, comercio, conciliar, diferencia, leerCentavos, leerExtracto, limpiarOcr, type Anotado, type ExtractoLeido } from './extracto'
+import { categoriaDeBanco, comercio, conciliar, diferencia, leerCentavos, leerExtracto, limpiarOcr, saldoEstimado, type Anotado, type ExtractoLeido } from './extracto'
 
 // Extracto inventado: saldo anterior 1.000.000,00 y cuatro movimientos.
 const POR_LINEA = [
@@ -165,5 +165,13 @@ describe('sugerir la categoría de un movimiento del banco', () => {
     expect(categoriaDeBanco('COMPRA NAL.FERRETERIA', new Map(), categorias, historia)).toBeNull()
     expect(categoriaDeBanco('COMPRA NAL.TIENDAS LA ESQUINA', new Map(), categorias, historia.slice(1, 3))).toBeNull()
     expect(categoriaDeBanco('COMPRA NAL.MERCADO CENTRAL', new Map(), categorias, [])?.nombre).toBe('Mercado')
+  })
+})
+
+describe('saldoEstimado', () => {
+  it('suma al saldo del extracto solo lo anotado después de su fecha', () => {
+    const anotados = [{ fecha: '2026-10-31', valor: -999 }, { fecha: '2026-11-01', valor: -20000 }, { fecha: '2026-11-05', valor: 50000 }]
+    expect(saldoEstimado(100000, '2026-10-31', anotados)).toEqual({ saldo: 130000, cuantos: 2 })
+    expect(saldoEstimado(100000, '2026-11-30', anotados)).toEqual({ saldo: 100000, cuantos: 0 })
   })
 })

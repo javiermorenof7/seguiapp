@@ -7,8 +7,8 @@ import {
 import { formatoValor } from '../indicadores'
 import { facturaParecida } from './aprende'
 import { queDescuentan } from './estadoRecibos'
-import { categoriaDeBanco, comercio, conciliar, diferencia, enPesos, leerExtracto, limpiarOcr, type Anotado, type ExtractoLeido, type Formato, type MovimientoBanco } from './extracto'
-import { normalizar } from './parseo'
+import { categoriaDeBanco, comercio, conciliar, diferencia, enPesos, leerExtracto, limpiarOcr, saldoEstimado, type Anotado, type ExtractoLeido, type Formato, type MovimientoBanco } from './extracto'
+import { leerMonto, normalizar } from './parseo'
 
 type Datos = Awaited<ReturnType<typeof obtenerFinanzas>>
 type Traslados = Awaited<ReturnType<typeof crearTraslados>>
@@ -329,7 +329,7 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, historia, signo, deFi
             <p className="cuadre-numero">{falta === 0 && pendientes === 0 ? '✓ Cuadra con el banco' : `Te faltan ${dePesos(Math.abs(falta))} para cuadrar`}</p>
             <p className="con-estado">
               <span className={`estado ${falta === 0 ? 'en-meta' : 'fuera'}`}>{falta === 0 ? '✓' : '✕'} Saldo al {dia(e.hasta)}</span>
-              banco {dePesos(e.saldoFinal)} · app {dePesos(e.saldoFinal - falta)}
+              {dePesos(e.saldoFinal)} en el banco
             </p>
           </>
         ) : (
@@ -523,8 +523,21 @@ function Subidos({ banco, registros, desdeRegistros, signo, alQuitar }: {
     return ultimo && ultimo < limite ? [`El saldo de ${c.nombre} está al ${dia(ultimo)}: sube el extracto más reciente para cuadrar.`] : []
   })
 
+  // el extracto llega a mes vencido: el saldo de hoy se estima con el último y lo anotado después
+  const saldos = banco.cuentas.flatMap(c => {
+    const ultimo = banco.extractos.filter(x => x.id_cuenta === c.id_cuenta).sort((a, b) => a.fecha_hasta.localeCompare(b.fecha_hasta)).pop()
+    if (!ultimo) return []
+    const suyos = registros.filter(r => banco.deRegistro.get(r.id_registro) === c.id_cuenta).map(r => ({ fecha: r.fecha, valor: signo(r) * r.valor }))
+    return [{ cuenta: c, hasta: ultimo.fecha_hasta, banco: Math.round(ultimo.valor_saldo_final), ...saldoEstimado(Math.round(ultimo.valor_saldo_final), ultimo.fecha_hasta, suyos) }]
+  })
+
   return (
     <>
+      <h2>¿Cuánto tengo hoy?</h2>
+      <p className="tenue">El extracto llega con el mes vencido: el saldo de hoy es el del último extracto más lo que has anotado en esa cuenta desde entonces.</p>
+      <ul className="lista">
+        {saldos.map(s => <SaldoHoy key={s.cuenta.id_cuenta} {...s} nombre={s.cuenta.nombre} />)}
+      </ul>
       <h2>Extractos subidos</h2>
       {error && <p role="alert" className="error">{error}</p>}
       {huecos.map(h => <p key={h} className="aviso">{h}</p>)}
@@ -555,5 +568,35 @@ function Subidos({ banco, registros, desdeRegistros, signo, alQuitar }: {
         })}
       </ul>
     </>
+  )
+}
+
+// El saldo estimado de una cuenta y, si la persona quiere, la comparación con lo que dice su banco hoy. No guarda nada.
+function SaldoHoy({ nombre, hasta, banco, saldo, cuantos }: { nombre: string; hasta: string; banco: number; saldo: number; cuantos: number }) {
+  const [abierto, setAbierto] = useState(false)
+  const [dicho, setDicho] = useState('')
+  const real = leerMonto(dicho)
+  const diferencia = real === null ? null : Math.round(real - saldo)
+  return (
+    <li className="ultimo fila-extracto">
+      <span>{nombre}</span>
+      <strong>{pesos(saldo)}</strong>
+      <span className="tenue">
+        estimado hoy · {pesos(banco)} al {dia(hasta)} según el banco{cuantos ? ` y ${cuantos === 1 ? 'un movimiento anotado' : `${cuantos} movimientos anotados`} después` : ', sin nada anotado después'}
+      </span>
+      <span className="chips">
+        {abierto ? (
+          <label>¿Cuánto dice tu banco hoy?
+            <input inputMode="text" autoFocus maxLength={30} value={dicho} onChange={ev => setDicho(ev.target.value)} placeholder="Ej.: 1.250.000" autoComplete="off" />
+          </label>
+        ) : <button type="button" className="enlace" onClick={() => setAbierto(true)}>¿Cuánto dice tu banco hoy?</button>}
+      </span>
+      {abierto && diferencia !== null && (
+        <span role="status" className="chips aviso">
+          {diferencia === 0 ? '✓ Vas al día: es lo mismo que tienes anotado.'
+            : `Hay ${pesos(Math.abs(diferencia))} de ${diferencia < 0 ? 'gastos' : 'ingresos'} sin anotar desde el ${dia(hasta)}.`}
+        </span>
+      )}
+    </li>
   )
 }

@@ -548,18 +548,23 @@ export async function deshacerMovimientoPrestamo(m: Pick<MovimientoPrestamo, 'id
   if (m.id_registro) await eliminarRegistro(m.id_registro)
 }
 
+// Parte del cuerpo que trabaja un ejercicio y unidad en que se escribe su peso (sin unidad = kg).
+export interface FichaEjercicio { parte_cuerpo: string | null; unidad_peso: 'kg' | 'lb' | null }
+
 // Ejercicios (etiquetas de Gym), series creadas desde una fecha y nombres aprendidos; las fechas salen de los registros.
 export async function obtenerSalud(idGym: string, desde: string) {
   const [ejercicios, series, alias] = await Promise.all([
     // también los quitados: sus series pasadas siguen contando y se ven con su nombre
-    supabase.from('etiqueta').select('id_etiqueta, nombre, estado').eq('id_seguimiento', idGym),
+    supabase.from('etiqueta').select('id_etiqueta, nombre, estado, parte_cuerpo, unidad_peso').eq('id_seguimiento', idGym),
     supabase.from('serie_gym').select('id_registro, cantidad_series, cantidad_repeticiones, peso_kilogramos').gte('fecha_creacion', desde),
     supabase.from('alias').select('texto_escrito, texto_correcto').eq('tipo', 'ejercicio').eq('estado', 'activo'),
   ])
-  const todos = revisar(ejercicios) as { id_etiqueta: string; nombre: string; estado: string }[]
+  const todos = revisar(ejercicios) as ({ id_etiqueta: string; nombre: string; estado: string } & FichaEjercicio)[]
   return {
     ejercicios: todos.filter(e => e.estado === 'activo'),
     nombres: new Map(todos.map(e => [e.id_etiqueta, e.nombre])),
+    // por nombre, también de los quitados: así sus series viejas se leen en su unidad
+    fichas: new Map(todos.map(e => [e.nombre, e as FichaEjercicio])),
     series: revisar(series) as { id_registro: string; cantidad_series: number; cantidad_repeticiones: number; peso_kilogramos: number | null }[],
     alias: new Map(revisar(alias).map(a => [a.texto_escrito, a.texto_correcto] as [string, string])),
   }
@@ -569,10 +574,10 @@ export async function crearEtiqueta(idSeguimiento: string, nombre: string) {
   return revisar(await supabase.from('etiqueta').insert({ id_seguimiento: idSeguimiento, nombre }).select('id_etiqueta').single()).id_etiqueta as string
 }
 // Si el ejercicio existió y se quitó, vuelve con su nombre (el nombre es único en el seguimiento).
-export async function crearEjercicio(idGym: string, nombre: string) {
-  const { data, error } = await supabase.from('etiqueta').insert({ id_seguimiento: idGym, nombre }).select('id_etiqueta').single()
+export async function crearEjercicio(idGym: string, nombre: string, ficha: Partial<FichaEjercicio> = {}) {
+  const { data, error } = await supabase.from('etiqueta').insert({ id_seguimiento: idGym, nombre, ...ficha }).select('id_etiqueta').single()
   if (error?.code !== '23505') return revisar({ data, error }).id_etiqueta as string
-  const [fila] = revisar(await supabase.from('etiqueta').update({ estado: 'activo' })
+  const [fila] = revisar(await supabase.from('etiqueta').update({ estado: 'activo', ...ficha })
     .eq('id_seguimiento', idGym).eq('nombre', nombre).eq('estado', 'eliminado').select('id_etiqueta'))
   if (!fila) throw new ErrorDatos(`Ya tienes un ejercicio llamado ${nombre}.`)
   return fila.id_etiqueta as string
@@ -612,6 +617,10 @@ export async function crearCategoriasIniciales(idGastos: string) {
 export async function quitarCategoria(idEtiqueta: string, idDestino: string | null) {
   revisar(await supabase.from('registro').update({ id_etiqueta: idDestino }).eq('id_etiqueta', idEtiqueta))
   revisar(await supabase.from('etiqueta').update({ estado: 'eliminado' }).eq('id_etiqueta', idEtiqueta))
+}
+
+export async function guardarFichaEjercicio(idEtiqueta: string, ficha: Partial<FichaEjercicio>) {
+  revisar(await supabase.from('etiqueta').update(ficha).eq('id_etiqueta', idEtiqueta))
 }
 
 // Todas las filas de un ejercicio en dos llamadas (registros y series): o entran todas o ninguna, así un fallo de red no deja la mitad.

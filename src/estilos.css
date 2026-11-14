@@ -530,3 +530,10 @@ section .enlace, form .enlace, li .enlace { display: inline-flex; align-items: c
 .fila-extracto select { max-width: 100%; }
 .fila-extracto .monto-dudoso { width: 9em; border-color: var(--fuera); }
 .cuadre-acciones { position: sticky; bottom: 0; padding: 12px 0; background: var(--fondo); justify-self: stretch; }
+.extracto fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 10px; min-width: 0; }
+.extracto fieldset > legend { padding: 0; margin-bottom: 8px; font-weight: 700; }
+.cuadre-acciones { flex-wrap: nowrap; }
+@media (max-width: 420px) {
+  .lista li.fila-extracto > .chips { grid-row: 3; }
+  .cuadre-titular { position: static; }
+}

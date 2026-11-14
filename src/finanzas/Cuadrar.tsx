@@ -229,7 +229,6 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, signo, deFinanzas, al
   const decidir = (m: MovimientoBanco, cambio: Partial<Decision>) => setDecisiones(new Map(decisiones).set(m.huella, { ...decision(m), ...cambio }))
 
   const porGuardar = cuadre.faltan.filter(m => decision(m).incluir)
-  const total = porGuardar.reduce((t, m) => t + decision(m).valor, 0)
   const falta = diferencia(cuadre) + centavos.reduce((t, m) => t + m.valor, 0)
   const sinVincular = cuadre.cuadran.filter(p => !cargados.has(p.banco.huella))
   const pendientes = cuadre.faltan.length + cuadre.montoDistinto.length + cuadre.soloApp.length
@@ -425,7 +424,7 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, signo, deFinanzas, al
 
       <div className="chips cuadre-acciones">
         <button type="button" className="principal" disabled={enviando || !hayCambios} onClick={guardar}>
-          {enviando ? 'Guardando…' : porGuardar.length ? `Agregar ${porGuardar.length === 1 ? 'el movimiento' : `los ${porGuardar.length}`} · ${dePesos(total)}` : 'Guardar el cuadre'}
+          {enviando ? 'Guardando…' : porGuardar.length ? `Agregar ${porGuardar.length === 1 ? 'el movimiento' : `los ${porGuardar.length}`}` : 'Guardar el cuadre'}
         </button>
         <button type="button" className="secundario" disabled={enviando} onClick={alCancelar}>Cancelar</button>
       </div>

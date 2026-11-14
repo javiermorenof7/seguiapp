@@ -49,19 +49,19 @@ export async function lineasDePdf(archivo: File, clave: string | undefined, alAv
  * El lector, su núcleo y el idioma son archivos de la propia app y solo se descargan aquí.
  */
 export async function lineasPorOcr(archivo: File, clave: string | undefined, alAvanzar: (pagina: number, total: number) => void): Promise<string[]> {
-  const [{ createWorker }, trabajador, nucleo, idioma] = await Promise.all([
+  const [{ createWorker }, trabajador, nucleo] = await Promise.all([
     import('tesseract.js'),
     import('tesseract.js/dist/worker.min.js?url'),
     // shortcut: solo el núcleo con SIMD (navegadores desde 2023); sumar el de respaldo si alguien no puede leer
     import('tesseract.js-core/tesseract-core-simd-lstm.wasm.js?url'),
-    import('@tesseract.js-data/spa/4.0.0_best_int/spa.traineddata.gz?url'),
   ])
   // el lector corre en otro hilo y resuelve las rutas desde su propio archivo: se le dan completas
   const completa = (ruta: string) => new URL(ruta, location.href).href
-  const datos = new Uint8Array(await (await fetch(completa(idioma.default))).arrayBuffer())
   const { tarea, documento } = await abrir(archivo, clave)
-  const lector = await createWorker([{ code: 'spa', data: datos }] as never, 1, {
-    workerPath: completa(trabajador.default), corePath: completa(nucleo.default), workerBlobURL: false, cacheMethod: 'none',
+  // el idioma se copia a public/ocr al arrancar y al construir (ver package.json): el lector lo pide por su nombre
+  const lector = await createWorker('spa', 1, {
+    workerPath: completa(trabajador.default), corePath: completa(nucleo.default), langPath: completa(`${import.meta.env.BASE_URL}ocr`),
+    workerBlobURL: false, cacheMethod: 'none',
   })
   const lineas: string[] = []
   try {

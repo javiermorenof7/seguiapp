@@ -430,7 +430,7 @@ section:not([class]) + form.formulario { margin-top: 40px; }
 .lista li.categoria > .confirmar-quitar { grid-column: 1 / -1; grid-row: 3; }
 .lista li.categoria > .confirmar-quitar { max-width: 520px; }
 
-/* Gym: una fila por grupo de series iguales (series y peso arriba, repeticiones y quitar abajo), cada campo con − y + */
+/* Gym: una fila por grupo de series iguales (series y repeticiones arriba, peso a todo el ancho y quitar abajo), cada campo con − y + */
 .series-gym { display: grid; gap: 10px; }
 .serie-fila { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: end; }
 .serie-fila + .serie-fila { border-top: 1px solid var(--linea); padding-top: 10px; }
@@ -438,7 +438,10 @@ section:not([class]) + form.formulario { margin-top: 40px; }
 .pasos { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 4px; }
 .pasos button { min-height: 44px; padding: 0; background: transparent; color: var(--tinta); border: 1px solid var(--linea); border-radius: 12px; font-size: 1.25rem; font-weight: 700; }
 .pasos input { font-size: 1rem; text-align: center; padding-inline: 4px; }
-.serie-fila .quitar { min-height: 44px; min-width: 44px; justify-self: end; background: none; color: var(--tenue); border-radius: 999px; }
+.serie-fila > .campo-pasos:nth-of-type(3) { grid-column: 1 / -1; }
+.serie-fila:has(> .quitar) { position: relative; }
+.serie-fila:has(> .quitar) > .campo-pasos:nth-of-type(3) { padding-right: 52px; }
+.serie-fila .quitar { position: absolute; right: 0; bottom: 0; min-height: 44px; min-width: 44px; justify-self: end; background: none; color: var(--tenue); border-radius: 999px; }
 .repetir-gym { margin-top: 14px; }
 .lista li.grupo-gym > .series-del-grupo { grid-column: 1 / -1; margin: 0; padding: 0; }
 .series-gym > .secundario { justify-self: start; }
@@ -498,6 +501,8 @@ section:not([class]) + form.formulario { margin-top: 40px; }
 }
 .lista li > form.formulario { grid-column: 1 / -1; width: 100%; }
 .formulario .campos label { min-width: 0; font-size: 14px; }
+.formulario .campos-serie { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.formulario .campos-serie label:last-child { grid-column: 1 / -1; }
 /* Enlaces de acción dentro del contenido: el dedo necesita 44 px; el pie de página queda como está. */
 section .enlace, form .enlace, li .enlace { display: inline-flex; align-items: center; min-height: 44px; padding: 0 4px; }
 .formulario input, .formulario select, .formulario textarea, .fila-presupuesto input, .fila-presupuesto select { font-size: max(16px, 1em); min-height: 44px; }

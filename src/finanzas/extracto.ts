@@ -25,7 +25,8 @@ export interface ExtractoLeido {
 export type Formato = { saldo: number } & ({ credito: number; debito: number } | { valor: number })
 
 export type Lectura =
-  | { ok: true; extracto: ExtractoLeido; formato: Formato }
+  // sin formato cuando el extracto no tiene columnas que elegir (signo aparte, sin saldo por fila)
+  | { ok: true; extracto: ExtractoLeido; formato?: Formato }
   | { ok: false; motivo: 'sin_movimientos' }
   | { ok: false; motivo: 'columnas'; ejemplo: { descripcion: string; montos: number[] } }
 
@@ -61,21 +62,30 @@ export function leerCentavos(texto: string): number {
 
 interface Fila { fecha: string; textos: string[]; montos: number[] }
 
-function filas(lineas: string[], antes: number[]): Fila[] {
+// el año que más se repite en el extracto: las filas suelen traer solo día y mes
+function anoDe(lineas: string[]): number {
   const anos = lineas.join(' ').match(/\b20\d{2}\b/g) ?? []
-  const ano = Number(anos.sort((a, b) => anos.filter(x => x === b).length - anos.filter(x => x === a).length)[0] ?? new Date().getFullYear())
+  return Number(anos.sort((a, b) => anos.filter(x => x === b).length - anos.filter(x => x === a).length)[0] ?? new Date().getFullYear())
+}
+
+function filas(lineas: string[], antes: number[]): Fila[] {
+  const ano = anoDe(lineas)
   const salida: Fila[] = []
+  // la fila que trae su descripción en el renglón de la fecha ya está completa: lo que sigue es pie de página
+  let completa = false
   for (const cruda of lineas) {
     let linea = cruda.trim()
     const f = leerFecha(linea, ano)
-    if (f) { salida.push({ fecha: f.fecha, textos: [], montos: [] }); linea = f.resto.trim() }
+    if (f) { salida.push({ fecha: f.fecha, textos: [], montos: [] }); linea = f.resto.trim(); completa = false }
     const montos = linea.match(MONTO) ?? []
     const fila = salida[salida.length - 1]
     if (!fila) { antes.push(...montos.map(leerCentavos)); continue }
     fila.montos.push(...montos.map(leerCentavos))
     // una segunda fecha en la fila (fecha valor) no es parte de la descripción
-    const texto = linea.replace(MONTO, ' ').replace(/^\s*\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\s+/, '').replace(/\s+/g, ' ').trim()
-    if (texto && /[a-záéíóúñ]/i.test(texto) && fila.textos.length < 2 && texto.length <= 80) fila.textos.push(texto)
+    // el "$" que queda suelto cuando el signo va entre él y el número ("$-25.900,00", Nequi)
+    const texto = linea.replace(MONTO, ' ').replace(/^\s*\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\s+/, '').replace(/(?<!\S)\$(?!\S)/g, ' ').replace(/\s+/g, ' ').trim()
+    if (texto && /[a-záéíóúñ]/i.test(texto) && !completa && fila.textos.length < 2 && texto.length <= 80) fila.textos.push(texto)
+    if (f && fila.textos.length) completa = true
   }
   return salida
 }
@@ -133,11 +143,52 @@ function ultimos4De(lineas: string[]): string | null {
   return null
 }
 
+// Fila con el signo aparte y sin saldo (Davivienda): "15 10 $ 1,234.56 - 1234 Compra NOVAVENTA"
+const CON_SIGNO = /^(\d{1,2}) (\d{1,2}) \$\s?([\d.,]+) ([+-]) \d+\s*(.*)$/
+
+// el monto que sigue a un título del resumen, en su mismo renglón o en el siguiente
+function montoDe(lineas: string[], titulo: RegExp): number | null {
+  const i = lineas.findIndex(l => titulo.test(l.trim()))
+  if (i < 0) return null
+  const monto = (lineas[i].trim().replace(titulo, '') || lineas[i + 1] || '').match(MONTO)
+  return monto ? leerCentavos(monto[0]) : null
+}
+
+/**
+ * Extractos que no traen el saldo en cada fila: el saldo se arma desde el saldo anterior del resumen
+ * y tiene que llegar al nuevo saldo; si no llega, no se carga nada. null si el extracto no tiene esa forma.
+ */
+function leerConSigno(lineas: string[]): Lectura | null {
+  const ano = anoDe(lineas)
+  const crudas = lineas.map(l => CON_SIGNO.exec(l.trim())).filter(m => m !== null)
+  if (crudas.length < 3) return null
+  const inicial = montoDe(lineas, /^saldo anterior\s*/i)
+  const final = montoDe(lineas, /^nuevo saldo\s*/i)
+  const ejemplo = { descripcion: crudas[0][5], montos: [leerCentavos(crudas[0][3])] }
+  if (inicial === null || final === null) return { ok: false, motivo: 'columnas', ejemplo }
+  let saldo = inicial
+  const movimientos: MovimientoBanco[] = []
+  for (const [, dia, mes, monto, signo, descripcion] of crudas) {
+    const valor = (signo === '-' ? -1 : 1) * leerCentavos(monto)
+    saldo += valor
+    const fecha = `${ano}-${dos(mes)}-${dos(dia)}`
+    movimientos.push({ fecha, descripcion: descripcion.trim(), valor, saldo, huella: `${fecha}|${valor}|${saldo}` })
+  }
+  if (saldo !== final) return { ok: false, motivo: 'columnas', ejemplo }
+  const fechas = movimientos.map(m => m.fecha).sort()
+  return {
+    ok: true,
+    extracto: { ultimos4: ultimos4De(lineas), desde: fechas[0], hasta: fechas[fechas.length - 1], saldoInicial: inicial, saldoFinal: final, movimientos },
+  }
+}
+
 /**
  * Lee las líneas de texto de un extracto y devuelve sus movimientos.
  * Reconoce las filas por su forma (fecha, texto, montos) y elige las columnas que hacen que el saldo de cada fila siga del anterior.
  */
 export function leerExtracto(lineas: string[], formato?: Formato): Lectura {
+  const conSigno = leerConSigno(lineas)
+  if (conSigno) return conSigno
   const antes: number[] = []
   const todas = filas(lineas, antes).filter(f => f.montos.length)
   const k = moda(todas.map(f => f.montos.length))
@@ -206,7 +257,19 @@ const palabras = (texto: string | null) => new Set(normalizar(texto ?? '').split
  * Empareja uno a uno lo del banco con lo anotado: mismo valor y hasta 3 días de diferencia.
  * `cargados` son las huellas que ya se guardaron de un extracto, con su registro.
  */
-export function conciliar(extracto: ExtractoLeido, anotados: Anotado[], idCuenta: string | null, cargados = new Map<string, string>()): Cuadre {
+/** Lo que la persona decidió a mano: parejas que unió (huella → registro) y parejas que dijo que son distintas ("huella|registro"). */
+export interface Manual { unidos: Map<string, string>; separados: Set<string> }
+
+/** Si el monto anotado se parece al del banco: hasta 1 % de diferencia, mismo signo. */
+const parecido = (anotado: number, banco: number) => Math.sign(anotado) === Math.sign(banco) && Math.abs(anotado - banco) <= Math.abs(banco) / 100
+
+/** Los movimientos del banco que pueden ser este anotado (mismo signo), por fecha: los de 15 días o menos aparte, para verlos primero. */
+export function posibles(a: Anotado, faltan: MovimientoBanco[]): { cerca: MovimientoBanco[]; otros: MovimientoBanco[] } {
+  const suyos = faltan.filter(m => Math.sign(m.valor) === Math.sign(a.valor)).sort((x, y) => x.fecha.localeCompare(y.fecha))
+  return { cerca: suyos.filter(m => dias(a.fecha, m.fecha) <= 15), otros: suyos.filter(m => dias(a.fecha, m.fecha) > 15) }
+}
+
+export function conciliar(extracto: ExtractoLeido, anotados: Anotado[], idCuenta: string | null, cargados = new Map<string, string>(), manual: Manual = { unidos: new Map(), separados: new Set() }): Cuadre {
   const libres = new Map(anotados.filter(a => a.id_cuenta === null || a.id_cuenta === idCuenta).map(a => [a.id_registro, a]))
   const cuadre: Cuadre = { cuadran: [], montoDistinto: [], faltan: [], soloApp: [], sinCuenta: [] }
   const tomar = (banco: MovimientoBanco, sirve: (a: Anotado) => boolean) => {
@@ -219,14 +282,29 @@ export function conciliar(extracto: ExtractoLeido, anotados: Anotado[], idCuenta
     if (app) { libres.delete(app.id_registro); cuadre.cuadran.push({ banco, app }) }
     return !app
   })
+  // las que unió la persona: si el monto es igual cuadran, si no, se pregunta cuál queda
   pendientes = pendientes.filter(banco => {
-    const app = tomar(banco, a => a.valor === enPesos(banco.valor) && dias(a.fecha, banco.fecha) <= 3)
+    const app = libres.get(manual.unidos.get(banco.huella) ?? '')
+    if (!app) return true
+    libres.delete(app.id_registro)
+    if (app.valor === enPesos(banco.valor)) cuadre.cuadran.push({ banco, app })
+    else cuadre.montoDistinto.push({ banco, app })
+    return false
+  })
+  pendientes = pendientes.filter(banco => {
+    const app = tomar(banco, a => !manual.separados.has(`${banco.huella}|${a.id_registro}`) && a.valor === enPesos(banco.valor) && dias(a.fecha, banco.fecha) <= 3)
     if (app) cuadre.cuadran.push({ banco, app })
     return !app
   })
   for (const banco of pendientes) {
     const suyas = palabras(banco.descripcion)
-    const app = tomar(banco, a => Math.sign(a.valor) === Math.sign(banco.valor) && dias(a.fecha, banco.fecha) <= 1 && [...palabras(a.nota)].some(p => suyas.has(p)))
+    const pesos = enPesos(banco.valor)
+    // parejas probables, que la persona confirma: monto parecido a 3 días, el mismo ingreso a 15 días (los gastos iguales se repiten)
+    // o palabras en común el mismo día
+    const app = tomar(banco, a => !manual.separados.has(`${banco.huella}|${a.id_registro}`) && Math.sign(a.valor) === Math.sign(banco.valor) && (
+      (parecido(a.valor, pesos) && dias(a.fecha, banco.fecha) <= 3)
+      || (pesos > 0 && a.valor === pesos && dias(a.fecha, banco.fecha) <= 15)
+      || (dias(a.fecha, banco.fecha) <= 1 && [...palabras(a.nota)].some(p => suyas.has(p)))))
     if (app) cuadre.montoDistinto.push({ banco, app })
     else cuadre.faltan.push(banco)
   }

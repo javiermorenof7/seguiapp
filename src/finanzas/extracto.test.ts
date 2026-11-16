@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { categoriaDeBanco, comercio, conciliar, diferencia, leerCentavos, leerExtracto, limpiarOcr, saldoEstimado, type Anotado, type ExtractoLeido } from './extracto'
+import { categoriaDeBanco, comercio, conciliar, diferencia, leerCentavos, leerExtracto, limpiarOcr, posibles, saldoEstimado, type Anotado, type ExtractoLeido } from './extracto'
 
 // Extracto inventado: saldo anterior 1.000.000,00 y cuatro movimientos.
 const POR_LINEA = [
@@ -77,6 +77,39 @@ describe('leerExtracto', () => {
     expect(e.movimientos.filter(m => m.dudoso).map(m => m.descripcion)).toEqual(['TRANSPORTE'])
   })
 
+  it('quita el "$" suelto y el pie de página de la descripción', () => {
+    const e = leido(['2026', 'Saldo anterior $ 500.000,00', '01/10/2026 Recibí de PEDRO $15.000,00 $515.000,00', 'https://www.banco.com.co/tarifas',
+      '05/10/2026 COMPRA EN TIENDA $-25.900,00 $489.100,00', 'Defensor del Consumidor Financiero', '07/10/2026 Pago de Intereses $2,00 $489.102,00'])
+    expect(e.movimientos.map(m => m.descripcion)).toEqual(['Recibí de PEDRO', 'COMPRA EN TIENDA', 'Pago de Intereses'])
+    expect(e.movimientos.map(m => m.valor)).toEqual([1500000, -2590000, 200])
+  })
+
+  // Extracto inventado con el signo aparte y sin saldo por fila: el saldo sale del resumen.
+  const CON_SIGNO = [
+    'CUENTA DE AHORROS', '1234 5678 4321', 'INFORME DEL MES: OCTUBRE /2026',
+    'Saldo Anterior', '$1,000,000.00', 'Más Créditos', '$200,000.00', 'Menos Débitos', '$50,500.00', 'Nuevo Saldo', '$1,149,500.00',
+    'Fecha Valor Doc. Clase de Movimiento Oficina',
+    '02 10 $ 45,000.00 - 1111 Compra TIENDA LA ESQUINA FRANQUICIA MASTER CARD',
+    'Redeban BreB',
+    '05 10 $ 200,000.00 + 2222 Transferencia De Otra Entidad A Llave Redeban BreB',
+    'Fecha Valor Doc. Clase de Movimiento Oficina',
+    '31 10 $ 5,500.00 - 3333 Transferencia de Dinero a Bolsillo',
+    'EXTRACTO BOLSILLO', 'Saldo Anterior', '$10,000.00',
+  ]
+
+  it('con el signo aparte y sin saldo por fila, arma el saldo desde el resumen', () => {
+    const e = leido(CON_SIGNO)
+    expect(e.movimientos.map(m => m.valor)).toEqual([-4500000, 20000000, -550000])
+    expect(e.movimientos.map(m => m.saldo)).toEqual([95500000, 115500000, 114950000])
+    expect([e.saldoInicial, e.saldoFinal, e.desde, e.hasta, e.ultimos4]).toEqual([100000000, 114950000, '2026-10-02', '2026-10-31', '4321'])
+    expect(e.movimientos[0].descripcion).toBe('Compra TIENDA LA ESQUINA FRANQUICIA MASTER CARD')
+  })
+
+  it('con el signo aparte, si no llega al nuevo saldo no carga nada', () => {
+    expect(leerExtracto(CON_SIGNO.map(l => l.replace('$ 5,500.00 -', '$ 5,500.00 +')))).toMatchObject({ ok: false, motivo: 'columnas' })
+    expect(leerExtracto(CON_SIGNO.filter(l => !/^Nuevo Saldo|1,149,500/.test(l)))).toMatchObject({ ok: false, motivo: 'columnas' })
+  })
+
   it('dice cuando no hay movimientos o no entiende las columnas', () => {
     expect(leerExtracto(['Términos y condiciones', 'Página 1 de 4'])).toEqual({ ok: false, motivo: 'sin_movimientos' })
     const r = leerExtracto(['2026', '01/10 A 10.000,00 7.000,00', '02/10 B 3.000,00 99.000,00', '03/10 C 8.000,00 1.000,00', '04/10 D 2.000,00 44.000,00'])
@@ -100,6 +133,39 @@ describe('conciliar', () => {
     expect(c.faltan).toHaveLength(3)
     expect(c.sinCuenta.map(a => a.id_registro)).toEqual(['z'])
     expect(c.soloApp).toEqual([])
+  })
+
+  it('propone como pareja un ingreso parecido a 3 días o el mismo ingreso a 15 días', () => {
+    const sueldo = conciliar(e, [anotado('s', '2026-10-07', 2480000)], 'c1')
+    expect(sueldo.montoDistinto.map(p => [p.banco.descripcion, p.app.id_registro])).toEqual([['PAGO NOMINA EMPRESA', 's']])
+    const arriendo = conciliar(e, [anotado('r', '2026-10-17', 2500000)], 'c1')
+    expect(arriendo.montoDistinto.map(p => p.app.id_registro)).toEqual(['r'])
+    expect(arriendo.faltan).toHaveLength(4)
+  })
+
+  it('un gasto igual a 10 días no se empareja solo', () => {
+    const c = conciliar(e, [anotado('g', '2026-10-12', -45000)], 'c1')
+    expect(c.montoDistinto).toEqual([])
+    expect(c.sinCuenta.map(a => a.id_registro)).toEqual(['g'])
+  })
+
+  it('lo que la persona separa o une a mano manda', () => {
+    const nomina = e.movimientos[1]
+    const separados = conciliar(e, [anotado('s', '2026-10-07', 2480000)], 'c1', undefined, { unidos: new Map(), separados: new Set([`${nomina.huella}|s`]) })
+    expect(separados.montoDistinto).toEqual([])
+    expect(separados.faltan).toContain(nomina)
+    const compra = e.movimientos[0]
+    const exacto = conciliar(e, [anotado('a', '2026-10-02', -45000)], 'c1', undefined, { unidos: new Map(), separados: new Set([`${compra.huella}|a`]) })
+    expect(exacto.cuadran).toEqual([])
+    expect(exacto.faltan).toContain(compra)
+    const transporte = e.movimientos[2]
+    const u = anotado('u', '2026-10-15', -3000, { nota: 'bus' })
+    const unidos = conciliar(e, [u], 'c1', undefined, { unidos: new Map([[transporte.huella, 'u']]), separados: new Set() })
+    expect(unidos.montoDistinto.map(p => [p.banco.huella, p.app.id_registro])).toEqual([[transporte.huella, 'u']])
+    const { cerca, otros } = posibles(anotado('v', '2026-10-25', -3000), e.movimientos)
+    expect(cerca.map(m => m.fecha)).toEqual([])
+    expect(otros.map(m => m.descripcion)).toEqual(['COMPRA TIENDA LA ESQUINA', 'TRANSPORTE', 'TRANSPORTE'])
+    expect(posibles(u, e.movimientos).cerca.map(m => m.fecha)).toEqual(['2026-10-02', '2026-10-05', '2026-10-05'])
   })
 
   it('un monto con centavos cuadra con lo anotado en pesos', () => {

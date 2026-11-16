@@ -7,7 +7,7 @@ import {
 import { formatoValor } from '../indicadores'
 import { facturaParecida } from './aprende'
 import { queDescuentan } from './estadoRecibos'
-import { categoriaDeBanco, comercio, conciliar, diferencia, enPesos, leerExtracto, limpiarOcr, saldoEstimado, type Anotado, type ExtractoLeido, type Formato, type MovimientoBanco } from './extracto'
+import { categoriaDeBanco, comercio, conciliar, diferencia, enPesos, leerExtracto, limpiarOcr, posibles, saldoEstimado, type Anotado, type Manual, type ExtractoLeido, type Formato, type MovimientoBanco } from './extracto'
 import { leerMonto, normalizar } from './parseo'
 
 type Datos = Awaited<ReturnType<typeof obtenerFinanzas>>
@@ -77,7 +77,7 @@ export default function Extracto({ ids, datos, banco, registros, desdeRegistros,
         const leidas = await lineasPorOcr(archivo, clave, (n, total) => setEstado({ paso: 'leyendo', texto: `Leyendo la imagen de la página ${n} de ${total}` }))
         if (interpretar(limpiarOcr(leidas))) return
         setEstado({ paso: 'inicio' })
-        setError('No encontré movimientos en este PDF. Revisa que sea el extracto de una cuenta de ahorros o corriente.')
+        setError('No encontré movimientos en este PDF. Por ahora lee extractos de cuenta de Davivienda, Nequi y Banco Falabella.')
       } catch (e) {
         if (e instanceof PdfConClave) return setEstado({ paso: 'clave', archivo, equivocada: e.equivocada })
         throw e
@@ -116,6 +116,7 @@ export default function Extracto({ ids, datos, banco, registros, desdeRegistros,
           <h2>¿La app dice lo mismo que el banco?</h2>
           <ComoFunciona modulo="extracto" pasos={['Descarga el extracto del mes en PDF desde tu banco y súbelo aquí.', 'Te muestro lo que falta anotar, con su categoría sugerida, y lo agregas con un toque.', 'Lo que ya habías anotado se empareja solo; lo que va entre tus cuentas no cuenta como gasto.', 'Al final el saldo de la app queda igual al del banco.']} />
           <p className="tenue">Sube el extracto del mes y te muestro qué falta anotar y si el saldo cuadra. Se lee en tu equipo, no se sube a ningún lado.</p>
+          <p className="tenue">Por ahora lee extractos de cuenta de Davivienda, Nequi y Banco Falabella.</p>
           <input ref={archivoRef} type="file" accept="application/pdf,.pdf" hidden
             onChange={ev => { const a = ev.target.files?.[0]; ev.target.value = ''; if (a) leer(a) }} />
           <button type="button" className="principal" onClick={() => archivoRef.current?.click()}>Subir extracto (PDF)</button>
@@ -201,6 +202,10 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, historia, signo, deFi
   const [decisiones, setDecisiones] = useState(new Map<string, Decision>())
   // lo que la persona decidió para un monto que no coincide: usar el del banco o dejar el suyo
   const [montos, setMontos] = useState(new Map<string, 'banco' | 'mio'>())
+  // parejas que la persona unió o separó a mano
+  const [manual, setManual] = useState<Manual>({ unidos: new Map(), separados: new Set() })
+  // ya se le avisó que quedan anotados sin emparejar: el siguiente clic agrega
+  const [avisado, setAvisado] = useState(false)
   const [confirmar, setConfirmar] = useState('')
 
   useEffect(() => {
@@ -221,8 +226,8 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, historia, signo, deFi
     const normales = e.movimientos.filter(m => enPesos(m.valor) !== 0)
     const sueltos = e.movimientos.filter(m => enPesos(m.valor) === 0 && !cargados.has(m.huella))
     const conRegistro = new Map([...cargados].flatMap(([h, id]) => id ? [[h, id] as [string, string]] : []))
-    return { cuadre: conciliar({ ...e, movimientos: normales }, anotados ?? [], idCuenta, conRegistro), centavos: sueltos }
-  }, [e, anotados, idCuenta, cargados])
+    return { cuadre: conciliar({ ...e, movimientos: normales }, anotados ?? [], idCuenta, conRegistro, manual), centavos: sueltos }
+  }, [e, anotados, idCuenta, cargados, manual])
 
   const propuesta = (m: MovimientoBanco): Decision => {
     if (sabidos.has(normalizar(m.descripcion).slice(0, 100))) return { incluir: true, destino: 't', valor: m.valor }
@@ -258,6 +263,25 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, historia, signo, deFi
   const todos = e.movimientos.length - centavos.length + cuadre.soloApp.length
   const hayCambios = porGuardar.length + sinVincular.length + centavos.length + montos.size > 0
   const dudosos = cuadre.faltan.filter(m => m.dudoso).length
+  const sinEmparejar = cuadre.soloApp.length + cuadre.sinCuenta.length
+  const separar = (huella: string, idRegistro: string) => {
+    const unidos = new Map(manual.unidos); unidos.delete(huella)
+    const sinMonto = new Map(montos); sinMonto.delete(huella); setMontos(sinMonto)
+    setManual({ unidos, separados: new Set(manual.separados).add(`${huella}|${idRegistro}`) })
+  }
+  // en un anotado sin pareja: elegir cuál del banco es
+  const unir = (a: Anotado) => {
+    const { cerca, otros } = posibles(a, cuadre.faltan)
+    if (!cerca.length && !otros.length) return null
+    const lista = (movimientos: MovimientoBanco[]) => movimientos.map(m => <option key={m.huella} value={m.huella}>{dia(m.fecha)} · {dePesos(m.valor)} · {m.descripcion.slice(0, 40)}</option>)
+    return (
+      <select aria-label="Es este del banco" value="" onChange={ev => setManual({ unidos: new Map(manual.unidos).set(ev.target.value, a.id_registro), separados: manual.separados })}>
+        <option value="">Es este del banco…</option>
+        {cerca.length > 0 && <optgroup label="Cerca de esta fecha">{lista(cerca)}</optgroup>}
+        {otros.length > 0 && <optgroup label="Otros del extracto">{lista(otros)}</optgroup>}
+      </select>
+    )
+  }
 
   async function accion(hacer: () => Promise<unknown>) {
     setEnviando(true); setError('')
@@ -407,18 +431,19 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, historia, signo, deFi
 
       {cuadre.montoDistinto.length > 0 && (
         <details className="grupo-cuadre" open>
-          <summary>El monto no coincide · {cuadre.montoDistinto.length}</summary>
+          <summary>Parecen el mismo · {cuadre.montoDistinto.length}</summary>
           <ul className="lista">
             {cuadre.montoDistinto.map(p => (
               <li key={p.banco.huella} className="ultimo fila-extracto">
                 <span>{dia(p.banco.fecha)}</span>
                 <strong>{dePesos(p.banco.valor)}</strong>
-                <span className="tenue">El banco dice {dePesos(Math.abs(p.banco.valor))} · anotaste {dePesos(Math.abs(p.app.valor))} · {p.app.nota || p.banco.descripcion}</span>
+                <span className="tenue">El banco dice {dePesos(Math.abs(p.banco.valor))} el {dia(p.banco.fecha)} · anotaste {dePesos(Math.abs(p.app.valor))} el {dia(p.app.fecha)} · {p.app.nota || p.banco.descripcion}</span>
                 <span className="chips" role="radiogroup" aria-label="Qué monto queda">
                   {([['banco', 'Usar el del banco'], ['mio', 'Dejar el mío']] as const).map(([v, texto]) => (
                     <button key={v} type="button" role="radio" aria-checked={montos.get(p.banco.huella) === v} className="chip"
                       onClick={() => setMontos(new Map(montos).set(p.banco.huella, v))}>{texto}</button>
                   ))}
+                  <button type="button" className="chip" onClick={() => separar(p.banco.huella, p.app.id_registro)}>Son distintos</button>
                 </span>
               </li>
             ))}
@@ -427,7 +452,7 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, historia, signo, deFi
       )}
 
       {cuadre.soloApp.length > 0 && (
-        <details className="grupo-cuadre" open>
+        <details className="grupo-cuadre" id="solo-app" open>
           <summary>Solo en la app · {cuadre.soloApp.length}</summary>
           <p className="tenue">Los anotaste en esta cuenta y el banco no los trae.</p>
           <ul className="lista">
@@ -444,6 +469,7 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, historia, signo, deFi
                   </span>
                 ) : (
                   <span className="chips">
+                    {unir(a)}
                     {efectivo && <button type="button" className="secundario" disabled={enviando} onClick={() => accion(() => ponerCuenta([a.id_registro], efectivo.id_cuenta))}>Fue en efectivo</button>}
                     {banco.cuentas.filter(c => c !== efectivo && c.id_cuenta !== idCuenta).map(c => (
                       <button key={c.id_cuenta} type="button" className="secundario" disabled={enviando} onClick={() => accion(() => ponerCuenta([a.id_registro], c.id_cuenta))}>Fue con {c.nombre}</button>
@@ -458,12 +484,17 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, historia, signo, deFi
       )}
 
       {cuadre.sinCuenta.length > 0 && (
-        <details className="grupo-cuadre">
+        <details className="grupo-cuadre" id="sin-emparejar" open={avisado || undefined}>
           <summary>Anotados sin cuenta en estas fechas · {cuadre.sinCuenta.length}</summary>
           <p className="tenue">El banco no los trae y no dicen con qué se pagaron: no cuentan en el cuadre.</p>
           {efectivo && <button type="button" className="secundario" disabled={enviando} onClick={() => accion(() => ponerCuenta(cuadre.sinCuenta.map(a => a.id_registro), efectivo.id_cuenta))}>Fueron en efectivo</button>}
           <ul className="lista">
-            {cuadre.sinCuenta.map(a => <li key={a.id_registro} className="ultimo"><span>{dia(a.fecha)}</span><strong>{dePesos(a.valor)}</strong><span className="tenue">{a.nota || 'Sin descripción'}</span></li>)}
+            {cuadre.sinCuenta.map(a => (
+              <li key={a.id_registro} className="ultimo fila-extracto">
+                <span>{dia(a.fecha)}</span><strong>{dePesos(a.valor)}</strong><span className="tenue">{a.nota || 'Sin descripción'}</span>
+                {unir(a) && <span className="chips">{unir(a)}</span>}
+              </li>
+            ))}
           </ul>
         </details>
       )}
@@ -472,15 +503,28 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, historia, signo, deFi
         <details className="grupo-cuadre">
           <summary>Cuadran · {cuadre.cuadran.length}</summary>
           <ul className="lista">
-            {cuadre.cuadran.map(p => <li key={p.banco.huella} className="ultimo"><span>{dia(p.banco.fecha)}</span><strong>{dePesos(p.banco.valor)}</strong><span className="tenue">{p.app.nota || p.banco.descripcion}</span></li>)}
+            {cuadre.cuadran.map(p => (
+              <li key={p.banco.huella} className="ultimo fila-extracto">
+                <span>{dia(p.banco.fecha)}</span><strong>{dePesos(p.banco.valor)}</strong><span className="tenue">{p.app.nota || p.banco.descripcion}</span>
+                {/* lo ya guardado de un extracto anterior se quita con "Quitar lo que cargó" */}
+                {!cargados.has(p.banco.huella) && <span className="chips"><button type="button" className="chip" onClick={() => separar(p.banco.huella, p.app.id_registro)}>Son distintos</button></span>}
+              </li>
+            ))}
           </ul>
         </details>
       )}
       {centavos.length > 0 && <p className="tenue">{centavos.length === 1 ? 'Un movimiento' : `${centavos.length} movimientos`} de menos de un peso (intereses) solo {centavos.length === 1 ? 'cuenta' : 'cuentan'} en el saldo.</p>}
 
+      {avisado && sinEmparejar > 0 && (
+        <p className="aviso" role="status">
+          Tienes {sinEmparejar === 1 ? 'un anotado' : `${sinEmparejar} anotados`} sin emparejar en estas fechas y pueden quedar repetidos.{' '}
+          <button type="button" className="enlace" onClick={() => { setAvisado(false); document.getElementById(cuadre.soloApp.length ? 'solo-app' : 'sin-emparejar')?.scrollIntoView({ behavior: 'smooth' }) }}>Revisarlos</button>
+        </p>
+      )}
       <div className="chips cuadre-acciones">
-        <button type="button" className="principal" disabled={enviando || !hayCambios} onClick={guardar}>
-          {enviando ? 'Guardando…' : porGuardar.length ? `Agregar ${porGuardar.length === 1 ? 'el movimiento' : `los ${porGuardar.length}`}` : 'Guardar el cuadre'}
+        <button type="button" className="principal" disabled={enviando || !hayCambios}
+          onClick={() => porGuardar.length && sinEmparejar && !avisado ? setAvisado(true) : guardar()}>
+          {enviando ? 'Guardando…' : avisado && sinEmparejar && porGuardar.length ? 'Agregar de todas formas' : porGuardar.length ? `Agregar ${porGuardar.length === 1 ? 'el movimiento' : `los ${porGuardar.length}`}` : 'Guardar el cuadre'}
         </button>
         <button type="button" className="secundario" disabled={enviando} onClick={alCancelar}>Cancelar</button>
       </div>

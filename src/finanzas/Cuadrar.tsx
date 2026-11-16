@@ -77,7 +77,7 @@ export default function Extracto({ ids, datos, banco, registros, desdeRegistros,
         const leidas = await lineasPorOcr(archivo, clave, (n, total) => setEstado({ paso: 'leyendo', texto: `Leyendo la imagen de la página ${n} de ${total}` }))
         if (interpretar(limpiarOcr(leidas))) return
         setEstado({ paso: 'inicio' })
-        setError('No encontré movimientos en este PDF. Revisa que sea el extracto de una cuenta de ahorros o corriente.')
+        setError('No encontré movimientos en este PDF. Por ahora lee extractos de cuenta de Davivienda, Nequi y Banco Falabella.')
       } catch (e) {
         if (e instanceof PdfConClave) return setEstado({ paso: 'clave', archivo, equivocada: e.equivocada })
         throw e
@@ -116,6 +116,7 @@ export default function Extracto({ ids, datos, banco, registros, desdeRegistros,
           <h2>¿La app dice lo mismo que el banco?</h2>
           <ComoFunciona modulo="extracto" pasos={['Descarga el extracto del mes en PDF desde tu banco y súbelo aquí.', 'Te muestro lo que falta anotar, con su categoría sugerida, y lo agregas con un toque.', 'Lo que ya habías anotado se empareja solo; lo que va entre tus cuentas no cuenta como gasto.', 'Al final el saldo de la app queda igual al del banco.']} />
           <p className="tenue">Sube el extracto del mes y te muestro qué falta anotar y si el saldo cuadra. Se lee en tu equipo, no se sube a ningún lado.</p>
+          <p className="tenue">Por ahora lee extractos de cuenta de Davivienda, Nequi y Banco Falabella.</p>
           <input ref={archivoRef} type="file" accept="application/pdf,.pdf" hidden
             onChange={ev => { const a = ev.target.files?.[0]; ev.target.value = ''; if (a) leer(a) }} />
           <button type="button" className="principal" onClick={() => archivoRef.current?.click()}>Subir extracto (PDF)</button>

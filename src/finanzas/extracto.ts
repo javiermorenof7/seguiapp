@@ -25,7 +25,8 @@ export interface ExtractoLeido {
 export type Formato = { saldo: number } & ({ credito: number; debito: number } | { valor: number })
 
 export type Lectura =
-  | { ok: true; extracto: ExtractoLeido; formato: Formato }
+  // sin formato cuando el extracto no tiene columnas que elegir (signo aparte, sin saldo por fila)
+  | { ok: true; extracto: ExtractoLeido; formato?: Formato }
   | { ok: false; motivo: 'sin_movimientos' }
   | { ok: false; motivo: 'columnas'; ejemplo: { descripcion: string; montos: number[] } }
 
@@ -61,9 +62,14 @@ export function leerCentavos(texto: string): number {
 
 interface Fila { fecha: string; textos: string[]; montos: number[] }
 
-function filas(lineas: string[], antes: number[]): Fila[] {
+// el año que más se repite en el extracto: las filas suelen traer solo día y mes
+function anoDe(lineas: string[]): number {
   const anos = lineas.join(' ').match(/\b20\d{2}\b/g) ?? []
-  const ano = Number(anos.sort((a, b) => anos.filter(x => x === b).length - anos.filter(x => x === a).length)[0] ?? new Date().getFullYear())
+  return Number(anos.sort((a, b) => anos.filter(x => x === b).length - anos.filter(x => x === a).length)[0] ?? new Date().getFullYear())
+}
+
+function filas(lineas: string[], antes: number[]): Fila[] {
+  const ano = anoDe(lineas)
   const salida: Fila[] = []
   for (const cruda of lineas) {
     let linea = cruda.trim()
@@ -74,8 +80,10 @@ function filas(lineas: string[], antes: number[]): Fila[] {
     if (!fila) { antes.push(...montos.map(leerCentavos)); continue }
     fila.montos.push(...montos.map(leerCentavos))
     // una segunda fecha en la fila (fecha valor) no es parte de la descripción
-    const texto = linea.replace(MONTO, ' ').replace(/^\s*\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\s+/, '').replace(/\s+/g, ' ').trim()
-    if (texto && /[a-záéíóúñ]/i.test(texto) && fila.textos.length < 2 && texto.length <= 80) fila.textos.push(texto)
+    // el "$" que queda suelto cuando el signo va entre él y el número ("$-25.900,00", Nequi)
+    const texto = linea.replace(MONTO, ' ').replace(/^\s*\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\s+/, '').replace(/(?<!\S)\$(?!\S)/g, ' ').replace(/\s+/g, ' ').trim()
+    // un enlace es del pie de página, no del movimiento
+    if (texto && /[a-záéíóúñ]/i.test(texto) && !/https?:|www\./i.test(texto) && fila.textos.length < 2 && texto.length <= 80) fila.textos.push(texto)
   }
   return salida
 }
@@ -133,11 +141,52 @@ function ultimos4De(lineas: string[]): string | null {
   return null
 }
 
+// Fila con el signo aparte y sin saldo (Davivienda): "15 10 $ 1,234.56 - 1234 Compra NOVAVENTA"
+const CON_SIGNO = /^(\d{1,2}) (\d{1,2}) \$\s?([\d.,]+) ([+-]) \d+\s*(.*)$/
+
+// el monto que sigue a un título del resumen, en su mismo renglón o en el siguiente
+function montoDe(lineas: string[], titulo: RegExp): number | null {
+  const i = lineas.findIndex(l => titulo.test(l.trim()))
+  if (i < 0) return null
+  const monto = (lineas[i].trim().replace(titulo, '') || lineas[i + 1] || '').match(MONTO)
+  return monto ? leerCentavos(monto[0]) : null
+}
+
+/**
+ * Extractos que no traen el saldo en cada fila: el saldo se arma desde el saldo anterior del resumen
+ * y tiene que llegar al nuevo saldo; si no llega, no se carga nada. null si el extracto no tiene esa forma.
+ */
+function leerConSigno(lineas: string[]): Lectura | null {
+  const ano = anoDe(lineas)
+  const crudas = lineas.map(l => CON_SIGNO.exec(l.trim())).filter(m => m !== null)
+  if (crudas.length < 3) return null
+  const inicial = montoDe(lineas, /^saldo anterior\s*/i)
+  const final = montoDe(lineas, /^nuevo saldo\s*/i)
+  const ejemplo = { descripcion: crudas[0][5], montos: [leerCentavos(crudas[0][3])] }
+  if (inicial === null || final === null) return { ok: false, motivo: 'columnas', ejemplo }
+  let saldo = inicial
+  const movimientos: MovimientoBanco[] = []
+  for (const [, dia, mes, monto, signo, descripcion] of crudas) {
+    const valor = (signo === '-' ? -1 : 1) * leerCentavos(monto)
+    saldo += valor
+    const fecha = `${ano}-${dos(mes)}-${dos(dia)}`
+    movimientos.push({ fecha, descripcion: descripcion.trim(), valor, saldo, huella: `${fecha}|${valor}|${saldo}` })
+  }
+  if (saldo !== final) return { ok: false, motivo: 'columnas', ejemplo }
+  const fechas = movimientos.map(m => m.fecha).sort()
+  return {
+    ok: true,
+    extracto: { ultimos4: ultimos4De(lineas), desde: fechas[0], hasta: fechas[fechas.length - 1], saldoInicial: inicial, saldoFinal: final, movimientos },
+  }
+}
+
 /**
  * Lee las líneas de texto de un extracto y devuelve sus movimientos.
  * Reconoce las filas por su forma (fecha, texto, montos) y elige las columnas que hacen que el saldo de cada fila siga del anterior.
  */
 export function leerExtracto(lineas: string[], formato?: Formato): Lectura {
+  const conSigno = leerConSigno(lineas)
+  if (conSigno) return conSigno
   const antes: number[] = []
   const todas = filas(lineas, antes).filter(f => f.montos.length)
   const k = moda(todas.map(f => f.montos.length))

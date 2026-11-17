@@ -8,10 +8,13 @@ import { formatoValor } from '../indicadores'
 import { facturaParecida } from './aprende'
 import { acumuladoAno, mesDe, type Movimiento } from './calculos'
 import { queDescuentan } from './estadoRecibos'
-import { categoriaDeBanco, bancoDe, comercio, conciliar, diferencia, enPesos, pareceTarjeta, leerExtracto, limpiarOcr, porDestino, posibles, sugeridas, saldoEstimado, type Anotado, type Manual, type ExtractoLeido, type Formato, type MovimientoBanco } from './extracto'
+import { categoriaDeBanco, bancoDe, cuentaDe, comercio, conciliar, diferencia, enPesos, pareceTarjeta, leerExtracto, limpiarOcr, porDestino, posibles, sugeridas, saldoEstimado, type Anotado, type Manual, type ExtractoLeido, type Formato, type MovimientoBanco } from './extracto'
 import { leerMonto, normalizar } from './parseo'
 
-const TARJETA = 'Este parece un extracto de tarjeta de crédito: todavía no los leo. Lee cuentas de ahorro y corriente de Davivienda, Nequi y Banco Falabella.'
+// los bancos cuyos extractos ya se leen (BANCOS también tiene los que solo se pueden elegir)
+const LEIDOS = ['Davivienda', 'Nequi', 'Banco Falabella']
+const QUE_LEE = `Lee cuentas de ahorro y corriente de ${LEIDOS.slice(0, -1).join(', ')} y ${LEIDOS.at(-1)}. Tarjetas de crédito todavía no.`
+const TARJETA = 'Este parece un extracto de tarjeta de crédito: todavía no los leo. ' + QUE_LEE
 
 type Datos = Awaited<ReturnType<typeof obtenerFinanzas>>
 type Traslados = Awaited<ReturnType<typeof crearTraslados>>
@@ -48,6 +51,8 @@ export default function Extracto({ ids, datos, banco, registros, desdeRegistros,
   movimientos: Movimiento[]
 }) {
   const [estado, setEstado] = useState<Paso>({ paso: 'inicio' })
+  // la cuenta desde la que se pidió subir el extracto, si se pidió desde una
+  const [elegida, setElegida] = useState('')
   const [error, setError] = useState('')
   const [aviso, setAviso] = useState('')
   const [traslados, setTraslados] = useState<Traslados | null>(null)
@@ -69,6 +74,8 @@ export default function Extracto({ ids, datos, banco, registros, desdeRegistros,
   const signo = (r: RegistroGuardado) => r.id_seguimiento === ids.ingreso || (traslados && r.id_etiqueta === traslados.entrada) ? 1 : -1
   const deFinanzas = (r: RegistroGuardado) => [ids.gasto, ids.ingreso, ids.ahorro, ids.traslados].includes(r.id_seguimiento)
 
+  function subir(idCuenta: string) { setElegida(idCuenta); archivoRef.current?.click() }
+
   async function leer(archivo: File, clave?: string) {
     setError(''); setAviso('')
     setEstado({ paso: 'leyendo', texto: 'Abriendo el extracto…' })
@@ -83,7 +90,7 @@ export default function Extracto({ ids, datos, banco, registros, desdeRegistros,
         const leidas = await lineasPorOcr(archivo, clave, (n, total) => setEstado({ paso: 'leyendo', texto: `Leyendo la imagen de la página ${n} de ${total}` }))
         if (interpretar(limpiarOcr(leidas))) return
         setEstado({ paso: 'inicio' })
-        setError(pareceTarjeta(leidas) ? TARJETA : 'No encontré movimientos en este PDF. Lee cuentas de ahorro y corriente de Davivienda, Nequi y Banco Falabella. Tarjetas de crédito todavía no.')
+        setError(pareceTarjeta(leidas) ? TARJETA : 'No encontré movimientos en este PDF. ' + QUE_LEE)
       } catch (e) {
         if (e instanceof PdfConClave) return setEstado({ paso: 'clave', archivo, equivocada: e.equivocada })
         throw e
@@ -121,15 +128,27 @@ export default function Extracto({ ids, datos, banco, registros, desdeRegistros,
         <>
           <h2>¿La app dice lo mismo que el banco?</h2>
           <ComoFunciona modulo="extracto" pasos={['Descarga el extracto del mes en PDF desde tu banco y súbelo aquí.', 'Te muestro lo que falta anotar, con su categoría sugerida, y lo agregas con un toque.', 'Lo que ya habías anotado se empareja solo; lo que va entre tus cuentas no cuenta como gasto.', 'Al final el saldo de la app queda igual al del banco.']} />
-          <p className="tenue">Sube el extracto del mes y te muestro qué falta anotar y si el saldo cuadra. Se lee en tu equipo, no se sube a ningún lado.</p>
-          <p className="tenue">Lee cuentas de ahorro y corriente de Davivienda, Nequi y Banco Falabella. Tarjetas de crédito todavía no.</p>
           <input ref={archivoRef} type="file" accept="application/pdf,.pdf" hidden
             onChange={ev => { const a = ev.target.files?.[0]; ev.target.value = ''; if (a) leer(a) }} />
-          <button type="button" className="principal" onClick={() => archivoRef.current?.click()}>Subir extracto (PDF)</button>
-          <MisCuentas banco={banco} alCambiar={alCambiar} />
-          <AjusteCuentas banco={banco} saldos={saldosDe(banco, registros, signo)} movimientos={movimientos} alCambiar={alCambiar} />
-          <Subidos banco={banco} registros={registros} desdeRegistros={desdeRegistros} signo={signo}
+          {banco.extractos.length ? (
+            <>
+              <p className="tenue">Sube el extracto del mes y te muestro qué falta anotar y si el saldo cuadra. Se lee en tu equipo, no se sube a ningún lado.</p>
+              <p className="tenue">{QUE_LEE}</p>
+              <button type="button" className="secundario" onClick={() => subir('')}>Subir extracto de otra cuenta</button>
+            </>
+          ) : (
+            <div className="guia bienvenida">
+              <h3>Empieza con tu último extracto</h3>
+              <p>Si quieres hacer seguimiento, descarga de tu banco el extracto más reciente en PDF y súbelo: con él la app sabe tu saldo y te muestra qué falta anotar. Se lee en tu equipo, no se sube a ningún lado.</p>
+              <p className="tenue">Funciona con cuentas de ahorro y corriente de:</p>
+              <ul className="bancos">{LEIDOS.map(b => <li key={b}>{b}</li>)}</ul>
+              <p className="tenue">Tarjetas de crédito todavía no.</p>
+              <button type="button" className="principal" onClick={() => subir('')}>Subir mi último extracto (PDF)</button>
+            </div>
+          )}
+          <Cuentas banco={banco} registros={registros} desdeRegistros={desdeRegistros} signo={signo} alCambiar={alCambiar} alSubir={subir}
             alQuitar={async id => { await quitarCarga(id); await alCambiar(); setAviso('') }} />
+          <AjusteCuentas banco={banco} saldos={saldosDe(banco, registros, signo)} movimientos={movimientos} alCambiar={alCambiar} />
         </>
       )}
       {estado.paso === 'leyendo' && <p role="status" className="tenue">{estado.texto}</p>}
@@ -140,7 +159,7 @@ export default function Extracto({ ids, datos, banco, registros, desdeRegistros,
         <Columnas ejemplo={estado.ejemplo} alCancelar={() => setEstado({ paso: 'inicio' })} alElegir={formato => { if (!interpretar(estado.lineas, formato)) { setEstado({ paso: 'inicio' }); setError('Con esas columnas el saldo no cuadra. Sube el extracto otra vez y elige otras.') } }} />
       )}
       {estado.paso === 'cuadre' && (
-        <Cuadre key={estado.extracto.desde + estado.extracto.hasta + estado.extracto.saldoFinal} extracto={estado.extracto} bancoLeido={bancoDe(estado.lineas)} ids={ids} datos={datos} banco={banco}
+        <Cuadre key={estado.extracto.desde + estado.extracto.hasta + estado.extracto.saldoFinal} extracto={estado.extracto} bancoLeido={bancoDe(estado.lineas)} elegida={elegida} ids={ids} datos={datos} banco={banco}
           sabidos={sabidos.traslados} historia={historia} signo={signo} deFinanzas={deFinanzas} alCambiar={alCambiar}
           alCancelar={() => setEstado({ paso: 'inicio' })}
           alTerminar={mensaje => { setEstado({ paso: 'inicio' }); setAviso(mensaje) }} />
@@ -194,14 +213,17 @@ function Columnas({ ejemplo, alElegir, alCancelar }: { ejemplo: { descripcion: s
   )
 }
 
-function Cuadre({ extracto: e, bancoLeido, ids, datos, banco, sabidos, historia, signo, deFinanzas, alCambiar, alCancelar, alTerminar }: {
-  extracto: ExtractoLeido; bancoLeido: string | null; ids: Ids; datos: Datos; banco: Banco; sabidos: Map<string, string>; historia: { texto: string; id_etiqueta: string }[]
+function Cuadre({ extracto: e, bancoLeido, elegida, ids, datos, banco, sabidos, historia, signo, deFinanzas, alCambiar, alCancelar, alTerminar }: {
+  extracto: ExtractoLeido; bancoLeido: string | null; elegida: string; ids: Ids; datos: Datos; banco: Banco; sabidos: Map<string, string>; historia: { texto: string; id_etiqueta: string }[]
   signo: (r: RegistroGuardado) => number; deFinanzas: (r: RegistroGuardado) => boolean
   alCambiar: () => Promise<void>; alCancelar: () => void; alTerminar: (mensaje: string) => void
 }) {
-  // primero por los dígitos; si no, la única cuenta de ese banco que no tenga otros dígitos
+  // si no se sabe la cuenta, la primera de ese banco queda propuesta en "¿De qué cuenta es?"
   const delBanco = banco.cuentas.filter(c => bancoLeido && c.banco === bancoLeido && (!c.ultimos_digitos || !e.ultimos4))
-  const cuenta = banco.cuentas.find(c => c.ultimos_digitos && c.ultimos_digitos === e.ultimos4) ?? (delBanco.length === 1 ? delBanco[0] : undefined)
+  const cuenta = cuentaDe(banco.cuentas, e.ultimos4, bancoLeido, elegida)
+  const pedida = banco.cuentas.find(c => c.id_cuenta === elegida)
+  const otraCuenta = pedida && cuenta !== pedida
+    ? `Este extracto ${cuenta ? `es de ${etiquetaCuenta(cuenta)}` : `termina en ${e.ultimos4}`}, no de ${etiquetaCuenta(pedida)}${cuenta ? ': lo dejé en esa cuenta.' : '.'}` : ''
   const [idElegida, setIdElegida] = useState(delBanco[0]?.id_cuenta ?? '')
   const [nombreCuenta, setNombreCuenta] = useState(bancoLeido ?? (e.ultimos4 ? `Cuenta ·${e.ultimos4}` : 'Mi cuenta'))
   const idCuenta = cuenta?.id_cuenta ?? (idElegida || null)
@@ -387,6 +409,7 @@ function Cuadre({ extracto: e, bancoLeido, ids, datos, banco, sabidos, historia,
         <p className="tenue">{todos - pendientes} de {todos} movimientos resueltos</p>
       </div>
       {error && <p role="alert" className="error">{error}</p>}
+      {otraCuenta && <p role="status" className="aviso">{otraCuenta}</p>}
       {!cuenta && (
         <fieldset className="formulario">
           <legend>¿De qué cuenta es este extracto?</legend>
@@ -587,7 +610,6 @@ function Cuadre({ extracto: e, bancoLeido, ids, datos, banco, sabidos, historia,
   )
 }
 
-// Los extractos ya subidos, por cuenta, con su estado frente a lo que hay hoy en la app.
 // El saldo de hoy de cada cuenta con extracto: el del último extracto más lo anotado después en esa cuenta.
 function saldosDe(banco: Banco, registros: RegistroGuardado[], signo: (r: RegistroGuardado) => number) {
   return banco.cuentas.flatMap(c => {
@@ -596,83 +618,6 @@ function saldosDe(banco: Banco, registros: RegistroGuardado[], signo: (r: Regist
     const suyos = registros.filter(r => banco.deRegistro.get(r.id_registro) === c.id_cuenta).map(r => ({ fecha: r.fecha, valor: signo(r) * r.valor }))
     return [{ cuenta: c, hasta: ultimo.fecha_hasta, banco: Math.round(ultimo.valor_saldo_final), ...saldoEstimado(Math.round(ultimo.valor_saldo_final), ultimo.fecha_hasta, suyos) }]
   })
-}
-
-function Subidos({ banco, registros, desdeRegistros, signo, alQuitar }: {
-  banco: Banco; registros: RegistroGuardado[]; desdeRegistros: string; signo: (r: RegistroGuardado) => number; alQuitar: (idExtracto: string) => Promise<void>
-}) {
-  const [confirmar, setConfirmar] = useState('')
-  const [error, setError] = useState('')
-  const activos = useMemo(() => new Set(registros.map(r => r.id_registro)), [registros])
-  if (!banco.extractos.length) return null
-
-  const falta = (x: ExtractoGuardado): number | null => {
-    if (x.fecha_desde < desdeRegistros) return null
-    const suyos = new Set(banco.extractos.filter(o => o.id_cuenta === x.id_cuenta).map(o => o.id_extracto))
-    const enRango = (f: string) => f >= x.fecha_desde && f <= x.fecha_hasta
-    // un movimiento subido en dos extractos que se pisan cuenta una vez
-    const vinculos = [...new Map(banco.vinculos.filter(v => suyos.has(v.id_extracto) && enRango(v.fecha_movimiento)).map(v => [v.huella, v])).values()]
-    const vinculados = new Set(vinculos.map(v => v.id_registro))
-    const delBanco = vinculos.filter(v => !v.id_registro || activos.has(v.id_registro)).reduce((t, v) => t + Math.round(v.valor_banco * 100), 0)
-    const sueltos = registros.filter(r => banco.deRegistro.get(r.id_registro) === x.id_cuenta && enRango(r.fecha) && !vinculados.has(r.id_registro))
-      .reduce((t, r) => t + signo(r) * Math.round(r.valor * 100), 0)
-    return Math.round(x.valor_saldo_final * 100) - Math.round(x.valor_saldo_inicial * 100) - delBanco - sueltos
-  }
-  // entre dos extractos seguidos de una cuenta, el saldo final de uno es el inicial del otro; si no, falta uno en medio
-  const huecos = banco.cuentas.flatMap(c => {
-    const suyos = banco.extractos.filter(x => x.id_cuenta === c.id_cuenta).sort((a, b) => a.fecha_desde.localeCompare(b.fecha_desde))
-    return suyos.slice(1).flatMap((x, i) => suyos[i].fecha_hasta < x.fecha_desde && Math.round(suyos[i].valor_saldo_final * 100) !== Math.round(x.valor_saldo_inicial * 100)
-      ? [`En ${etiquetaCuenta(c)} falta un extracto entre el ${dia(suyos[i].fecha_hasta)} y el ${dia(x.fecha_desde)}.`] : [])
-  })
-
-  // el saldo de cada cuenta es el de su extracto más reciente: si ya es viejo, se avisa
-  const limite = diasAntes(new Date().toLocaleDateString('en-CA'), 45)
-  const atrasadas = banco.cuentas.flatMap(c => {
-    const ultimo = banco.extractos.filter(x => x.id_cuenta === c.id_cuenta).map(x => x.fecha_hasta).sort().pop()
-    return ultimo && ultimo < limite ? [`El saldo de ${etiquetaCuenta(c)} está al ${dia(ultimo)}: sube el extracto más reciente para cuadrar.`] : []
-  })
-
-  // el extracto llega a mes vencido: el saldo de hoy se estima con el último y lo anotado después
-  const saldos = saldosDe(banco, registros, signo)
-
-  return (
-    <>
-      <h2>¿Cuánto tengo hoy?</h2>
-      <p className="tenue">El extracto llega con el mes vencido: el saldo de hoy es el del último extracto más lo que has anotado en esa cuenta desde entonces.</p>
-      <ul className="lista">
-        {saldos.map(s => <SaldoHoy key={s.cuenta.id_cuenta} {...s} nombre={etiquetaCuenta(s.cuenta)} />)}
-      </ul>
-      <h2>Extractos subidos</h2>
-      {error && <p role="alert" className="error">{error}</p>}
-      {huecos.map(h => <p key={h} className="aviso">{h}</p>)}
-      {atrasadas.map(a => <p key={a} className="aviso">{a}</p>)}
-      <ul className="lista con-estado">
-        {banco.extractos.map(x => {
-          const reciente = !banco.extractos.some(o => o.id_cuenta === x.id_cuenta && o.fecha_hasta > x.fecha_hasta)
-          const f = reciente ? falta(x) : null
-          return (
-            <li key={x.id_extracto} className="ultimo fila-extracto">
-              <span>{(() => { const c = banco.cuentas.find(c => c.id_cuenta === x.id_cuenta); return c ? etiquetaCuenta(c) : 'Cuenta quitada' })()}</span>
-              <strong>{periodo(x.fecha_desde, x.fecha_hasta)}</strong>
-              <span className="tenue">
-                {f !== null && <span className={`estado ${f === 0 ? 'en-meta' : 'fuera'}`}>{f === 0 ? '✓ Cuadra' : `✕ Faltan ${dePesos(Math.abs(f))}`}</span>}
-                {reciente ? `Saldo ${pesos(Math.round(x.valor_saldo_final))} al ${dia(x.fecha_hasta)}` : 'Movimientos cargados'}
-              </span>
-              {confirmar === x.id_extracto ? (
-                <span className="chips">
-                  <span className="tenue">¿Seguro? Se borra lo que agregó este extracto; lo que anotaste a mano se queda.</span>
-                  <button type="button" className="secundario" onClick={() => alQuitar(x.id_extracto).catch(err => setError((err as Error).message))}>Sí, quitar</button>
-                  <button type="button" className="secundario" onClick={() => setConfirmar('')}>No</button>
-                </span>
-              ) : (
-                <span className="chips"><button type="button" className="secundario" onClick={() => setConfirmar(x.id_extracto)}>Quitar lo que cargó</button></span>
-              )}
-            </li>
-          )
-        })}
-      </ul>
-    </>
-  )
 }
 
 // El saldo estimado de una cuenta y, si la persona quiere, la comparación con lo que dice su banco hoy. No guarda nada.
@@ -708,15 +653,50 @@ function SaldoHoy({ nombre, hasta, banco, saldo, cuantos }: { nombre: string; ha
 const mesLargo = (fecha: string) => new Date(`${fecha.slice(0, 7)}-15T12:00`).toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })
 const diaLargo = (fecha: string) => new Date(`${fecha}T12:00`).toLocaleDateString('es-CO', { day: 'numeric', month: 'long' })
 
-// Las cuentas de la persona: hasta dónde llega su extracto, y editarlas o quitarlas.
-function MisCuentas({ banco, alCambiar }: { banco: Banco; alCambiar: () => Promise<void> }) {
+// Cada cuenta con todo lo suyo: saldo de hoy, extractos subidos con su estado, avisos y botones para subir, editar o quitar.
+function Cuentas({ banco, registros, desdeRegistros, signo, alCambiar, alQuitar, alSubir }: {
+  banco: Banco; registros: RegistroGuardado[]; desdeRegistros: string; signo: (r: RegistroGuardado) => number
+  alCambiar: () => Promise<void>; alQuitar: (idExtracto: string) => Promise<void>; alSubir: (idCuenta: string) => void
+}) {
   const [editando, setEditando] = useState('')
   const [confirmar, setConfirmar] = useState('')
+  const [quitarExtracto, setQuitarExtracto] = useState('')
   const [form, setForm] = useState({ nombre: '', banco: '', digitos: '' })
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
+  const activos = useMemo(() => new Set(registros.map(r => r.id_registro)), [registros])
+  const deCuenta = (id: string) => banco.extractos.filter(x => x.id_cuenta === id).sort((a, b) => b.fecha_hasta.localeCompare(a.fecha_hasta))
+  // la cuenta con el extracto más reciente primero; las que no tienen, al final
   const cuentas = banco.cuentas.filter(c => c.nombre !== 'Efectivo')
-  const abrir = (c?: (typeof cuentas)[number]) => {
+    .map(c => ({ c, suyos: deCuenta(c.id_cuenta) }))
+    .sort((a, b) => (b.suyos[0]?.fecha_hasta ?? '').localeCompare(a.suyos[0]?.fecha_hasta ?? ''))
+  const quitadas = banco.extractos.filter(x => !banco.cuentas.some(c => c.id_cuenta === x.id_cuenta))
+  // el extracto llega a mes vencido: el saldo de hoy se estima con el último y lo anotado después
+  const saldos = saldosDe(banco, registros, signo)
+  const limite = diasAntes(new Date().toLocaleDateString('en-CA'), 45)
+
+  const falta = (x: ExtractoGuardado): number | null => {
+    if (x.fecha_desde < desdeRegistros) return null
+    const suyos = new Set(banco.extractos.filter(o => o.id_cuenta === x.id_cuenta).map(o => o.id_extracto))
+    const enRango = (f: string) => f >= x.fecha_desde && f <= x.fecha_hasta
+    // un movimiento subido en dos extractos que se pisan cuenta una vez
+    const vinculos = [...new Map(banco.vinculos.filter(v => suyos.has(v.id_extracto) && enRango(v.fecha_movimiento)).map(v => [v.huella, v])).values()]
+    const vinculados = new Set(vinculos.map(v => v.id_registro))
+    const delBanco = vinculos.filter(v => !v.id_registro || activos.has(v.id_registro)).reduce((t, v) => t + Math.round(v.valor_banco * 100), 0)
+    const sueltos = registros.filter(r => banco.deRegistro.get(r.id_registro) === x.id_cuenta && enRango(r.fecha) && !vinculados.has(r.id_registro))
+      .reduce((t, r) => t + signo(r) * Math.round(r.valor * 100), 0)
+    return Math.round(x.valor_saldo_final * 100) - Math.round(x.valor_saldo_inicial * 100) - delBanco - sueltos
+  }
+  // entre dos extractos seguidos de una cuenta, el saldo final de uno es el inicial del otro; si no, falta uno en medio
+  const avisos = (suyos: ExtractoGuardado[]) => {
+    const orden = [...suyos].reverse()
+    const huecos = orden.slice(1).flatMap((x, i) => orden[i].fecha_hasta < x.fecha_desde && Math.round(orden[i].valor_saldo_final * 100) !== Math.round(x.valor_saldo_inicial * 100)
+      ? [`Falta un extracto entre el ${dia(orden[i].fecha_hasta)} y el ${dia(x.fecha_desde)}.`] : [])
+    // el saldo de cada cuenta es el de su extracto más reciente: si ya es viejo, se avisa
+    return suyos[0] && suyos[0].fecha_hasta < limite ? [...huecos, `El saldo está al ${dia(suyos[0].fecha_hasta)}: sube el extracto más reciente para cuadrar.`] : huecos
+  }
+
+  const abrir = (c?: Banco['cuentas'][number]) => {
     setError(''); setConfirmar('')
     setForm({ nombre: c?.nombre ?? '', banco: c?.banco ?? '', digitos: c?.ultimos_digitos ?? '' }); setEditando(c?.id_cuenta ?? 'nueva')
   }
@@ -747,36 +727,66 @@ function MisCuentas({ banco, alCambiar }: { banco: Banco; alCambiar: () => Promi
       </span>
     </form>
   )
+  const fila = (x: ExtractoGuardado, reciente: boolean) => {
+    const f = reciente ? falta(x) : null
+    return (
+      <li key={x.id_extracto} className="ultimo fila-extracto">
+        <strong>{periodo(x.fecha_desde, x.fecha_hasta)}</strong>
+        <span className="tenue">
+          {f !== null && <span className={`estado ${f === 0 ? 'en-meta' : 'fuera'}`}>{f === 0 ? '✓ Cuadra' : `✕ Faltan ${dePesos(Math.abs(f))}`}</span>}
+          {reciente ? `Saldo ${pesos(Math.round(x.valor_saldo_final))} al ${dia(x.fecha_hasta)}` : 'Movimientos cargados'}
+        </span>
+        {quitarExtracto === x.id_extracto ? (
+          <span className="chips">
+            <span className="tenue">¿Seguro? Se borra lo que agregó este extracto; lo que anotaste a mano se queda.</span>
+            <button type="button" className="secundario" onClick={() => alQuitar(x.id_extracto).then(() => setQuitarExtracto(''), err => setError((err as Error).message))}>Sí, quitar</button>
+            <button type="button" className="secundario" onClick={() => setQuitarExtracto('')}>No</button>
+          </span>
+        ) : (
+          <span className="chips"><button type="button" className="enlace" onClick={() => setQuitarExtracto(x.id_extracto)}>Quitar lo que cargó</button></span>
+        )}
+      </li>
+    )
+  }
+
   return (
     <>
       <h2>Tus cuentas</h2>
-      <p className="tenue">Con el banco y los últimos 4 dígitos, el extracto se acomoda solo en su cuenta.</p>
+      <p className="tenue">Cada extracto queda en su cuenta. El saldo de hoy es el del último extracto más lo que anotaste después.</p>
       {error && <p role="alert" className="error">{error}</p>}
-      {cuentas.length > 0 && (
-        <ul className="lista">
-          {cuentas.map(c => {
-            const ultimo = banco.extractos.filter(x => x.id_cuenta === c.id_cuenta).map(x => x.fecha_hasta).sort().pop()
-            return (
-              <li key={c.id_cuenta} className="ultimo fila-extracto">
-                <strong>{etiquetaCuenta(c)}</strong>
-                <span className="tenue">{ultimo ? `Extracto hasta ${mesLargo(ultimo)}` : 'Sin extracto'}</span>
-                {editando === c.id_cuenta ? formulario : confirmar === c.id_cuenta ? (
-                  <span className="chips">
-                    <span className="tenue">¿Seguro? Lo anotado con ella queda sin cuenta.</span>
-                    <button type="button" className="secundario" disabled={enviando}
-                      onClick={() => hacer(() => quitarCuenta(c.id_cuenta, [...banco.deRegistro].filter(([, id]) => id === c.id_cuenta).map(([r]) => r)))}>Sí, quitar</button>
-                    <button type="button" className="secundario" onClick={() => setConfirmar('')}>No</button>
-                  </span>
-                ) : (
-                  <span className="chips">
-                    <button type="button" className="secundario" onClick={() => abrir(c)}>Editar</button>
-                    <button type="button" className="secundario" onClick={() => { setEditando(''); setConfirmar(c.id_cuenta) }}>Quitar</button>
-                  </span>
-                )}
-              </li>
-            )
-          })}
-        </ul>
+      {cuentas.map(({ c, suyos }) => {
+        const saldo = saldos.find(s => s.cuenta.id_cuenta === c.id_cuenta)
+        return (
+          <article key={c.id_cuenta} className="cuenta-extracto">
+            <header>
+              <h3>{etiquetaCuenta(c)}</h3>
+              <span className="tenue">{suyos[0] ? `Extracto hasta ${mesLargo(suyos[0].fecha_hasta)}` : 'Sin extracto todavía'}</span>
+            </header>
+            {saldo && <ul className="lista"><SaldoHoy {...saldo} nombre="Saldo hoy" /></ul>}
+            {avisos(suyos).map(a => <p key={a} className="aviso">{a}</p>)}
+            {suyos.length > 0 && <ul className="lista con-estado">{suyos.map((x, i) => fila(x, i === 0))}</ul>}
+            {editando === c.id_cuenta ? formulario : confirmar === c.id_cuenta ? (
+              <span className="chips">
+                <span className="tenue">¿Seguro? Lo anotado con ella queda sin cuenta.</span>
+                <button type="button" className="secundario" disabled={enviando}
+                  onClick={() => hacer(() => quitarCuenta(c.id_cuenta, [...banco.deRegistro].filter(([, id]) => id === c.id_cuenta).map(([r]) => r)))}>Sí, quitar</button>
+                <button type="button" className="secundario" onClick={() => setConfirmar('')}>No</button>
+              </span>
+            ) : (
+              <span className="chips">
+                <button type="button" className="principal" onClick={() => alSubir(c.id_cuenta)}>{suyos.length ? 'Subir el siguiente extracto' : 'Subir su extracto'}</button>
+                <button type="button" className="secundario" onClick={() => abrir(c)}>Editar</button>
+                <button type="button" className="secundario" onClick={() => { setEditando(''); setConfirmar(c.id_cuenta) }}>Quitar</button>
+              </span>
+            )}
+          </article>
+        )
+      })}
+      {quitadas.length > 0 && (
+        <article className="cuenta-extracto">
+          <header><h3>Cuentas quitadas</h3></header>
+          <ul className="lista con-estado">{quitadas.map(x => fila(x, false))}</ul>
+        </article>
       )}
       {editando === 'nueva' ? formulario : <button type="button" className="secundario" onClick={() => abrir()}>+ Nueva cuenta</button>}
     </>

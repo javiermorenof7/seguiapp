@@ -266,6 +266,18 @@ export function posibles(a: Anotado, faltan: MovimientoBanco[]): { cerca: Movimi
 }
 
 // El banco del extracto por su nombre en el texto ("BFCO" en el archivo no cuenta: se lee el contenido).
+type CuentaLeible = { id_cuenta: string; banco: string | null; ultimos_digitos: string | null }
+// A qué cuenta va un extracto: primero por sus dígitos; luego la cuenta desde la que se subió, si sus dígitos no dicen otra cosa;
+// si no, la única cuenta de ese banco que no tenga otros dígitos. Sin acuerdo, undefined y se le pregunta a la persona.
+export function cuentaDe<C extends CuentaLeible>(cuentas: C[], ultimos4: string | null | undefined, bancoLeido: string | null, elegida = ''): C | undefined {
+  const porDigitos = cuentas.find(c => c.ultimos_digitos && c.ultimos_digitos === ultimos4)
+  if (porDigitos) return porDigitos
+  const pedida = cuentas.find(c => c.id_cuenta === elegida)
+  if (pedida && (!pedida.ultimos_digitos || !ultimos4)) return pedida
+  const delBanco = cuentas.filter(c => bancoLeido && c.banco === bancoLeido && (!c.ultimos_digitos || !ultimos4))
+  return delBanco.length === 1 ? delBanco[0] : undefined
+}
+
 export function bancoDe(lineas: string[]): string | null {
   const texto = normalizar(lineas.slice(0, 60).join(' '))
   if (texto.includes('falabella')) return 'Banco Falabella'

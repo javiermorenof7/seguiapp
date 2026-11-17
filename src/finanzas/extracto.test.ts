@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { categoriaDeBanco, comercio, conciliar, diferencia, leerCentavos, leerExtracto, limpiarOcr, bancoDe, pareceTarjeta, porDestino, posibles, saldoEstimado, sugeridas, type Anotado, type ExtractoLeido } from './extracto'
+import { categoriaDeBanco, comercio, conciliar, diferencia, leerCentavos, leerExtracto, limpiarOcr, bancoDe, cuentaDe, pareceTarjeta, porDestino, posibles, saldoEstimado, sugeridas, type Anotado, type ExtractoLeido } from './extracto'
 
 // Extracto inventado: saldo anterior 1.000.000,00 y cuatro movimientos.
 const POR_LINEA = [
@@ -257,5 +257,27 @@ describe('saldoEstimado', () => {
     const anotados = [{ fecha: '2026-10-31', valor: -999 }, { fecha: '2026-11-01', valor: -20000 }, { fecha: '2026-11-05', valor: 50000 }]
     expect(saldoEstimado(100000, '2026-10-31', anotados)).toEqual({ saldo: 130000, cuantos: 2 })
     expect(saldoEstimado(100000, '2026-11-30', anotados)).toEqual({ saldo: 100000, cuantos: 0 })
+  })
+})
+
+describe('cuentaDe', () => {
+  const cuentas = [
+    { id_cuenta: 'a', banco: 'Davivienda', ultimos_digitos: '9948' },
+    { id_cuenta: 'b', banco: 'Nequi', ultimos_digitos: null },
+    { id_cuenta: 'c', banco: 'Davivienda', ultimos_digitos: null },
+  ]
+  it('manda los dígitos del PDF aunque se haya subido desde otra cuenta', () => {
+    expect(cuentaDe(cuentas, '9948', 'Davivienda', 'b')?.id_cuenta).toBe('a')
+  })
+  it('usa la cuenta desde la que se subió si sus dígitos no dicen otra cosa', () => {
+    expect(cuentaDe(cuentas, '1234', 'Nequi', 'b')?.id_cuenta).toBe('b')
+    expect(cuentaDe(cuentas, null, 'Davivienda', 'a')?.id_cuenta).toBe('a')
+  })
+  it('no usa la cuenta elegida si sus dígitos son otros', () => {
+    expect(cuentaDe(cuentas, '1234', 'Davivienda', 'a')?.id_cuenta).toBe('c')
+    expect(cuentaDe(cuentas, '1234', null, 'a')).toBeUndefined()
+  })
+  it('sin cuenta elegida, la única de ese banco', () => {
+    expect(cuentaDe(cuentas, '5555', 'Nequi')?.id_cuenta).toBe('b')
   })
 })

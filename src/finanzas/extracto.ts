@@ -259,6 +259,11 @@ export interface Manual { unidos: Map<string, string>; separados: Set<string> }
 /** Si el monto anotado se parece al del banco: hasta 1 % de diferencia, mismo signo. */
 const parecido = (anotado: number, banco: number) => Math.sign(anotado) === Math.sign(banco) && Math.abs(anotado - banco) <= Math.abs(banco) / 100
 
+// Un anotado que puede estar repetido con un movimiento del banco que falta: mismo sentido, 3 días o menos y monto a ±10 %.
+// Más amplio que `parecido` (±1 %), porque esos ya se emparejan solos.
+export const repetidoPosible = (a: Anotado, faltan: MovimientoBanco[]) =>
+  faltan.some(m => Math.sign(m.valor) === Math.sign(a.valor) && dias(a.fecha, m.fecha) <= 3 && Math.abs(m.valor - a.valor) <= Math.abs(a.valor) / 10)
+
 /** Los movimientos del banco que pueden ser este anotado (mismo signo), por fecha: los de 15 días o menos aparte, para verlos primero. */
 export function posibles(a: Anotado, faltan: MovimientoBanco[]): { cerca: MovimientoBanco[]; otros: MovimientoBanco[] } {
   const suyos = faltan.filter(m => Math.sign(m.valor) === Math.sign(a.valor)).sort((x, y) => x.fecha.localeCompare(y.fecha))

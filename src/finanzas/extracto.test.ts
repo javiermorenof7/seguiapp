@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { categoriaDeBanco, comercio, conciliar, diferencia, leerCentavos, leerExtracto, limpiarOcr, bancoDe, cuentaDe, pareceTarjeta, porDestino, posibles, saldoEstimado, sugeridas, type Anotado, type ExtractoLeido } from './extracto'
+import { categoriaDeBanco, comercio, conciliar, diferencia, leerCentavos, leerExtracto, limpiarOcr, bancoDe, cuentaDe, repetidoPosible, pareceTarjeta, porDestino, posibles, saldoEstimado, sugeridas, type Anotado, type ExtractoLeido, type MovimientoBanco } from './extracto'
 
 // Extracto inventado: saldo anterior 1.000.000,00 y cuatro movimientos.
 const POR_LINEA = [
@@ -279,5 +279,18 @@ describe('cuentaDe', () => {
   })
   it('sin cuenta elegida, la única de ese banco', () => {
     expect(cuentaDe(cuentas, '5555', 'Nequi')?.id_cuenta).toBe('b')
+  })
+})
+
+describe('repetidoPosible', () => {
+  const banco = [{ fecha: '2026-10-10', valor: -5_000_000, descripcion: 'COMPRA', huella: 'h1' }] as MovimientoBanco[]
+  const anotado = (fecha: string, valor: number) => ({ id_registro: 'r', fecha, valor, id_cuenta: null, nota: null }) as Anotado
+  it('avisa si hay uno del banco a 3 días con monto a ±10 %', () => {
+    expect(repetidoPosible(anotado('2026-10-12', -4_600_000), banco)).toBe(true)
+  })
+  it('no avisa si el monto, la fecha o el sentido no se parecen', () => {
+    expect(repetidoPosible(anotado('2026-10-12', -3_000_000), banco)).toBe(false)
+    expect(repetidoPosible(anotado('2026-10-20', -5_000_000), banco)).toBe(false)
+    expect(repetidoPosible(anotado('2026-10-10', 5_000_000), banco)).toBe(false)
   })
 })

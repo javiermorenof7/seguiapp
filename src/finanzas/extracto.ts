@@ -269,6 +269,33 @@ export function posibles(a: Anotado, faltan: MovimientoBanco[]): { cerca: Movimi
   return { cerca: suyos.filter(m => dias(a.fecha, m.fecha) <= 15), otros: suyos.filter(m => dias(a.fecha, m.fecha) > 15) }
 }
 
+/**
+ * La pareja más probable de cada anotado sin pareja: mismo sentido, a 15 días o menos y monto a no más de un 25 %.
+ * Se reparten de la mejor a la peor, así dos anotados nunca se quedan con el mismo del banco.
+ */
+export function sugeridas(anotados: Anotado[], faltan: MovimientoBanco[]): Map<string, MovimientoBanco> {
+  const candidatas = anotados.flatMap(a => faltan
+    .filter(m => Math.sign(m.valor) === Math.sign(a.valor) && dias(a.fecha, m.fecha) <= 15 && Math.abs(m.valor - a.valor) <= Math.abs(a.valor) * 0.25)
+    .map(m => ({ a, m, puntaje: Math.abs(m.valor - a.valor) / Math.abs(a.valor) + dias(a.fecha, m.fecha) / 100 })))
+    .sort((x, y) => x.puntaje - y.puntaje)
+  const elegidas = new Map<string, MovimientoBanco>()
+  const usados = new Set<string>()
+  for (const { a, m } of candidatas) {
+    if (elegidas.has(a.id_registro) || usados.has(m.huella)) continue
+    elegidas.set(a.id_registro, m); usados.add(m.huella)
+  }
+  return elegidas
+}
+
+/** Lo que falta, agrupado por a dónde va; primero lo que no tiene categoría o trae un monto dudoso. */
+export function porDestino<T extends MovimientoBanco>(faltan: T[], destino: (m: T) => string): { destino: string; movimientos: T[] }[] {
+  const grupos = new Map<string, T[]>()
+  for (const m of faltan) grupos.set(destino(m), [...(grupos.get(destino(m)) ?? []), m])
+  const revisar = (d: string, ms: T[]) => (d.length === 2 || ms.some(m => m.dudoso) ? 0 : 1)
+  return [...grupos].map(([d, movimientos]) => ({ destino: d, movimientos }))
+    .sort((x, y) => revisar(x.destino, x.movimientos) - revisar(y.destino, y.movimientos) || y.movimientos.length - x.movimientos.length)
+}
+
 export function conciliar(extracto: ExtractoLeido, anotados: Anotado[], idCuenta: string | null, cargados = new Map<string, string>(), manual: Manual = { unidos: new Map(), separados: new Set() }): Cuadre {
   const libres = new Map(anotados.filter(a => a.id_cuenta === null || a.id_cuenta === idCuenta).map(a => [a.id_registro, a]))
   const cuadre: Cuadre = { cuadran: [], montoDistinto: [], faltan: [], soloApp: [], sinCuenta: [] }

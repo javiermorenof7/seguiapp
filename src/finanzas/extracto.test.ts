@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { categoriaDeBanco, comercio, conciliar, diferencia, leerCentavos, leerExtracto, limpiarOcr, posibles, saldoEstimado, type Anotado, type ExtractoLeido } from './extracto'
+import { categoriaDeBanco, comercio, conciliar, diferencia, leerCentavos, leerExtracto, limpiarOcr, porDestino, posibles, saldoEstimado, sugeridas, type Anotado, type ExtractoLeido } from './extracto'
 
 // Extracto inventado: saldo anterior 1.000.000,00 y cuatro movimientos.
 const POR_LINEA = [
@@ -166,6 +166,17 @@ describe('conciliar', () => {
     expect(cerca.map(m => m.fecha)).toEqual([])
     expect(otros.map(m => m.descripcion)).toEqual(['COMPRA TIENDA LA ESQUINA', 'TRANSPORTE', 'TRANSPORTE'])
     expect(posibles(u, e.movimientos).cerca.map(m => m.fecha)).toEqual(['2026-10-02', '2026-10-05', '2026-10-05'])
+  })
+  it('sugiere la pareja más parecida sin repetir el del banco', () => {
+    const b = (huella: string, fecha: string, pesos: number, dudoso = false) => ({ fecha, descripcion: huella, valor: pesos * 100, saldo: 0, huella, dudoso })
+    const banco = [b('pse', '2026-10-10', -100000), b('pse2', '2026-10-11', -101000), b('lejos', '2026-11-20', -100000), b('entra', '2026-10-10', 100000)]
+    const m = sugeridas([anotado('f1', '2026-10-09', -100000), anotado('f2', '2026-10-09', -100000), anotado('x', '2026-10-09', -500000)], banco)
+    expect(m.get('f1')?.huella).toBe('pse')
+    expect(m.get('f2')?.huella).toBe('pse2')
+    expect(m.has('x')).toBe(false)
+    const grupos = porDestino([b('a', '2026-10-01', -1), b('c', '2026-10-01', -1), b('d', '2026-10-01', -1, true), b('e', '2026-10-01', -1)],
+      x => ({ a: 'g:mercado', c: 'g:mercado', d: 'g:hogar', e: 'g:' } as Record<string, string>)[x.huella])
+    expect(grupos.map(g => g.destino)).toEqual(['g:hogar', 'g:', 'g:mercado'])
   })
 
   it('un monto con centavos cuadra con lo anotado en pesos', () => {

@@ -253,10 +253,6 @@ export const enPesos = (centavos: number) => Math.round(centavos / 100) * 100
 const dias = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) / 86_400_000
 const palabras = (texto: string | null) => new Set(normalizar(texto ?? '').split(/[^a-z0-9]+/).filter(p => p.length >= 4))
 
-/**
- * Empareja uno a uno lo del banco con lo anotado: mismo valor y hasta 3 días de diferencia.
- * `cargados` son las huellas que ya se guardaron de un extracto, con su registro.
- */
 /** Lo que la persona decidió a mano: parejas que unió (huella → registro) y parejas que dijo que son distintas ("huella|registro"). */
 export interface Manual { unidos: Map<string, string>; separados: Set<string> }
 
@@ -309,6 +305,10 @@ export function porDestino<T extends MovimientoBanco>(faltan: T[], destino: (m: 
     .sort((x, y) => revisar(x.destino, x.movimientos) - revisar(y.destino, y.movimientos) || y.movimientos.length - x.movimientos.length)
 }
 
+/**
+ * Empareja uno a uno lo del banco con lo anotado: mismo valor y hasta 3 días de diferencia.
+ * `cargados` son las huellas que ya se guardaron de un extracto, con su registro.
+ */
 export function conciliar(extracto: ExtractoLeido, anotados: Anotado[], idCuenta: string | null, cargados = new Map<string, string>(), manual: Manual = { unidos: new Map(), separados: new Set() }): Cuadre {
   const libres = new Map(anotados.filter(a => a.id_cuenta === null || a.id_cuenta === idCuenta).map(a => [a.id_registro, a]))
   const cuadre: Cuadre = { cuadran: [], montoDistinto: [], faltan: [], soloApp: [], sinCuenta: [] }

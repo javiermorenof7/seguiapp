@@ -264,10 +264,18 @@ const parecido = (anotado: number, banco: number) => Math.sign(anotado) === Math
 export const repetidoPosible = (a: Anotado, faltan: MovimientoBanco[]) =>
   faltan.some(m => Math.sign(m.valor) === Math.sign(a.valor) && dias(a.fecha, m.fecha) <= 3 && Math.abs(m.valor - a.valor) <= Math.abs(a.valor) / 10)
 
-/** Los movimientos del banco que pueden ser este anotado (mismo signo), por fecha: los de 15 días o menos aparte, para verlos primero. */
-export function posibles(a: Anotado, faltan: MovimientoBanco[]): { cerca: MovimientoBanco[]; otros: MovimientoBanco[] } {
-  const suyos = faltan.filter(m => Math.sign(m.valor) === Math.sign(a.valor)).sort((x, y) => x.fecha.localeCompare(y.fecha))
-  return { cerca: suyos.filter(m => dias(a.fecha, m.fecha) <= 15), otros: suyos.filter(m => dias(a.fecha, m.fecha) > 15) }
+/** Los movimientos del banco que pueden ser este anotado (mismo signo), los más cercanos en fecha primero; los de monto a ±10 % aparte.
+ *  `texto` busca por palabras de la descripción o cifras del monto: basta una ("pago pse" trae "COMPRA BOTON PSE"), y los que tienen más van primero. */
+export function posibles(a: Anotado, faltan: MovimientoBanco[], texto = ''): { parecidos: MovimientoBanco[]; otros: MovimientoBanco[] } {
+  const buscadas = normalizar(texto).split(/\s+/).filter(Boolean)
+  const aciertos = (m: MovimientoBanco) => buscadas.filter(p => {
+    const cifras = p.replace(/[.,$]/g, '')
+    return normalizar(m.descripcion).includes(p) || (/^\d+$/.test(cifras) && String(Math.round(Math.abs(m.valor) / 100)).includes(cifras))
+  }).length
+  const suyos = faltan.filter(m => Math.sign(m.valor) === Math.sign(a.valor) && (!buscadas.length || aciertos(m) > 0))
+    .sort((x, y) => aciertos(y) - aciertos(x) || dias(a.fecha, x.fecha) - dias(a.fecha, y.fecha))
+  const parecido = (m: MovimientoBanco) => Math.abs(m.valor - a.valor) <= Math.abs(a.valor) / 10
+  return { parecidos: suyos.filter(parecido), otros: suyos.filter(m => !parecido(m)) }
 }
 
 // El banco del extracto por su nombre en el texto ("BFCO" en el archivo no cuenta: se lee el contenido).

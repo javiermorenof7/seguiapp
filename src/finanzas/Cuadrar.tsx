@@ -239,6 +239,8 @@ function Cuadre({ extracto: e, bancoLeido, elegida, ids, datos, banco, sabidos, 
   // ya se le avisó que quedan anotados sin emparejar: el siguiente clic agrega
   const [avisado, setAvisado] = useState(false)
   const [confirmar, setConfirmar] = useState('')
+  const [buscando, setBuscando] = useState('')
+  const [texto, setTexto] = useState('')
 
   useEffect(() => {
     obtenerRegistros(diasAntes(e.desde, 3)).then(filas => setAnotados(filas.filter(deFinanzas).map(r => ({
@@ -313,17 +315,28 @@ function Cuadre({ extracto: e, bancoLeido, elegida, ids, datos, banco, sabidos, 
     const sinMonto = new Map(montos); sinMonto.delete(huella); setMontos(sinMonto)
     setManual({ unidos, separados: new Set(manual.separados).add(`${huella}|${idRegistro}`) })
   }
-  // en un anotado sin pareja: elegir cuál del banco es
-  const unir = (a: Anotado) => {
-    const { cerca, otros } = posibles(a, cuadre.faltan)
-    if (!cerca.length && !otros.length) return null
-    const lista = (movimientos: MovimientoBanco[]) => movimientos.map(m => <option key={m.huella} value={m.huella}>{dia(m.fecha)} · {dePesos(m.valor)} · {m.descripcion.slice(0, 40)}</option>)
+  // en un anotado sin pareja: elegir cuál del banco es, con los de monto parecido arriba y un buscador
+  const unir = (a: Anotado) => !cuadre.faltan.some(m => Math.sign(m.valor) === Math.sign(a.valor)) ? null : (
+    <button type="button" className="secundario" aria-expanded={buscando === a.id_registro}
+      onClick={() => { setBuscando(buscando === a.id_registro ? '' : a.id_registro); setTexto('') }}>Es este del banco…</button>
+  )
+  const buscador = (a: Anotado) => {
+    if (buscando !== a.id_registro) return null
+    const { parecidos, otros } = posibles(a, cuadre.faltan, texto)
+    const lista = (movimientos: MovimientoBanco[]) => movimientos.map(m => (
+      <li key={m.huella}>
+        <button type="button" className="opcion-banco" onClick={() => { setManual({ unidos: new Map(manual.unidos).set(m.huella, a.id_registro), separados: manual.separados }); setBuscando('') }}>
+          <span>{dia(m.fecha)}</span><strong>{dePesos(m.valor)}</strong><span className="tenue">{m.descripcion}</span>
+        </button>
+      </li>
+    ))
     return (
-      <select aria-label="Es este del banco" value="" onChange={ev => setManual({ unidos: new Map(manual.unidos).set(ev.target.value, a.id_registro), separados: manual.separados })}>
-        <option value="">Es este del banco…</option>
-        {cerca.length > 0 && <optgroup label="Cerca de esta fecha">{lista(cerca)}</optgroup>}
-        {otros.length > 0 && <optgroup label="Otros del extracto">{lista(otros)}</optgroup>}
-      </select>
+      <div className="buscador-banco">
+        <input type="search" autoFocus aria-label="Buscar en el extracto" placeholder="Buscar por concepto o monto (pago pse, 45.000)" value={texto} onChange={ev => setTexto(ev.target.value)} />
+        {parecidos.length > 0 && <><p className="tenue">Monto parecido · {parecidos.length}</p><ul>{lista(parecidos)}</ul></>}
+        {otros.length > 0 && <><p className="tenue">{texto ? 'Otros que coinciden' : 'Todos los demás'} · {otros.length}</p><ul>{lista(otros)}</ul></>}
+        {!parecidos.length && !otros.length && <p className="tenue">Ninguno del extracto tiene «{texto}».</p>}
+      </div>
     )
   }
 
@@ -331,6 +344,7 @@ function Cuadre({ extracto: e, bancoLeido, elegida, ids, datos, banco, sabidos, 
     <li key={a.id_registro} className="ultimo fila-extracto">
       <span>{dia(a.fecha)}</span><strong>{dePesos(a.valor)}</strong><span className="tenue">{a.nota || 'Sin descripción'}</span>
       {unir(a) && <span className="chips">{unir(a)}</span>}
+      {buscador(a)}
     </li>
   )
 
@@ -574,6 +588,7 @@ function Cuadre({ extracto: e, bancoLeido, elegida, ids, datos, banco, sabidos, 
                     <button type="button" className="secundario" onClick={() => setConfirmar(a.id_registro)}>Borrar</button>
                   </span>
                 )}
+                {buscador(a)}
               </li>
             ))}
           </ul>

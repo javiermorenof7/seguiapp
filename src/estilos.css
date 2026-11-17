@@ -539,6 +539,14 @@ section .enlace, form .enlace, li .enlace { display: inline-flex; align-items: c
 .grupo-cuadre > summary { min-height: 44px; display: flex; align-items: center; font-weight: 700; cursor: pointer; }
 .grupo-cuadre > p, .grupo-cuadre > button { margin: 0 0 8px; }
 .lista li.fila-extracto > .chips { grid-column: 1 / -1; justify-content: start; }
+.buscador-banco { grid-column: 1 / -1; display: grid; gap: 6px; }
+.buscador-banco p { margin: 6px 0 0; }
+.buscador-banco ul { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow-y: auto; border: 1px solid var(--linea); border-radius: 12px; }
+.lista .buscador-banco li { display: block; padding: 0; border-bottom: 1px solid var(--linea); }
+.lista .buscador-banco li:last-child { border-bottom: 0; }
+.opcion-banco { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; width: 100%; min-height: 44px; padding: 8px 12px; text-align: left; background: none; border: 0; border-radius: 0; color: inherit; font: inherit; cursor: pointer; }
+.opcion-banco:hover, .opcion-banco:focus-visible { background: color-mix(in srgb, var(--linea) 45%, transparent); }
+.lista .opcion-banco .tenue { flex: 1 1 14em; white-space: normal; overflow-wrap: anywhere; }
 .fila-extracto .marca { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
 .fila-extracto .marca input { width: 20px; height: 20px; min-height: 0; }
 .fila-extracto select { max-width: 100%; }

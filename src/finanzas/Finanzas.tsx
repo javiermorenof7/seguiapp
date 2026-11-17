@@ -2,13 +2,13 @@ import ComoFunciona from '../ComoFunciona'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import Selector from '../Selector'
 import {
-  aprenderCategoria, crearCategoriasIniciales, crearCuenta, guardarAjuste, crearEtiqueta, guardarPresupuesto, obtenerBanco, obtenerFinanzas, obtenerMetasAhorro, obtenerPrestamos, obtenerRecibos, obtenerRegistros, registrar, type Banco, type Cuenta, type Origen, type RegistroGuardado, type Seguimiento,
+  aprenderCategoria, crearCategoriasIniciales, crearCuenta, etiquetaCuenta, crearEtiqueta, guardarPresupuesto, obtenerBanco, obtenerFinanzas, obtenerMetasAhorro, obtenerPrestamos, obtenerRecibos, obtenerRegistros, registrar, type Banco, type Cuenta, type Origen, type RegistroGuardado, type Seguimiento,
 } from '../datos'
 import { formatoValor } from '../indicadores'
 import { categoriaDe, leerMonto, leidoDe, MONTO_INVALIDO, normalizar, type Categoria } from './parseo'
 import {
   acumuladoAno, estadoPresupuesto, mesAMes, mesDe, mesesAntes, porCategoria, promedioSeisMeses, recibosPendientes, resumenMes,
-  saldoDespues, type AjusteSaldo, type EstadoPresupuesto, type Movimiento, type TipoMovimiento,
+  saldoDespues, type EstadoPresupuesto, type Movimiento, type TipoMovimiento,
 } from './calculos'
 import Barras from './Barras'
 import Dona from './Dona'
@@ -244,7 +244,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
           registros={registros} desdeRegistros={registros.reduce((min, r) => (r.fecha < min ? r.fecha : min), hoyIso())}
           alCambiar={async () => { await Promise.all([alCambiar(), cargar(), cargarBanco()]) }}
           alVerHistorial={() => { setTipoHistorial(''); setOrigenHistorial('extracto'); setCategoriaHistorial(''); setPeriodoHistorial(''); setPestana('historial') }}
-          ajuste={<AjusteBanco movimientos={todos} actual={banco.ajuste} alGuardar={async a => { await guardarAjuste(a); await cargarBanco() }} />} />
+          movimientos={todos} />
       )}
       {datos && pestana === 'historial' && (
         <Historial
@@ -615,7 +615,7 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
           <div className="chips">
             {cuentasPago.map(c => (
               <button key={c.id_cuenta} type="button" role="radio" aria-checked={cuenta?.id_cuenta === c.id_cuenta}
-                className="chip" onClick={() => setIdCuenta(cuenta?.id_cuenta === c.id_cuenta ? '' : c.id_cuenta)}>{c.nombre}</button>
+                className="chip" onClick={() => setIdCuenta(cuenta?.id_cuenta === c.id_cuenta ? '' : c.id_cuenta)}>{etiquetaCuenta(c)}</button>
             ))}
             {alCrearCuenta && nueva === null && <button type="button" className="chip" onClick={() => setNueva('')}>+ Nueva</button>}
           </div>
@@ -675,53 +675,6 @@ function Reparto({ movimientos, mes, categorias }: { movimientos: Movimiento[]; 
   )
 }
 
-
-// Lo que la persona tiene según su banco: el acumulado del año parte de ahí, a la última fecha que anotó.
-function AjusteBanco({ movimientos, actual, alGuardar }: { movimientos: Movimiento[]; actual: AjusteSaldo | null; alGuardar: (a: AjusteSaldo | null) => Promise<void> }) {
-  const [abierto, setAbierto] = useState(false)
-  const [monto, setMonto] = useState('')
-  const [error, setError] = useState('')
-  const [enviando, setEnviando] = useState(false)
-  const [quitar, setQuitar] = useState(false)
-  const hoy = hoyIso()
-  const fecha = movimientos.reduce((max, m) => (m.fecha <= hoy && m.fecha > max ? m.fecha : max), '') || hoy
-  const anotado = acumuladoAno(movimientos, mesDe(fecha))
-  const corto = (f: string) => new Date(`${f}T12:00`).toLocaleDateString('es-CO', { day: 'numeric', month: 'long' })
-  async function guardar(a: AjusteSaldo | null) {
-    setEnviando(true); setError('')
-    try { await alGuardar(a); setAbierto(false); setMonto('') } catch (err) { setError((err as Error).message) } finally { setEnviando(false) }
-  }
-  const valor = leerMonto(monto)
-  return (
-    <>
-      <h2>Acumulado del año igual al banco</h2>
-      {actual
-        ? <p className="tenue">Ajustado a {pesos(actual.valor)} el {corto(actual.fecha)}. Desde ahí suma y resta lo que anotas; no cuenta como gasto ni como ingreso.</p>
-        : <p className="tenue">Escribe cuánto tienes en total (todas tus cuentas y efectivo) y el acumulado del año queda igual, al {corto(fecha)}, el último día que anotaste.</p>}
-      {error && <p role="alert" className="error">{error}</p>}
-      {abierto ? (
-        <form className="formulario corregir" onSubmit={ev => { ev.preventDefault(); if (valor !== null) guardar({ valor, fecha }) }}>
-          <label>¿Cuánto tienes al {corto(fecha)}?
-            <input autoFocus inputMode="decimal" value={monto} onChange={ev => setMonto(ev.target.value)} placeholder={pesos(anotado)} />
-          </label>
-          {valor !== null && valor !== anotado && <p className="tenue">{valor > anotado ? '+' : '−'}{pesos(Math.abs(valor - anotado))} frente a lo anotado ({pesos(anotado)})</p>}
-          <span className="chips">
-            <button className="principal" disabled={enviando || valor === null}>{valor === null ? 'Guardar ajuste' : `Dejar en ${pesos(valor)}`}</button>
-            <button type="button" className="secundario" onClick={() => setAbierto(false)}>Cancelar</button>
-          </span>
-        </form>
-      ) : (
-        <span className="chips">
-          <button type="button" className="secundario" onClick={() => setAbierto(true)}>{actual ? 'Volver a ajustar' : 'Ajustar al banco'}</button>
-          {actual && (quitar
-            ? <><span className="tenue">¿Seguro?</span><button type="button" className="secundario" disabled={enviando} onClick={() => guardar(null).then(() => setQuitar(false))}>Sí, quitar</button>
-              <button type="button" className="secundario" onClick={() => setQuitar(false)}>No</button></>
-            : <button type="button" className="secundario" onClick={() => setQuitar(true)}>Quitar el ajuste</button>)}
-        </span>
-      )}
-    </>
-  )
-}
 
 function Resumen({ cuentas, acumulado, ajuste, alVerRecibos, alAjustar }: { cuentas: Cuentas; acumulado: number; ajuste: string | null; alVerRecibos: () => void; alAjustar?: () => void }) {
   const { delMes, despues, pendientes } = cuentas

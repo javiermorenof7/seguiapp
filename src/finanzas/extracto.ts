@@ -269,6 +269,19 @@ export function posibles(a: Anotado, faltan: MovimientoBanco[]): { cerca: Movimi
   return { cerca: suyos.filter(m => dias(a.fecha, m.fecha) <= 15), otros: suyos.filter(m => dias(a.fecha, m.fecha) > 15) }
 }
 
+// El banco del extracto por su nombre en el texto ("BFCO" en el archivo no cuenta: se lee el contenido).
+export function bancoDe(lineas: string[]): string | null {
+  const texto = normalizar(lineas.slice(0, 60).join(' '))
+  if (texto.includes('falabella')) return 'Banco Falabella'
+  if (texto.includes('davivienda') || texto.includes('daviplata')) return 'Davivienda'
+  if (texto.includes('nequi')) return 'Nequi'
+  if (texto.includes('bancolombia')) return 'Bancolombia'
+  return null
+}
+
+// Un extracto de tarjeta de crédito: se avisa en vez de decir que no hay movimientos.
+export const pareceTarjeta = (lineas: string[]) => /tarjeta de credito|pago minimo|cupo (total|disponible)/.test(normalizar(lineas.join(' ')))
+
 /**
  * La pareja más probable de cada anotado sin pareja: mismo sentido, a 15 días o menos y monto a no más de un 25 %.
  * Se reparten de la mejor a la peor, así dos anotados nunca se quedan con el mismo del banco.

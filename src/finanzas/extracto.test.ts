@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { categoriaDeBanco, comercio, conciliar, diferencia, leerCentavos, leerExtracto, limpiarOcr, porDestino, posibles, saldoEstimado, sugeridas, type Anotado, type ExtractoLeido } from './extracto'
+import { categoriaDeBanco, comercio, conciliar, diferencia, leerCentavos, leerExtracto, limpiarOcr, bancoDe, pareceTarjeta, porDestino, posibles, saldoEstimado, sugeridas, type Anotado, type ExtractoLeido } from './extracto'
 
 // Extracto inventado: saldo anterior 1.000.000,00 y cuatro movimientos.
 const POR_LINEA = [
@@ -166,6 +166,13 @@ describe('conciliar', () => {
     expect(cerca.map(m => m.fecha)).toEqual([])
     expect(otros.map(m => m.descripcion)).toEqual(['COMPRA TIENDA LA ESQUINA', 'TRANSPORTE', 'TRANSPORTE'])
     expect(posibles(u, e.movimientos).cerca.map(m => m.fecha)).toEqual(['2026-10-02', '2026-10-05', '2026-10-05'])
+  })
+  it('lee el banco por el contenido y reconoce un extracto de tarjeta', () => {
+    expect(bancoDe(['EXTRACTO CUENTA DE AHORROS', 'Banco Falabella S.A.'])).toBe('Banco Falabella')
+    expect(bancoDe(['Banco Davivienda', 'Cuenta de ahorros'])).toBe('Davivienda')
+    expect(bancoDe(['Movimientos del mes'])).toBeNull()
+    expect(pareceTarjeta(['Tarjeta de Crédito Visa', 'Pago mínimo $120.000'])).toBe(true)
+    expect(pareceTarjeta(['Cuenta de ahorros', 'Saldo anterior'])).toBe(false)
   })
   it('sugiere la pareja más parecida sin repetir el del banco', () => {
     const b = (huella: string, fecha: string, pesos: number, dudoso = false) => ({ fecha, descripcion: huella, valor: pesos * 100, saldo: 0, huella, dudoso })

@@ -791,7 +791,16 @@ export async function borrarMiCuenta() {
 
 // ---------- Cuentas y extractos bancarios ----------
 
-export interface Cuenta { id_cuenta: string; nombre: string; ultimos_digitos: string | null }
+export const BANCOS = ['Davivienda', 'Nequi', 'Banco Falabella', 'Bancolombia', 'Otro'] as const
+export interface Cuenta { id_cuenta: string; nombre: string; ultimos_digitos: string | null; banco: string | null; valor_ajuste_saldo: number | null }
+
+// Cómo se nombra una cuenta en toda la app: su nombre, con el banco y los dígitos si el nombre no los dice.
+export function etiquetaCuenta(c: Pick<Cuenta, 'nombre' | 'banco' | 'ultimos_digitos'>) {
+  const partes = [c.nombre]
+  if (c.banco && c.banco !== 'Otro' && !c.nombre.toLowerCase().includes(c.banco.toLowerCase())) partes.push(c.banco)
+  if (c.ultimos_digitos && !c.nombre.includes(c.ultimos_digitos)) partes.push(`·${c.ultimos_digitos}`)
+  return partes.join(' ')
+}
 export interface ExtractoGuardado { id_extracto: string; id_cuenta: string; fecha_desde: string; fecha_hasta: string; valor_saldo_inicial: number; valor_saldo_final: number }
 export interface Vinculo { id_extracto: string; id_registro: string | null; huella: string; fecha_movimiento: string; valor_banco: number; creado_por_carga: boolean }
 export type Banco = NonNullable<Awaited<ReturnType<typeof obtenerBanco>>>
@@ -800,7 +809,7 @@ export type Banco = NonNullable<Awaited<ReturnType<typeof obtenerBanco>>>
 // shortcut: devuelve null si la base aún no tiene estas tablas y la app sigue sin cuentas; quitar el respaldo cuando la migración esté en producción.
 export async function obtenerBanco() {
   const [cuentas, conCuenta, extractos, vinculos, ajuste] = await Promise.all([
-    supabase.from('cuenta').select('id_cuenta, nombre, ultimos_digitos').eq('estado', 'activo').order('fecha_creacion'),
+    supabase.from('cuenta').select('id_cuenta, nombre, ultimos_digitos, banco, valor_ajuste_saldo').eq('estado', 'activo').order('fecha_creacion'),
     porPaginas((a, b) => supabase.from('registro').select('id_registro, id_cuenta').eq('estado', 'activo').not('id_cuenta', 'is', null).order('id_registro').range(a, b)),
     supabase.from('extracto').select('id_extracto, id_cuenta, fecha_desde, fecha_hasta, valor_saldo_inicial, valor_saldo_final').order('fecha_hasta', { ascending: false }),
     porPaginas((a, b) => supabase.from('registro_extracto').select('id_extracto, id_registro, huella, fecha_movimiento, valor_banco, creado_por_carga').order('id_registro_extracto').range(a, b)),
@@ -818,8 +827,19 @@ export async function obtenerBanco() {
 }
 
 // Lo que la persona dice que tiene según su banco, a la última fecha que anotó; null lo quita.
-export async function guardarAjuste(ajuste: { valor: number; fecha: string } | null) {
+export async function guardarAjuste(ajuste: { valor: number; fecha: string } | null, porCuenta: Map<string, number | null> = new Map()) {
+  for (const [id, valor] of porCuenta) revisar(await supabase.from('cuenta').update({ valor_ajuste_saldo: valor }).eq('id_cuenta', id))
   revisar(await supabase.from('perfil').upsert({ valor_ajuste_saldo: ajuste?.valor ?? null, fecha_ajuste_saldo: ajuste?.fecha ?? null }, { onConflict: 'id_usuario' }))
+}
+
+export async function editarCuenta(idCuenta: string, cambios: { nombre?: string; banco?: string | null; ultimos_digitos?: string | null }) {
+  revisar(await supabase.from('cuenta').update(cambios).eq('id_cuenta', idCuenta))
+}
+
+// Quitar una cuenta no borra nada: lo anotado con ella queda sin cuenta y la cuenta pasa a eliminada.
+export async function quitarCuenta(idCuenta: string, idsRegistros: string[]) {
+  await ponerCuenta(idsRegistros, null)
+  revisar(await supabase.from('cuenta').update({ estado: 'eliminado' }).eq('id_cuenta', idCuenta))
 }
 
 export async function ponerDigitos(idCuenta: string, ultimosDigitos: string) {
@@ -827,9 +847,9 @@ export async function ponerDigitos(idCuenta: string, ultimosDigitos: string) {
 }
 
 // Una cuenta con ese nombre que se había quitado vuelve en vez de crearse otra.
-export async function crearCuenta(nombre: string, ultimosDigitos: string | null = null): Promise<string> {
+export async function crearCuenta(nombre: string, ultimosDigitos: string | null = null, banco: string | null = null): Promise<string> {
   const { id_cuenta } = revisar(await supabase.from('cuenta')
-    .upsert({ nombre, ultimos_digitos: ultimosDigitos, estado: 'activo' }, { onConflict: 'id_usuario,nombre' }).select('id_cuenta').single())
+    .upsert({ nombre, ultimos_digitos: ultimosDigitos, estado: 'activo', ...(banco ? { banco } : {}) }, { onConflict: 'id_usuario,nombre' }).select('id_cuenta').single())
   return id_cuenta as string
 }
 

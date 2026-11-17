@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import ComoFunciona from '../ComoFunciona'
 import {
-  aprenderCategoria, aprenderDeExtracto, aprendidoDeExtracto, corregirRegistro, crearCuenta, crearTraslados, eliminarRegistro, guardarCarga,
+  aprenderCategoria, aprenderDeExtracto, aprendidoDeExtracto, corregirRegistro, crearCuenta, crearTraslados, ponerDigitos, eliminarRegistro, guardarCarga,
   obtenerRegistros, ponerCuenta, quitarCarga, type Banco, type ExtractoGuardado, type FilaCarga, type obtenerFinanzas, type RegistroGuardado,
 } from '../datos'
 import { formatoValor } from '../indicadores'
@@ -32,7 +32,7 @@ type Paso =
   | { paso: 'columnas'; lineas: string[]; ejemplo: { descripcion: string; montos: number[] } }
   | { paso: 'cuadre'; extracto: ExtractoLeido; lineas: string[] }
 
-export default function Extracto({ ids, datos, banco, registros, desdeRegistros, alCambiar, alVerHistorial }: {
+export default function Extracto({ ids, datos, banco, registros, desdeRegistros, alCambiar, alVerHistorial, ajuste }: {
   ids: Ids
   datos: Datos
   banco: Banco
@@ -41,6 +41,8 @@ export default function Extracto({ ids, datos, banco, registros, desdeRegistros,
   desdeRegistros: string
   alCambiar: () => Promise<void>
   alVerHistorial: () => void
+  /** el ajuste del acumulado al banco, que vive en Finanzas */
+  ajuste?: ReactNode
 }) {
   const [estado, setEstado] = useState<Paso>({ paso: 'inicio' })
   const [error, setError] = useState('')
@@ -120,6 +122,7 @@ export default function Extracto({ ids, datos, banco, registros, desdeRegistros,
           <input ref={archivoRef} type="file" accept="application/pdf,.pdf" hidden
             onChange={ev => { const a = ev.target.files?.[0]; ev.target.value = ''; if (a) leer(a) }} />
           <button type="button" className="principal" onClick={() => archivoRef.current?.click()}>Subir extracto (PDF)</button>
+          {ajuste}
           <Subidos banco={banco} registros={registros} desdeRegistros={desdeRegistros} signo={signo}
             alQuitar={async id => { await quitarCarga(id); await alCambiar(); setAviso('') }} />
         </>
@@ -292,6 +295,9 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, historia, signo, deFi
     setEnviando(true); setError('')
     try {
       const id = idCuenta ?? await crearCuenta(nombreCuenta.trim().slice(0, 40) || 'Mi cuenta', e.ultimos4)
+      // una cuenta creada desde un gasto aprende sus dígitos con su primer extracto y el siguiente se reconoce solo
+      const elegida = banco.cuentas.find(c => c.id_cuenta === idElegida)
+      if (elegida && !elegida.ultimos_digitos && e.ultimos4) await ponerDigitos(elegida.id_cuenta, e.ultimos4)
       const tr = porGuardar.some(m => decision(m).destino === 't') ? await crearTraslados() : null
       const nuevo = (m: MovimientoBanco, d: Decision): NonNullable<FilaCarga['nuevo']> => {
         const base = { valor: Math.abs(enPesos(d.valor)) / 100, nota: m.descripcion.slice(0, MAX_NOTA) }

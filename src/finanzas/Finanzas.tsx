@@ -2,13 +2,13 @@ import ComoFunciona from '../ComoFunciona'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import Selector from '../Selector'
 import {
-  aprenderCategoria, crearCategoriasIniciales, crearEtiqueta, guardarPresupuesto, obtenerBanco, obtenerFinanzas, obtenerMetasAhorro, obtenerPrestamos, obtenerRecibos, obtenerRegistros, registrar, type Banco, type Cuenta, type Origen, type RegistroGuardado, type Seguimiento,
+  aprenderCategoria, crearCategoriasIniciales, crearCuenta, guardarAjuste, crearEtiqueta, guardarPresupuesto, obtenerBanco, obtenerFinanzas, obtenerMetasAhorro, obtenerPrestamos, obtenerRecibos, obtenerRegistros, registrar, type Banco, type Cuenta, type Origen, type RegistroGuardado, type Seguimiento,
 } from '../datos'
 import { formatoValor } from '../indicadores'
 import { categoriaDe, leerMonto, leidoDe, MONTO_INVALIDO, normalizar, type Categoria } from './parseo'
 import {
-  acumuladoAno, estadoPresupuesto, mesAMes, mesesAntes, porCategoria, promedioSeisMeses, recibosPendientes, resumenMes,
-  saldoDespues, type EstadoPresupuesto, type Movimiento, type TipoMovimiento,
+  acumuladoAno, estadoPresupuesto, mesAMes, mesDe, mesesAntes, porCategoria, promedioSeisMeses, recibosPendientes, resumenMes,
+  saldoDespues, type AjusteSaldo, type EstadoPresupuesto, type Movimiento, type TipoMovimiento,
 } from './calculos'
 import Barras from './Barras'
 import Dona from './Dona'
@@ -58,7 +58,7 @@ const nombreMes = (mes: string) => new Date(`${mes}-15T12:00`).toLocaleDateStrin
 const ESTADO_FIJO: Record<EstadoFijo, { texto: string; clase: string }> = {
   recibido: { texto: '✓ Recibido', clase: 'en-meta' }, pendiente: { texto: '◐ Pendiente', clase: 'cerca' }, atrasado: { texto: '✕ Atrasado', clase: 'fuera' },
 }
-const PESTANAS = { resumen: 'Resumen', gastos: 'Gastos', ingresos: 'Ingresos', ahorro: 'Ahorro', recibos: 'Facturas', deudas: 'Deudas', categorias: 'Categorías', extracto: 'Extracto', historial: 'Historial' }
+const PESTANAS = { resumen: 'Resumen', extracto: 'Extracto', gastos: 'Gastos', ingresos: 'Ingresos', ahorro: 'Ahorro', recibos: 'Facturas', deudas: 'Deudas', categorias: 'Categorías', historial: 'Historial' }
 
 export default function Finanzas({ seguimientos, registros, abrir, alVolver, alCambiar }: {
   seguimientos: Seguimiento[]
@@ -192,6 +192,8 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
       anteriores={movimientos}
       tipoInicial={tipo}
       cuentasPago={banco?.cuentas ?? []}
+      alCrearCuenta={banco ? async nombre => { const id = await crearCuenta(nombre); await cargarBanco(); return id } : undefined}
+      alIrAExtracto={banco ? () => { setRegistrando(null); setPestana('extracto') } : undefined}
       ids={{ gasto: idGastos, ingreso: id('ingreso'), ahorro: id('ahorro') }}
       gastadoDe={idEtiqueta => cuentas.filas.find(f => f.id_etiqueta === idEtiqueta)?.gastado ?? 0}
       presupuestos={cuentas.presupuestos}
@@ -241,7 +243,8 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
         <Extracto ids={{ gasto: idGastos, ingreso: idIngresos, ahorro: idAhorro, traslados: idTraslados }} datos={datos} banco={banco}
           registros={registros} desdeRegistros={registros.reduce((min, r) => (r.fecha < min ? r.fecha : min), hoyIso())}
           alCambiar={async () => { await Promise.all([alCambiar(), cargar(), cargarBanco()]) }}
-          alVerHistorial={() => { setTipoHistorial(''); setOrigenHistorial('extracto'); setCategoriaHistorial(''); setPeriodoHistorial(''); setPestana('historial') }} />
+          alVerHistorial={() => { setTipoHistorial(''); setOrigenHistorial('extracto'); setCategoriaHistorial(''); setPeriodoHistorial(''); setPestana('historial') }}
+          ajuste={<AjusteBanco movimientos={todos} actual={banco.ajuste} alGuardar={async a => { await guardarAjuste(a); await cargarBanco() }} />} />
       )}
       {datos && pestana === 'historial' && (
         <Historial
@@ -347,7 +350,13 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
                 acciones={[{ texto: 'Volver a este mes', hacer: () => setMesVer(mes) }, { texto: '+ Registrar gasto', hacer: () => { setPestana('gastos'); setRegistrando('gasto') } }]} />
             ) : (
               <>
-                <Resumen cuentas={cuentasVer} acumulado={acumuladoAno(todos, esAno ? finAno : mesVer)} alVerRecibos={() => setPestana('recibos')} />
+                <Resumen cuentas={cuentasVer} acumulado={acumuladoAno(todos, esAno ? finAno : mesVer, banco?.ajuste)} alVerRecibos={() => setPestana('recibos')}
+                  ajuste={banco?.ajuste && banco.ajuste.fecha.slice(0, 4) === mesVer.slice(0, 4) && mesDe(banco.ajuste.fecha) <= (esAno ? finAno : mesVer) ? banco.ajuste.fecha : null}
+                  alAjustar={banco ? () => setPestana('extracto') : undefined} />
+                {banco && mesVer === mes && (!banco.extractos.length || mesDe(banco.extractos[0].fecha_hasta) < mesesAntes(mes, 1)) && (
+                  <p className="tenue">{banco.extractos.length ? `Tu último extracto llega hasta ${nombreMesLargo(mesDe(banco.extractos[0].fecha_hasta))}.` : '¿Tienes el extracto del banco? Te digo qué falta anotar.'}{' '}
+                    <button className="enlace" onClick={() => setPestana('extracto')}>Subir extracto →</button></p>
+                )}
                 {!esAno && facturasVer && <FacturasDelMes totales={facturasVer} alVer={() => setPestana('recibos')} />}
                 <EnQueSeVa filas={cuentasVer.filas} alVer={() => setPestana('gastos')} alVerCategoria={verCategoria} />
                 <PorCategoria filas={cuentasVer.filas} alVer={() => setPestana('gastos')} alVerCategoria={verCategoria} />
@@ -392,7 +401,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
   )
 }
 
-function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, ids, gastadoDe, presupuestos, inusual, alCerrar, alIrAFacturas, alIrADeudas, prestamos, alCrearIniciales, alGuardar }: {
+function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, ids, gastadoDe, presupuestos, inusual, alCerrar, alIrAFacturas, alIrADeudas, prestamos, alCrearIniciales, alGuardar, alCrearCuenta, alIrAExtracto }: {
   datos: Datos
   metas: MetaAhorro[]
   anteriores: Movimiento[]
@@ -408,6 +417,8 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
   prestamos: { nombre_entidad: string; nombre_prestamo: string | null }[]
   alCrearIniciales: () => Promise<void>
   alGuardar: (aprendio: boolean, mensaje: string) => Promise<void>
+  alCrearCuenta?: (nombre: string) => Promise<string>
+  alIrAExtracto?: () => void
 }) {
   const tipo = tipoInicial
   const [monto, setMonto] = useState('')
@@ -420,6 +431,15 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
   // viene elegida la última cuenta usada; nunca es obligatoria
   const [idCuenta, setIdCuenta] = useState(() => { try { return localStorage.getItem('cuenta-usada') ?? '' } catch { return '' } })
   const cuenta = cuentasPago.find(c => c.id_cuenta === idCuenta)
+  // nombre de la cuenta nueva mientras se escribe; null = cerrado
+  const [nueva, setNueva] = useState<string | null>(null)
+  async function crearNueva() {
+    const nombre = (nueva ?? '').replace(/\s+/g, ' ').trim().slice(0, 40)
+    if (!nombre || !alCrearCuenta) return
+    // con un nombre que ya existe se elige esa: crearla de nuevo le borraría sus dígitos
+    const existente = cuentasPago.find(c => normalizar(c.nombre) === normalizar(nombre))
+    try { setIdCuenta(existente?.id_cuenta ?? await alCrearCuenta(nombre)); setNueva(null) } catch (err) { setError((err as Error).message) }
+  }
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
 
@@ -495,6 +515,7 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
         <h2>Registrar {tipo === 'ahorro' ? 'un ahorro' : `un ${TEXTO[tipo].toLowerCase()}`}</h2>
         <button type="button" className="enlace" onClick={alCerrar}>Cancelar</button>
       </div>
+      {alIrAExtracto && tipo !== 'ahorro' && <p className="tenue">¿Tienes el extracto del banco? <button type="button" className="enlace" onClick={alIrAExtracto}>Súbelo y te digo qué falta</button></p>}
       <label>¿Cuánto?
         <input required inputMode="text" maxLength={30} value={monto} onChange={ev => setMonto(ev.target.value)}
           placeholder="¿Cuánto fue?" autoComplete="off" autoFocus aria-describedby="monto-leido" />
@@ -588,7 +609,7 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
           </div>
         </fieldset>
       )}
-      {cuentasPago.length > 0 && (
+      {(cuentasPago.length > 0 || alCrearCuenta) && (
         <fieldset>
           <legend>{tipo === 'ingreso' ? '¿A dónde llegó?' : tipo === 'ahorro' ? '¿De dónde salió?' : '¿Con qué pagaste?'} (opcional)</legend>
           <div className="chips">
@@ -596,7 +617,20 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
               <button key={c.id_cuenta} type="button" role="radio" aria-checked={cuenta?.id_cuenta === c.id_cuenta}
                 className="chip" onClick={() => setIdCuenta(cuenta?.id_cuenta === c.id_cuenta ? '' : c.id_cuenta)}>{c.nombre}</button>
             ))}
+            {alCrearCuenta && nueva === null && <button type="button" className="chip" onClick={() => setNueva('')}>+ Nueva</button>}
           </div>
+          {nueva !== null && (
+            <div className="corregir">
+              <label>Nombre de la cuenta
+                <input autoFocus maxLength={40} placeholder="Ej.: Davivienda" value={nueva} onChange={ev => setNueva(ev.target.value)}
+                  onKeyDown={ev => { if (ev.key === 'Enter') { ev.preventDefault(); crearNueva() } }} />
+              </label>
+              <span className="chips">
+                <button type="button" className="secundario" disabled={!nueva.trim()} onClick={crearNueva}>Guardar cuenta</button>
+                <button type="button" className="secundario" onClick={() => setNueva(null)}>Cancelar</button>
+              </span>
+            </div>
+          )}
         </fieldset>
       )}
       {otraFecha || fecha !== hoyIso() ? (
@@ -642,7 +676,54 @@ function Reparto({ movimientos, mes, categorias }: { movimientos: Movimiento[]; 
 }
 
 
-function Resumen({ cuentas, acumulado, alVerRecibos }: { cuentas: Cuentas; acumulado: number; alVerRecibos: () => void }) {
+// Lo que la persona tiene según su banco: el acumulado del año parte de ahí, a la última fecha que anotó.
+function AjusteBanco({ movimientos, actual, alGuardar }: { movimientos: Movimiento[]; actual: AjusteSaldo | null; alGuardar: (a: AjusteSaldo | null) => Promise<void> }) {
+  const [abierto, setAbierto] = useState(false)
+  const [monto, setMonto] = useState('')
+  const [error, setError] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [quitar, setQuitar] = useState(false)
+  const hoy = hoyIso()
+  const fecha = movimientos.reduce((max, m) => (m.fecha <= hoy && m.fecha > max ? m.fecha : max), '') || hoy
+  const anotado = acumuladoAno(movimientos, mesDe(fecha))
+  const corto = (f: string) => new Date(`${f}T12:00`).toLocaleDateString('es-CO', { day: 'numeric', month: 'long' })
+  async function guardar(a: AjusteSaldo | null) {
+    setEnviando(true); setError('')
+    try { await alGuardar(a); setAbierto(false); setMonto('') } catch (err) { setError((err as Error).message) } finally { setEnviando(false) }
+  }
+  const valor = leerMonto(monto)
+  return (
+    <>
+      <h2>Acumulado del año igual al banco</h2>
+      {actual
+        ? <p className="tenue">Ajustado a {pesos(actual.valor)} el {corto(actual.fecha)}. Desde ahí suma y resta lo que anotas; no cuenta como gasto ni como ingreso.</p>
+        : <p className="tenue">Escribe cuánto tienes en total (todas tus cuentas y efectivo) y el acumulado del año queda igual, al {corto(fecha)}, el último día que anotaste.</p>}
+      {error && <p role="alert" className="error">{error}</p>}
+      {abierto ? (
+        <form className="formulario corregir" onSubmit={ev => { ev.preventDefault(); if (valor !== null) guardar({ valor, fecha }) }}>
+          <label>¿Cuánto tienes al {corto(fecha)}?
+            <input autoFocus inputMode="decimal" value={monto} onChange={ev => setMonto(ev.target.value)} placeholder={pesos(anotado)} />
+          </label>
+          {valor !== null && valor !== anotado && <p className="tenue">{valor > anotado ? '+' : '−'}{pesos(Math.abs(valor - anotado))} frente a lo anotado ({pesos(anotado)})</p>}
+          <span className="chips">
+            <button className="principal" disabled={enviando || valor === null}>{valor === null ? 'Guardar ajuste' : `Dejar en ${pesos(valor)}`}</button>
+            <button type="button" className="secundario" onClick={() => setAbierto(false)}>Cancelar</button>
+          </span>
+        </form>
+      ) : (
+        <span className="chips">
+          <button type="button" className="secundario" onClick={() => setAbierto(true)}>{actual ? 'Volver a ajustar' : 'Ajustar al banco'}</button>
+          {actual && (quitar
+            ? <><span className="tenue">¿Seguro?</span><button type="button" className="secundario" disabled={enviando} onClick={() => guardar(null).then(() => setQuitar(false))}>Sí, quitar</button>
+              <button type="button" className="secundario" onClick={() => setQuitar(false)}>No</button></>
+            : <button type="button" className="secundario" onClick={() => setQuitar(true)}>Quitar el ajuste</button>)}
+        </span>
+      )}
+    </>
+  )
+}
+
+function Resumen({ cuentas, acumulado, ajuste, alVerRecibos, alAjustar }: { cuentas: Cuentas; acumulado: number; ajuste: string | null; alVerRecibos: () => void; alAjustar?: () => void }) {
   const { delMes, despues, pendientes } = cuentas
   return (
     <section className="resumen-finanzas" aria-label="Saldo">
@@ -667,7 +748,8 @@ function Resumen({ cuentas, acumulado, alVerRecibos }: { cuentas: Cuentas; acumu
       </div>
       <div className="cifras">
         <p><span className="tenue">Después de <button className="enlace" onClick={alVerRecibos}>facturas pendientes</button> y presupuestos</span><strong>{pesos(despues)}</strong></p>
-        <p><span className="tenue">Acumulado del año</span><strong>{pesos(acumulado)}</strong></p>
+        <p><span className="tenue">Acumulado del año{ajuste && ` · ajustado al banco el ${new Date(`${ajuste}T12:00`).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })}`}
+          {alAjustar && <> · <button className="enlace" onClick={alAjustar}>{ajuste ? 'Ajustar' : 'Ajustar al banco'} →</button></>}</span><strong>{pesos(acumulado)}</strong></p>
       </div>
     </section>
   )

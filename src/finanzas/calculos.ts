@@ -28,8 +28,14 @@ export function totales(movimientos: Movimiento[], filtro: (m: Movimiento) => bo
 export const resumenMes = (movimientos: Movimiento[], mes: string) => totales(movimientos, m => mesDe(m.fecha) === mes)
 
 // Del 1 de enero hasta el mes dado.
-export const acumuladoAno = (movimientos: Movimiento[], mes: string) =>
-  totales(movimientos, m => m.fecha.slice(0, 4) === mes.slice(0, 4) && mesDe(m.fecha) <= mes).saldo
+export interface AjusteSaldo { valor: number; fecha: string }
+
+// Con un ajuste al banco en ese año (y ya llegado el mes), el acumulado parte de lo que dijo la persona.
+export function acumuladoAno(movimientos: Movimiento[], mes: string, ajuste: AjusteSaldo | null = null) {
+  const delAno = (m: Movimiento) => m.fecha.slice(0, 4) === mes.slice(0, 4) && mesDe(m.fecha) <= mes
+  if (!ajuste || ajuste.fecha.slice(0, 4) !== mes.slice(0, 4) || mesDe(ajuste.fecha) > mes) return totales(movimientos, delAno).saldo
+  return ajuste.valor + totales(movimientos, m => delAno(m) && m.fecha > ajuste.fecha).saldo
+}
 
 export function mesAMes(movimientos: Movimiento[], mes: string) {
   const meses = Array.from({ length: Number(mes.slice(5, 7)) }, (_, i) => `${mes.slice(0, 4)}-${String(i + 1).padStart(2, '0')}`)

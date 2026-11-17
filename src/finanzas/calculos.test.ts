@@ -20,6 +20,13 @@ describe('saldo', () => {
   it('acumulado del año sin el año anterior', () => {
     expect(acumuladoAno(movimientos, '2026-10')).toBe(3450000 + 3000000)
   })
+  it('acumulado ajustado al banco: parte del valor dicho y suma solo lo de después', () => {
+    const ajuste = { valor: 7000000, fecha: '2026-10-05' }
+    expect(acumuladoAno(movimientos, '2026-10', ajuste)).toBe(7000000 - 200000 - 50000)
+    // antes del mes del ajuste o en otro año, como siempre
+    expect(acumuladoAno(movimientos, '2026-09', ajuste)).toBe(3000000)
+    expect(acumuladoAno(movimientos, '2026-10', { valor: 1, fecha: '2025-12-31' })).toBe(3450000 + 3000000)
+  })
   it('mes a mes desde enero', () => {
     const meses = mesAMes(movimientos, '2026-10')
     expect(meses).toHaveLength(10)

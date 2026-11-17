@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import ComoFunciona from '../ComoFunciona'
 import {
-  aprenderCategoria, aprenderDeExtracto, aprendidoDeExtracto, corregirRegistro, crearCuenta, crearTraslados, eliminarRegistro, guardarCarga,
+  aprenderCategoria, aprenderDeExtracto, aprendidoDeExtracto, corregirRegistro, crearCuenta, crearTraslados, ponerDigitos, eliminarRegistro, guardarCarga,
   obtenerRegistros, ponerCuenta, quitarCarga, type Banco, type ExtractoGuardado, type FilaCarga, type obtenerFinanzas, type RegistroGuardado,
 } from '../datos'
 import { formatoValor } from '../indicadores'
 import { facturaParecida } from './aprende'
 import { queDescuentan } from './estadoRecibos'
-import { categoriaDeBanco, comercio, conciliar, diferencia, enPesos, leerExtracto, limpiarOcr, posibles, saldoEstimado, type Anotado, type Manual, type ExtractoLeido, type Formato, type MovimientoBanco } from './extracto'
+import { categoriaDeBanco, comercio, conciliar, diferencia, enPesos, leerExtracto, limpiarOcr, porDestino, posibles, sugeridas, saldoEstimado, type Anotado, type Manual, type ExtractoLeido, type Formato, type MovimientoBanco } from './extracto'
 import { leerMonto, normalizar } from './parseo'
 
 type Datos = Awaited<ReturnType<typeof obtenerFinanzas>>
@@ -32,7 +32,7 @@ type Paso =
   | { paso: 'columnas'; lineas: string[]; ejemplo: { descripcion: string; montos: number[] } }
   | { paso: 'cuadre'; extracto: ExtractoLeido; lineas: string[] }
 
-export default function Extracto({ ids, datos, banco, registros, desdeRegistros, alCambiar, alVerHistorial }: {
+export default function Extracto({ ids, datos, banco, registros, desdeRegistros, alCambiar, alVerHistorial, ajuste }: {
   ids: Ids
   datos: Datos
   banco: Banco
@@ -41,6 +41,8 @@ export default function Extracto({ ids, datos, banco, registros, desdeRegistros,
   desdeRegistros: string
   alCambiar: () => Promise<void>
   alVerHistorial: () => void
+  /** el ajuste del acumulado al banco, que vive en Finanzas */
+  ajuste?: ReactNode
 }) {
   const [estado, setEstado] = useState<Paso>({ paso: 'inicio' })
   const [error, setError] = useState('')
@@ -120,6 +122,7 @@ export default function Extracto({ ids, datos, banco, registros, desdeRegistros,
           <input ref={archivoRef} type="file" accept="application/pdf,.pdf" hidden
             onChange={ev => { const a = ev.target.files?.[0]; ev.target.value = ''; if (a) leer(a) }} />
           <button type="button" className="principal" onClick={() => archivoRef.current?.click()}>Subir extracto (PDF)</button>
+          {ajuste}
           <Subidos banco={banco} registros={registros} desdeRegistros={desdeRegistros} signo={signo}
             alQuitar={async id => { await quitarCarga(id); await alCambiar(); setAviso('') }} />
         </>
@@ -248,6 +251,12 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, historia, signo, deFi
     for (const o of cambio.destino === undefined ? [m] : cuadre.faltan.filter(x => igual(x) === igual(m))) nuevas.set(o.huella, { ...decision(o), ...cambio })
     setDecisiones(nuevas)
   }
+  // el selector de un grupo de categoría pone ese destino en todos sus movimientos
+  const decidirTodos = (movimientos: MovimientoBanco[], destino: string) => {
+    const nuevas = new Map(decisiones)
+    for (const o of movimientos) nuevas.set(o.huella, { ...decision(o), destino, id_recibo: undefined })
+    setDecisiones(nuevas)
+  }
   const grupos = useMemo(() => {
     const porClave = new Map<string, MovimientoBanco[]>()
     for (const m of cuadre.faltan) porClave.set(igual(m), [...(porClave.get(igual(m)) ?? []), m])
@@ -264,6 +273,8 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, historia, signo, deFi
   const hayCambios = porGuardar.length + sinVincular.length + centavos.length + montos.size > 0
   const dudosos = cuadre.faltan.filter(m => m.dudoso).length
   const sinEmparejar = cuadre.soloApp.length + cuadre.sinCuenta.length
+  // lo que se separó a mano no se vuelve a sugerir
+  const sugerencias = useMemo(() => new Map([...sugeridas(cuadre.soloApp, cuadre.faltan)].filter(([id, m]) => !manual.separados.has(`${m.huella}|${id}`))), [cuadre, manual])
   const separar = (huella: string, idRegistro: string) => {
     const unidos = new Map(manual.unidos); unidos.delete(huella)
     const sinMonto = new Map(montos); sinMonto.delete(huella); setMontos(sinMonto)
@@ -292,6 +303,9 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, historia, signo, deFi
     setEnviando(true); setError('')
     try {
       const id = idCuenta ?? await crearCuenta(nombreCuenta.trim().slice(0, 40) || 'Mi cuenta', e.ultimos4)
+      // una cuenta creada desde un gasto aprende sus dígitos con su primer extracto y el siguiente se reconoce solo
+      const elegida = banco.cuentas.find(c => c.id_cuenta === idElegida)
+      if (elegida && !elegida.ultimos_digitos && e.ultimos4) await ponerDigitos(elegida.id_cuenta, e.ultimos4)
       const tr = porGuardar.some(m => decision(m).destino === 't') ? await crearTraslados() : null
       const nuevo = (m: MovimientoBanco, d: Decision): NonNullable<FilaCarga['nuevo']> => {
         const base = { valor: Math.abs(enPesos(d.valor)) / 100, nota: m.descripcion.slice(0, MAX_NOTA) }
@@ -387,7 +401,11 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, historia, signo, deFi
           <summary>Faltan en la app · {cuadre.faltan.length}</summary>
           {dudosos > 0 && <p className="aviso">{dudosos === 1 ? 'Hay un monto' : `Hay ${dudosos} montos`} que no sigue el saldo: revísalo antes de guardar.</p>}
           <ul className="lista">
-            {grupos.map(iguales => {
+            {porDestino(cuadre.faltan, m => decision(m).destino).map(({ destino, movimientos }) => {
+              const suyos = grupos.filter(iguales => movimientos.includes(iguales[0]))
+              const nombres = [...new Set(movimientos.map(m => comercio(m.descripcion) || m.descripcion || 'Sin descripción'))]
+              const revisar = destino.length === 2 || movimientos.some(m => m.dudoso)
+              const filas = suyos.map(iguales => {
               const fila = (m: MovimientoBanco, conDestino: boolean) => {
                 const d = decision(m)
                 const factura = d.id_recibo && datos.recibos.find(r => r.id_recibo === d.id_recibo)
@@ -424,6 +442,22 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, historia, signo, deFi
                   </details>
                 </li>
               )
+              })
+              if (suyos.length === 1) return filas
+              return (
+                <li key={destino} className="ultimo fila-extracto iguales">
+                  <span>{movimientos.length} movimientos</span>
+                  <strong>{dePesos(movimientos.reduce((s, m) => s + decision(m).valor, 0))}</strong>
+                  <span className="tenue">{nombres.slice(0, 3).join(', ')}{nombres.length > 3 ? ` y ${nombres.length - 3} más` : ''}</span>
+                  <span className="chips">
+                    <select aria-label={`A dónde van los ${movimientos.length}`} value={destino} onChange={ev => decidirTodos(movimientos, ev.target.value)}>{opciones(movimientos[0])}</select>
+                  </span>
+                  <details open={revisar || undefined}>
+                    <summary>Ver los {movimientos.length}</summary>
+                    <ul className="lista">{filas}</ul>
+                  </details>
+                </li>
+              )
             })}
           </ul>
         </details>
@@ -432,6 +466,10 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, historia, signo, deFi
       {cuadre.montoDistinto.length > 0 && (
         <details className="grupo-cuadre" open>
           <summary>Parecen el mismo · {cuadre.montoDistinto.length}</summary>
+          {cuadre.montoDistinto.length > 1 && (
+            <button type="button" className="secundario" onClick={() => setMontos(new Map([...montos, ...cuadre.montoDistinto.map(p => [p.banco.huella, 'banco'] as const)]))}>
+              Usar el del banco en los {cuadre.montoDistinto.length}</button>
+          )}
           <ul className="lista">
             {cuadre.montoDistinto.map(p => (
               <li key={p.banco.huella} className="ultimo fila-extracto">
@@ -455,12 +493,21 @@ function Cuadre({ extracto: e, ids, datos, banco, sabidos, historia, signo, deFi
         <details className="grupo-cuadre" id="solo-app" open>
           <summary>Solo en la app · {cuadre.soloApp.length}</summary>
           <p className="tenue">Los anotaste en esta cuenta y el banco no los trae.</p>
+          {sugerencias.size > 0 && (
+            <button type="button" className="secundario" onClick={() => setManual({ unidos: new Map([...manual.unidos, ...[...sugerencias].map(([id, m]) => [m.huella, id] as const)]), separados: manual.separados })}>
+              {sugerencias.size === 1 ? 'Unir el sugerido' : `Unir los ${sugerencias.size} sugeridos`}</button>
+          )}
           <ul className="lista">
             {cuadre.soloApp.map(a => (
               <li key={a.id_registro} className="ultimo fila-extracto">
                 <span>{dia(a.fecha)}</span>
                 <strong>{dePesos(a.valor)}</strong>
                 <span className="tenue">{a.nota || 'Sin descripción'}</span>
+                {sugerencias.get(a.id_registro) && (() => {
+                  const m = sugerencias.get(a.id_registro)!
+                  return <span className="tenue">Parece este del banco: {dia(m.fecha)} · {dePesos(m.valor)} · {m.descripcion.slice(0, 40)}{' '}
+                    <button type="button" className="enlace" onClick={() => setManual({ unidos: new Map(manual.unidos).set(m.huella, a.id_registro), separados: manual.separados })}>Unir</button></span>
+                })()}
                 {confirmar === a.id_registro ? (
                   <span className="chips">
                     <span className="tenue">¿Seguro?</span>

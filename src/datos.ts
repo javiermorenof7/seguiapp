@@ -799,11 +799,13 @@ export type Banco = NonNullable<Awaited<ReturnType<typeof obtenerBanco>>>
 // Cuentas, la cuenta de cada registro y lo cargado de extractos.
 // shortcut: devuelve null si la base aún no tiene estas tablas y la app sigue sin cuentas; quitar el respaldo cuando la migración esté en producción.
 export async function obtenerBanco() {
-  const [cuentas, conCuenta, extractos, vinculos] = await Promise.all([
+  const [cuentas, conCuenta, extractos, vinculos, ajuste] = await Promise.all([
     supabase.from('cuenta').select('id_cuenta, nombre, ultimos_digitos').eq('estado', 'activo').order('fecha_creacion'),
     porPaginas((a, b) => supabase.from('registro').select('id_registro, id_cuenta').eq('estado', 'activo').not('id_cuenta', 'is', null).order('id_registro').range(a, b)),
     supabase.from('extracto').select('id_extracto, id_cuenta, fecha_desde, fecha_hasta, valor_saldo_inicial, valor_saldo_final').order('fecha_hasta', { ascending: false }),
     porPaginas((a, b) => supabase.from('registro_extracto').select('id_extracto, id_registro, huella, fecha_movimiento, valor_banco, creado_por_carga').order('id_registro_extracto').range(a, b)),
+    // sin la migración del ajuste, el error deja el acumulado como siempre
+    supabase.from('perfil').select('valor_ajuste_saldo, fecha_ajuste_saldo').maybeSingle(),
   ])
   if (cuentas.error || conCuenta.error || extractos.error || vinculos.error) return null
   return {
@@ -811,7 +813,17 @@ export async function obtenerBanco() {
     deRegistro: new Map((conCuenta.data as { id_registro: string; id_cuenta: string }[]).map(r => [r.id_registro, r.id_cuenta])),
     extractos: extractos.data as ExtractoGuardado[],
     vinculos: vinculos.data as Vinculo[],
+    ajuste: ajuste.data?.fecha_ajuste_saldo ? { valor: Number(ajuste.data.valor_ajuste_saldo), fecha: ajuste.data.fecha_ajuste_saldo as string } : null,
   }
+}
+
+// Lo que la persona dice que tiene según su banco, a la última fecha que anotó; null lo quita.
+export async function guardarAjuste(ajuste: { valor: number; fecha: string } | null) {
+  revisar(await supabase.from('perfil').upsert({ valor_ajuste_saldo: ajuste?.valor ?? null, fecha_ajuste_saldo: ajuste?.fecha ?? null }, { onConflict: 'id_usuario' }))
+}
+
+export async function ponerDigitos(idCuenta: string, ultimosDigitos: string) {
+  revisar(await supabase.from('cuenta').update({ ultimos_digitos: ultimosDigitos }).eq('id_cuenta', idCuenta))
 }
 
 // Una cuenta con ese nombre que se había quitado vuelve en vez de crearse otra.

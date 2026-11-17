@@ -162,10 +162,21 @@ describe('conciliar', () => {
     const u = anotado('u', '2026-10-15', -3000, { nota: 'bus' })
     const unidos = conciliar(e, [u], 'c1', undefined, { unidos: new Map([[transporte.huella, 'u']]), separados: new Set() })
     expect(unidos.montoDistinto.map(p => [p.banco.huella, p.app.id_registro])).toEqual([[transporte.huella, 'u']])
-    const { cerca, otros } = posibles(anotado('v', '2026-10-25', -3000), e.movimientos)
-    expect(cerca.map(m => m.fecha)).toEqual([])
-    expect(otros.map(m => m.descripcion)).toEqual(['COMPRA TIENDA LA ESQUINA', 'TRANSPORTE', 'TRANSPORTE'])
-    expect(posibles(u, e.movimientos).cerca.map(m => m.fecha)).toEqual(['2026-10-02', '2026-10-05', '2026-10-05'])
+    const { parecidos, otros } = posibles(anotado('v', '2026-10-25', -3000), e.movimientos)
+    expect(parecidos.map(m => m.descripcion)).toEqual(['TRANSPORTE', 'TRANSPORTE'])
+    expect(otros.map(m => m.descripcion)).toEqual(['COMPRA TIENDA LA ESQUINA'])
+  })
+  it('busca el del banco por palabras o por cifras del monto', () => {
+    const v = anotado('v', '2026-10-25', -3000)
+    const buscar = (texto: string) => { const r = posibles(v, e.movimientos, texto); return [...r.parecidos, ...r.otros].map(m => m.descripcion) }
+    expect(buscar('tienda esquina')).toEqual(['COMPRA TIENDA LA ESQUINA'])
+    expect(buscar('45.000')).toEqual(['COMPRA TIENDA LA ESQUINA'])
+    expect(buscar('transpórte')).toEqual(['TRANSPORTE', 'TRANSPORTE'])
+    expect(buscar('nomina')).toEqual([])
+    expect(buscar('pago tienda')).toEqual(['COMPRA TIENDA LA ESQUINA'])
+    // sin monto parecido, los que tienen más palabras van primero
+    expect(posibles(anotado('w', '2026-10-25', -1000000), e.movimientos, 'transporte compra esquina').otros.map(m => m.descripcion))
+      .toEqual(['COMPRA TIENDA LA ESQUINA', 'TRANSPORTE', 'TRANSPORTE'])
   })
   it('lee el banco por el contenido y reconoce un extracto de tarjeta', () => {
     expect(bancoDe(['EXTRACTO CUENTA DE AHORROS', 'Banco Falabella S.A.'])).toBe('Banco Falabella')

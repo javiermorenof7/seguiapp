@@ -155,6 +155,9 @@ describe('series individuales', () => {
 
   it('escribe cada serie como en el gimnasio', () => {
     expect(textoSerie({ series: 1, repeticiones: 10, peso: 60 })).toBe('60 kg × 10')
+    // cada serie en la unidad en que se escribió; sin unidad, la del ejercicio
+    expect(textoSerie({ series: 1, repeticiones: 10, peso: aKg(100, 'lb'), unidad: 'lb' }, 'kg')).toBe('100 lb × 10')
+    expect(textoSerie({ series: 1, repeticiones: 10, peso: 60, unidad: null }, 'kg')).toBe('60 kg × 10')
     expect(textoSerie({ series: 1, repeticiones: 12, peso: null })).toBe('Tu cuerpo × 12')
     expect(textoSerie({ series: 4, repeticiones: 10, peso: 60 })).toBe('4 × 10 · 60 kg')
   })

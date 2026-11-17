@@ -3,7 +3,8 @@
 import { normalizar } from '../finanzas/parseo'
 import { formatoValor } from '../indicadores'
 
-export interface Sesion { fecha: string; ejercicio: string; series: number; repeticiones: number; peso: number | null }
+// unidad: en la que se escribió la serie; vacía en las anteriores, que se ven en la unidad del ejercicio
+export interface Sesion { fecha: string; ejercicio: string; series: number; repeticiones: number; peso: number | null; unidad?: Unidad | null }
 export interface Medicion { fecha: string; valor: number }
 
 const NUMERO = String.raw`\d+(?:[.,]\d+)?`
@@ -127,14 +128,15 @@ export function conPaso(texto: string, paso: number, minimo: number) {
 // Varias series de un ejercicio en un renglón: "25, 10, 50 kg × 10" si solo cambió el peso; si no, una por una.
 export function textoSeries(series: Omit<Sesion, 'fecha' | 'ejercicio'>[], unidad: Unidad = 'kg') {
   const [una] = series
-  const soloPeso = series.length > 1 && series.every(s => s.series === 1 && s.repeticiones === una.repeticiones && s.peso !== null)
-  return soloPeso ? `${series.map(s => numero(enUnidad(s.peso!, unidad))).join(', ')} ${unidad} × ${una.repeticiones}` : series.map(s => textoSerie(s, unidad)).join(', ')
+  const u = una?.unidad ?? unidad
+  const soloPeso = series.length > 1 && series.every(s => s.series === 1 && s.repeticiones === una.repeticiones && s.peso !== null && (s.unidad ?? unidad) === u)
+  return soloPeso ? `${series.map(s => numero(enUnidad(s.peso!, u))).join(', ')} ${u} × ${una.repeticiones}` : series.map(s => textoSerie(s, unidad)).join(', ')
 }
 
 // Una serie como se lee en el gimnasio: "60 kg × 10"; las viejas que juntaban varias series, "4 × 10 · 60 kg".
 export const textoSerie = (s: Omit<Sesion, 'fecha' | 'ejercicio'>, unidad: Unidad = 'kg') => s.series === 1
-  ? `${s.peso === null ? 'Tu cuerpo' : kg(s.peso, unidad)} × ${s.repeticiones}`
-  : `${s.series} × ${s.repeticiones}${s.peso === null ? '' : ` · ${kg(s.peso, unidad)}`}`
+  ? `${s.peso === null ? 'Tu cuerpo' : kg(s.peso, s.unidad ?? unidad)} × ${s.repeticiones}`
+  : `${s.series} × ${s.repeticiones}${s.peso === null ? '' : ` · ${kg(s.peso, s.unidad ?? unidad)}`}`
 
 // Las últimas n sesiones (días) de un ejercicio, la más reciente primero; las series de cada día en el orden en que se hicieron.
 export function sesionesPorDia(sesiones: Sesion[], ejercicio: string, n = 3) {
@@ -149,11 +151,11 @@ export function sesionesPorDia(sesiones: Sesion[], ejercicio: string, n = 3) {
 // La última sesión para precargar el formulario: las series seguidas iguales van juntas en una fila ("4 × 10 · 60 kg").
 export function seriesDeUltima(sesiones: Sesion[], ejercicio: string) {
   const [dia] = sesionesPorDia(sesiones, ejercicio, 1)
-  const filas: { series: number; repeticiones: number; peso: number | null }[] = []
+  const filas: { series: number; repeticiones: number; peso: number | null; unidad?: Unidad | null }[] = []
   for (const s of dia?.series ?? []) {
     const ultima = filas[filas.length - 1]
     if (ultima && ultima.repeticiones === s.repeticiones && ultima.peso === s.peso) ultima.series += s.series
-    else filas.push({ series: s.series, repeticiones: s.repeticiones, peso: s.peso })
+    else filas.push({ series: s.series, repeticiones: s.repeticiones, peso: s.peso, unidad: s.unidad })
   }
   return filas
 }

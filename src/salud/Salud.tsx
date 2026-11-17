@@ -143,7 +143,7 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
       const ejercicio = r.id_etiqueta && nombres.get(r.id_etiqueta)
       return s && ejercicio ? [{
         fecha: r.fecha, ejercicio, series: s.cantidad_series, repeticiones: s.cantidad_repeticiones,
-        peso: s.peso_kilogramos === null ? null : Number(s.peso_kilogramos),
+        peso: s.peso_kilogramos === null ? null : Number(s.peso_kilogramos), unidad: s.unidad_peso,
       }] : []
     })
   }, [datos, registros])
@@ -178,10 +178,11 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
     setPregunta(null)
     const nombre = normalizar(texto)
     const guardado = nombreGuardado(texto) ?? nombreGuardado(datos?.alias.get(nombre) ?? '')
-    const suya = guardado ? unidadDe(guardado) : unidad
+    const previas = seriesDeUltima(sesiones, guardado ?? nombre)
+    // se repite como se escribió la última vez
+    const suya = previas[0]?.unidad ?? (guardado ? unidadDe(guardado) : unidad)
     if (guardado) { setUnidad(suya); setParte(parteGuardada(guardado) ?? ''); parteAMano.current = false }
     else if (!parteAMano.current) setParte(parteDe(texto) ?? '')
-    const previas = seriesDeUltima(sesiones, guardado ?? nombre)
     if (previas.length) {
       setFilas(previas.map(p => ({ series: String(p.series), repeticiones: String(p.repeticiones), peso: p.peso === null ? '' : String(enUnidad(p.peso, suya)).replace('.', ',') })))
       autollenadas.current = true
@@ -205,7 +206,7 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
       const idEtiqueta = existente?.id_etiqueta ?? await crearEjercicio(idGym, nombre, ficha)
       if (existente && ficha && (existente.parte_cuerpo !== ficha.parte_cuerpo || (existente.unidad_peso ?? 'kg') !== ficha.unidad_peso)) await guardarFichaEjercicio(idEtiqueta, ficha)
       const antes = pesoPorDia(sesiones, nombre).filter(p => p.fecha < hoy).pop()
-      await registrarSeries({ id_seguimiento: idGym, id_etiqueta: idEtiqueta, fecha: hoy }, lista)
+      await registrarSeries({ id_seguimiento: idGym, id_etiqueta: idEtiqueta, fecha: hoy }, lista, u)
       const hechas = lista.reduce((t, x) => t + x.series, 0)
       const pesos = lista.flatMap(x => x.peso === null ? [] : [x.peso])
       const maximo = pesos.length ? Math.max(...pesos) : null
@@ -284,14 +285,14 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
   const nombres = datos.nombres
   const deSerie = new Map(datos.series.map(x => [x.id_registro, x]))
   // un renglón por ejercicio y día (los 6 más recientes); sus series se abren para editarlas o borrarlas
-  const grupos = new Map<string, { fecha: string; ejercicio: string; series: { id: string; series: number; repeticiones: number; peso: number | null }[] }>()
+  const grupos = new Map<string, { fecha: string; ejercicio: string; series: { id: string; series: number; repeticiones: number; peso: number | null; unidad: Unidad | null }[] }>()
   for (const r of registros) {
     const x = deSerie.get(r.id_registro)
     if (!x) continue
     const clave = `${r.fecha}|${r.id_etiqueta}`
     if (!grupos.has(clave)) grupos.set(clave, { fecha: r.fecha, ejercicio: nombres.get(r.id_etiqueta ?? '') ?? 'Ejercicio', series: [] })
     // llegan de la más reciente a la más antigua: al frente para leerlas en el orden en que se hicieron
-    grupos.get(clave)!.series.unshift({ id: r.id_registro, series: x.cantidad_series, repeticiones: x.cantidad_repeticiones, peso: x.peso_kilogramos === null ? null : Number(x.peso_kilogramos) })
+    grupos.get(clave)!.series.unshift({ id: r.id_registro, series: x.cantidad_series, repeticiones: x.cantidad_repeticiones, peso: x.peso_kilogramos === null ? null : Number(x.peso_kilogramos), unidad: x.unidad_peso })
   }
   const ultimos = [...grupos].slice(0, 6)
   const loUltimo = ultimos.length > 0 && (
@@ -311,13 +312,14 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
             {grupoAbierto === clave && (
               <ul className="lista series-del-grupo">
                 {g.series.map((s, i) => {
-                  const actual = { ejercicio: g.ejercicio, series: s.series, repeticiones: s.repeticiones, peso: s.peso }
+                  const actual = { ejercicio: g.ejercicio, series: s.series, repeticiones: s.repeticiones, peso: s.peso, unidad: s.unidad }
+                  const suya = s.unidad ?? unidadDe(g.ejercicio)
                   return (
                     <FilaSimple key={s.id} fecha="" titulo={`Fila ${i + 1}`} detalle={textoSerie(actual, unidadDe(g.ejercicio))}
                       alBorrar={() => eliminarRegistro(s.id).then(alCambiar)} sinAcciones={editando === s.id} alEditar={() => setEditando(s.id)}>
                       {editando === s.id && (
-                        <EditarSerie actual={actual} unidad={unidadDe(g.ejercicio)} alCancelar={() => setEditando(null)}
-                          alGuardar={async nueva => { await corregirSerie(s.id, nueva); setEditando(null); await Promise.all([cargar(), alCambiar()]) }} />
+                        <EditarSerie actual={actual} unidad={suya} alCancelar={() => setEditando(null)}
+                          alGuardar={async nueva => { await corregirSerie(s.id, nueva, suya); setEditando(null); await Promise.all([cargar(), alCambiar()]) }} />
                       )}
                     </FilaSimple>
                   )
@@ -1102,7 +1104,7 @@ function HistorialSalud({ gym, medidas, registros, alCambiar }: {
       fila={r => {
         const s = series.get(r.id_registro)
         const medida = seguimientos.find(x => x.id_seguimiento === r.id_seguimiento)
-        const detalle = s ? textoSerie({ series: s.cantidad_series, repeticiones: s.cantidad_repeticiones, peso: s.peso_kilogramos === null ? null : Number(s.peso_kilogramos) }, unidadDe(r.id_etiqueta))
+        const detalle = s ? textoSerie({ series: s.cantidad_series, repeticiones: s.cantidad_repeticiones, peso: s.peso_kilogramos === null ? null : Number(s.peso_kilogramos), unidad: s.unidad_peso }, unidadDe(r.id_etiqueta))
           : formatoValor('numero', r.valor, medida?.unidad)
         return <FilaSimple key={r.id_registro} fecha={r.fecha} titulo={nombreDe(r)} detalle={detalle} alBorrar={() => eliminarRegistro(r.id_registro).then(alCambiar)} />
       }}

@@ -619,6 +619,7 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
             ))}
             {alCrearCuenta && nueva === null && <button type="button" className="chip" onClick={() => setNueva('')}>+ Nueva</button>}
           </div>
+          <small className="ayuda">Aquí eliges la cuenta o creas una rápida. Para editarla (nombre, banco, dígitos) o quitarla, ve a Extracto › Tus cuentas.</small>
           {nueva !== null && (
             <div className="corregir">
               <label>Nombre de la cuenta

@@ -72,6 +72,14 @@ export default function Recibos({ idGastos, categorias, aprendido, abrirNueva, a
   const [verPausadas, setVerPausadas] = useState(false)
   const enLugar = (r: ReciboVisible) => !lugar || ubicacionDe(r) === lugar
   const pausados = datos?.recibos.filter(r => r.estado === 'no_se_paga' && enLugar(r)) ?? []
+  // en pausa por lugar (las personales al final), para no listar fila por fila
+  const porLugar = new Map<string, ReciboVisible[]>()
+  for (const r of pausados) {
+    const lugar = r.tipo_recibo === 'hogar' ? r.nombre_ubicacion ?? 'Sin lugar' : 'Personal'
+    porLugar.set(lugar, [...porLugar.get(lugar) ?? [], r])
+  }
+  const pausadasPorLugar = [...porLugar].sort(([a], [b]) => Number(a === 'Personal') - Number(b === 'Personal') || a.localeCompare(b, 'es'))
+  const [pausada, setPausada] = useState('')
   const delVer = soloFalta ? filas.filter(f => f.estado === 'vencido' || f.estado === 'por_pagar') : filas
   const ubicaciones = ubicacionesConConteo(datos?.recibos ?? [], delVer.map(f => f.recibo))
   const visibles = delVer.filter(f => enLugar(f.recibo))
@@ -201,7 +209,7 @@ export default function Recibos({ idGastos, categorias, aprendido, abrirNueva, a
                       {h.celdas.map((f, i) => (
                         <td key={mosaico.servicios[i]}>
                           {f ? <CeldaRecibo fila={f} abierta={abierta === f.recibo.id_recibo} alTocar={() => setAbierta(abierta === f.recibo.id_recibo ? '' : f.recibo.id_recibo)}
-                            texto={<><span>{montoCorto(f)}</span>{f.recibo.descuenta_saldo === false && <small>sin gasto</small>}</>} />
+                            texto={<><span>{montoCorto(f)}</span>{f.recibo.descuenta_saldo === false && <small className="pildora">sin gasto</small>}</>} />
                             : <span className="tenue" aria-label={`${h.lugar} no tiene ${mosaico.servicios[i]}`}>·</span>}
                         </td>
                       ))}
@@ -218,7 +226,7 @@ export default function Recibos({ idGastos, categorias, aprendido, abrirNueva, a
             <div className="cuadros-recibos">
               {mosaico.sueltas.map(f => (
                 <CeldaRecibo key={f.recibo.id_recibo} fila={f} abierta={abierta === f.recibo.id_recibo} alTocar={() => setAbierta(abierta === f.recibo.id_recibo ? '' : f.recibo.id_recibo)}
-                  texto={<><strong>{f.nombre}</strong><span>{f.estado === 'omitida' ? 'Omitida este mes' : f.valor !== null ? pesos(f.valor) : 'Sin valor'}</span>{f.estado === 'vencido' && f.dia ? <small>venció el {f.dia}</small> : null}{f.recibo.descuenta_saldo === false && <small>sin gasto</small>}</>} />
+                  texto={<><strong>{f.nombre}</strong><span>{f.estado === 'omitida' ? 'Omitida este mes' : f.valor !== null ? pesos(f.valor) : 'Sin valor'}</span>{f.estado === 'vencido' && f.dia ? <small>venció el {f.dia}</small> : null}{f.recibo.descuenta_saldo === false && <small className="pildora">sin gasto</small>}</>} />
               ))}
             </div>
           </>
@@ -308,12 +316,23 @@ export default function Recibos({ idGastos, categorias, aprendido, abrirNueva, a
           {verPausadas && (
             <>
               <p className="tenue">No cuentan en el mes ni en los avisos. Actívalas cuando vuelvas a pagarlas.</p>
-              <ul className="lista">
-                {pausados.map(r => (
-                  <FilaPausada key={r.id_recibo} recibo={r} listas={listas} alEditar={(cambios, gastos) => editar(r, cambios, gastos)}
-                    alActivar={() => accion(() => cambiarEstadoRecibo(r.id_recibo, 'activo'), `${nombreRecibo(r)} está activa.`)} />
-                ))}
-              </ul>
+              {pausadasPorLugar.map(([lugar, lista]) => (
+                <div key={lugar} className="grupo-pausa">
+                  <h3 className="pregunta-grafico">{lugar}</h3>
+                  <div className="chips">
+                    {lista.map(r => (
+                      <button key={r.id_recibo} type="button" className="chip" aria-expanded={pausada === r.id_recibo}
+                        onClick={() => setPausada(pausada === r.id_recibo ? '' : r.id_recibo)}>{lugar === 'Personal' ? nombreRecibo(r) : r.nombre_servicio}</button>
+                    ))}
+                  </div>
+                  {lista.filter(r => r.id_recibo === pausada).map(r => (
+                    <ul key={r.id_recibo} className="lista">
+                      <FilaPausada recibo={r} listas={listas} alEditar={(cambios, gastos) => editar(r, cambios, gastos)}
+                        alActivar={() => accion(() => cambiarEstadoRecibo(r.id_recibo, 'activo'), `${nombreRecibo(r)} está activa.`)} />
+                    </ul>
+                  ))}
+                </div>
+              ))}
             </>
           )}
         </section>

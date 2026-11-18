@@ -462,26 +462,46 @@ section:not([class]) + form.formulario { margin-top: 40px; }
 .tabla-recibos table { display: block; width: 100%; border-collapse: collapse; }
 .tabla-recibos thead, .tabla-recibos tbody { display: grid; gap: 8px; }
 .tabla-recibos tbody { margin-top: 8px; }
-.tabla-recibos tr { display: grid; gap: 8px; align-items: center; grid-template-columns: minmax(120px, 1fr) repeat(var(--servicios), minmax(84px, 1fr)); }
+.tabla-recibos tr { display: grid; gap: 8px; align-items: stretch; grid-template-columns: minmax(120px, 1fr) repeat(var(--servicios), minmax(84px, 1fr)); }
 .tabla-recibos th { font-size: 14px; font-weight: 700; text-align: left; overflow-wrap: anywhere; }
 .tabla-recibos thead th { color: var(--tenue); text-align: center; font-weight: 600; }
-.tabla-recibos td { padding: 0; text-align: center; min-width: 0; }
+.tabla-recibos td { display: grid; padding: 0; text-align: center; min-width: 0; }
+.tabla-recibos tbody th { align-self: center; }
 @media (max-width: 560px) {
   .tabla-recibos tr { gap: 6px; grid-template-columns: repeat(var(--servicios), minmax(62px, 1fr)); }
   .tabla-recibos thead th { font-size: 12px; overflow-wrap: normal; hyphens: auto; }
   .tabla-recibos .celda-recibo { padding: 8px 2px; font-size: 13px; }
+  .tabla-recibos .celda-recibo > span:not([aria-hidden]) { font-size: 14px; }
+  .tabla-recibos .celda-recibo { padding-top: 14px; }
+  .tabla-recibos .celda-recibo > [aria-hidden="true"] { top: 3px; right: 5px; font-size: 11px; }
+  .tabla-recibos .pildora { padding: 0 5px; font-size: 10px; white-space: nowrap; }
   .tabla-recibos thead td { display: none; }
   .tabla-recibos tbody th { grid-column: 1 / -1; margin-top: 4px; }
 }
 .cuadros-recibos { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
 @media (max-width: 560px) { .cuadros-recibos { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.tabla-recibos td > .tenue { font-size: 20px; }
-.celda-recibo { display: grid; gap: 2px; justify-items: start; align-content: start; width: 100%; min-height: 48px; padding: 8px 10px; border-radius: 12px; font-size: 14px; text-align: left; overflow-wrap: anywhere; background: var(--linea); color: var(--tinta); }
-.tabla-recibos .celda-recibo { justify-items: center; text-align: center; }
+.tabla-recibos td > .tenue { align-self: center; font-size: 20px; opacity: .4; }
+.celda-recibo { position: relative; display: grid; gap: 4px; justify-items: start; align-content: start; width: 100%; height: 100%; min-height: 56px; padding: 10px 12px; border-radius: 12px; font-size: 14px; text-align: left; overflow-wrap: anywhere; background: var(--linea); color: var(--tinta); }
+.tabla-recibos .celda-recibo { justify-items: center; align-content: center; text-align: center; }
 .celda-recibo.en-meta { background: var(--en-meta); color: var(--fondo); }
 .celda-recibo.cerca { background: var(--cerca); color: var(--fondo); }
 .celda-recibo.fuera { background: var(--fuera); color: var(--fondo); }
 .celda-recibo[aria-expanded="true"] { outline: 3px solid var(--tinta); outline-offset: 2px; }
+/* el ícono en la esquina; el monto manda y el nombre va arriba, más pequeño */
+.celda-recibo > [aria-hidden="true"] { position: absolute; top: 6px; right: 10px; font-size: 13px; opacity: .85; }
+.celda-recibo > strong { padding-right: 18px; font-size: 13px; font-weight: 600; }
+.celda-recibo > span:not([aria-hidden]) { font-size: 17px; font-weight: 700; }
+.celda-recibo > small { font-size: 12px; }
+.celda-recibo .pildora { padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, currentColor 18%, transparent); }
+.celda-recibo:not(.en-meta):not(.cerca):not(.fuera) { color: var(--tenue); }
+.celda-recibo:not(.en-meta):not(.cerca):not(.fuera) > span:not([aria-hidden]) { font-size: 14px; font-weight: 600; }
+.cuadros-recibos { gap: 10px; }
+.tabla-recibos + h3 { margin-top: 20px; }
+.grupo-pausa { margin-top: 14px; }
+.grupo-pausa .chips { margin-top: 6px; }
+.grupo-pausa .chip { background: var(--linea); border-color: transparent; }
+.grupo-pausa .chip[aria-expanded="true"] { background: var(--tinta); color: var(--fondo); font-weight: 700; }
+.grupo-pausa .lista { margin-top: 8px; }
 .detalle-recibo li.recibo { grid-template-columns: 1fr auto auto; }
 .detalle-recibo li.recibo > button { grid-column: 1 / -1; justify-self: start; }
 @media (max-width: 560px) { .detalle-recibo li.recibo { grid-template-columns: 1fr auto; } .detalle-recibo li.recibo > button { justify-self: stretch; } }

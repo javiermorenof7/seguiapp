@@ -27,6 +27,16 @@ describe('saldo', () => {
     expect(acumuladoAno(movimientos, '2026-09', ajuste)).toBe(3000000)
     expect(acumuladoAno(movimientos, '2026-10', { valor: 1, fecha: '2025-12-31' })).toBe(3450000 + 3000000)
   })
+  it('acumulado ajustado: del mismo día cuenta lo anotado después de ajustar', () => {
+    const ajuste = { valor: 1000000, fecha: '2026-11-17', hora: '2026-11-17T15:00:00.000Z' }
+    const dia = [
+      { fecha: '2026-11-17', valor: 80000, tipo: 'gasto' as const, id_etiqueta: null, creado: '2026-11-17T14:59:00+00:00' },
+      { fecha: '2026-11-17', valor: 120000, tipo: 'gasto' as const, id_etiqueta: null, creado: '2026-11-17T15:10:00+00:00' },
+    ]
+    expect(acumuladoAno(dia, '2026-11', ajuste)).toBe(1000000 - 120000)
+    // ajuste viejo sin hora: lo del mismo día sigue fuera
+    expect(acumuladoAno(dia, '2026-11', { valor: 1000000, fecha: '2026-11-17' })).toBe(1000000)
+  })
   it('mes a mes desde enero', () => {
     const meses = mesAMes(movimientos, '2026-10')
     expect(meses).toHaveLength(10)

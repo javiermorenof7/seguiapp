@@ -850,7 +850,7 @@ function AjusteCuentas({ banco, saldos, movimientos, alCambiar }: {
   const malos = leidos?.some(([id, n]) => n === null && valores!.get(id)!.trim()) ?? false
   const total = leidos?.reduce((t, [, n]) => t + (n ?? 0), 0) ?? 0
   const conValor = banco.cuentas.filter(c => c.valor_ajuste_saldo !== null)
-  async function guardar(ajuste: { valor: number; fecha: string } | null) {
+  async function guardar(ajuste: { valor: number; fecha: string; hora: string } | null) {
     setEnviando(true); setError('')
     try {
       await guardarAjuste(ajuste, new Map(banco.cuentas.map(c => [c.id_cuenta, ajuste ? leidos?.find(([id]) => id === c.id_cuenta)?.[1] ?? null : null])))
@@ -865,7 +865,7 @@ function AjusteCuentas({ banco, saldos, movimientos, alCambiar }: {
         : <p className="tenue">Escribe cuánto tienes en cada cuenta y el acumulado del año queda igual, al {diaLargo(fecha)}, el último día que anotaste.</p>}
       {error && <p role="alert" className="error">{error}</p>}
       {valores ? (
-        <form className="formulario corregir" onSubmit={ev => { ev.preventDefault(); if (!malos) guardar({ valor: total, fecha }) }}>
+        <form className="formulario corregir" onSubmit={ev => { ev.preventDefault(); if (!malos) guardar({ valor: total, fecha, hora: new Date().toISOString() }) }}>
           <p className="tenue">¿Cuánto tienes en cada cuenta al {diaLargo(fecha)}? Las que tienen extracto ya traen su saldo estimado.</p>
           {banco.cuentas.map(c => (
             <label key={c.id_cuenta}>{etiquetaCuenta(c)}

@@ -26,6 +26,7 @@ export interface RegistroGuardado extends Registro {
   id_etiqueta: string | null
   grupo: 'basico' | 'personal' | null
   nota: string | null
+  fecha_creacion?: string
 }
 
 interface NuevoRegistro {
@@ -91,7 +92,7 @@ export async function obtenerRegistros(desde: string, idSeguimiento?: string): P
   const filas = await porPaginas((a, b) => {
     let consulta = supabase
       .from('registro')
-      .select('id_registro, id_seguimiento, id_etiqueta, grupo, fecha_registro, valor, nota')
+      .select('id_registro, id_seguimiento, id_etiqueta, grupo, fecha_registro, valor, nota, fecha_creacion')
       .eq('estado', 'activo')
       .gte('fecha_registro', desde)
       .order('fecha_registro', { ascending: false })
@@ -808,13 +809,15 @@ export type Banco = NonNullable<Awaited<ReturnType<typeof obtenerBanco>>>
 // Cuentas, la cuenta de cada registro y lo cargado de extractos.
 // shortcut: devuelve null si la base aún no tiene estas tablas y la app sigue sin cuentas; quitar el respaldo cuando la migración esté en producción.
 export async function obtenerBanco() {
-  const [cuentas, conCuenta, extractos, vinculos, ajuste] = await Promise.all([
+  const [cuentas, conCuenta, extractos, vinculos, ajuste, hora] = await Promise.all([
     supabase.from('cuenta').select('id_cuenta, nombre, ultimos_digitos, banco, valor_ajuste_saldo').eq('estado', 'activo').order('fecha_creacion'),
     porPaginas((a, b) => supabase.from('registro').select('id_registro, id_cuenta').eq('estado', 'activo').not('id_cuenta', 'is', null).order('id_registro').range(a, b)),
     supabase.from('extracto').select('id_extracto, id_cuenta, fecha_desde, fecha_hasta, valor_saldo_inicial, valor_saldo_final').order('fecha_hasta', { ascending: false }),
     porPaginas((a, b) => supabase.from('registro_extracto').select('id_extracto, id_registro, huella, fecha_movimiento, valor_banco, creado_por_carga').order('id_registro_extracto').range(a, b)),
     // sin la migración del ajuste, el error deja el acumulado como siempre
     supabase.from('perfil').select('valor_ajuste_saldo, fecha_ajuste_saldo').maybeSingle(),
+    // aparte: sin la migración de la hora, el ajuste sigue contando por día
+    supabase.from('perfil').select('fecha_hora_ajuste_saldo').maybeSingle(),
   ])
   if (cuentas.error || conCuenta.error || extractos.error || vinculos.error) return null
   return {
@@ -822,14 +825,14 @@ export async function obtenerBanco() {
     deRegistro: new Map((conCuenta.data as { id_registro: string; id_cuenta: string }[]).map(r => [r.id_registro, r.id_cuenta])),
     extractos: extractos.data as ExtractoGuardado[],
     vinculos: vinculos.data as Vinculo[],
-    ajuste: ajuste.data?.fecha_ajuste_saldo ? { valor: Number(ajuste.data.valor_ajuste_saldo), fecha: ajuste.data.fecha_ajuste_saldo as string } : null,
+    ajuste: ajuste.data?.fecha_ajuste_saldo ? { valor: Number(ajuste.data.valor_ajuste_saldo), fecha: ajuste.data.fecha_ajuste_saldo as string, hora: (hora.data?.fecha_hora_ajuste_saldo as string | null) ?? null } : null,
   }
 }
 
 // Lo que la persona dice que tiene según su banco, a la última fecha que anotó; null lo quita.
-export async function guardarAjuste(ajuste: { valor: number; fecha: string } | null, porCuenta: Map<string, number | null> = new Map()) {
+export async function guardarAjuste(ajuste: { valor: number; fecha: string; hora: string } | null, porCuenta: Map<string, number | null> = new Map()) {
   for (const [id, valor] of porCuenta) revisar(await supabase.from('cuenta').update({ valor_ajuste_saldo: valor }).eq('id_cuenta', id))
-  revisar(await supabase.from('perfil').upsert({ valor_ajuste_saldo: ajuste?.valor ?? null, fecha_ajuste_saldo: ajuste?.fecha ?? null }, { onConflict: 'id_usuario' }))
+  revisar(await supabase.from('perfil').upsert({ valor_ajuste_saldo: ajuste?.valor ?? null, fecha_ajuste_saldo: ajuste?.fecha ?? null, fecha_hora_ajuste_saldo: ajuste?.hora ?? null }, { onConflict: 'id_usuario' }))
 }
 
 export async function editarCuenta(idCuenta: string, cambios: { nombre?: string; banco?: string | null; ultimos_digitos?: string | null }) {

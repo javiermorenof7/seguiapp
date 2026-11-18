@@ -4,6 +4,7 @@ export type TipoMovimiento = 'gasto' | 'ingreso' | 'ahorro'
 export interface Movimiento {
   fecha: string; valor: number; tipo: TipoMovimiento; id_etiqueta: string | null
   grupo?: 'basico' | 'personal' | null; nota?: string | null
+  creado?: string // fecha_creacion del registro
 }
 export interface Recibo { id_recibo: string; nombre_servicio: string; nombre_ubicacion: string | null; tipo_recibo: 'hogar' | 'personal'; descuenta_saldo?: boolean }
 export interface PagoRecibo { id_recibo: string; fecha_periodo: string; valor: number; estado: string }
@@ -28,13 +29,16 @@ export function totales(movimientos: Movimiento[], filtro: (m: Movimiento) => bo
 export const resumenMes = (movimientos: Movimiento[], mes: string) => totales(movimientos, m => mesDe(m.fecha) === mes)
 
 // Del 1 de enero hasta el mes dado.
-export interface AjusteSaldo { valor: number; fecha: string }
+export interface AjusteSaldo { valor: number; fecha: string; hora?: string | null }
 
 // Con un ajuste al banco en ese año (y ya llegado el mes), el acumulado parte de lo que dijo la persona.
 export function acumuladoAno(movimientos: Movimiento[], mes: string, ajuste: AjusteSaldo | null = null) {
   const delAno = (m: Movimiento) => m.fecha.slice(0, 4) === mes.slice(0, 4) && mesDe(m.fecha) <= mes
   if (!ajuste || ajuste.fecha.slice(0, 4) !== mes.slice(0, 4) || mesDe(ajuste.fecha) > mes) return totales(movimientos, delAno).saldo
-  return ajuste.valor + totales(movimientos, m => delAno(m) && m.fecha > ajuste.fecha).saldo
+  // del mismo día cuenta lo anotado después de ajustar (sin hora, nada de ese día)
+  const despues = (m: Movimiento) => m.fecha > ajuste.fecha
+    || (m.fecha === ajuste.fecha && !!ajuste.hora && !!m.creado && Date.parse(m.creado) > Date.parse(ajuste.hora))
+  return ajuste.valor + totales(movimientos, m => delAno(m) && despues(m)).saldo
 }
 
 export function mesAMes(movimientos: Movimiento[], mes: string) {

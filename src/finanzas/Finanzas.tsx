@@ -135,7 +135,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
     const tipoDe = new Map((['gasto', 'ingreso', 'ahorro'] as const).map(t => [id(t), t]))
     return registros.flatMap(r => {
       const tipo = tipoDe.get(r.id_seguimiento)
-      return tipo ? [{ fecha: r.fecha, valor: r.valor, tipo, id_etiqueta: r.id_etiqueta, grupo: r.grupo, nota: r.nota }] : []
+      return tipo ? [{ fecha: r.fecha, valor: r.valor, tipo, id_etiqueta: r.id_etiqueta, grupo: r.grupo, nota: r.nota, creado: r.fecha_creacion }] : []
     })
   }, [registros, seguimientos])
 

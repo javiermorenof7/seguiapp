@@ -88,6 +88,9 @@ export default function Recibos({ idGastos, categorias, aprendido, abrirNueva, a
     return { ubicaciones: unicos((datos?.recibos ?? []).map(r => r.nombre_ubicacion)), servicios: unicos((datos?.recibos ?? []).map(r => r.nombre_servicio)), categorias }
   }, [datos, categorias])
   const [verDescuenta, setVerDescuenta] = useState(false)
+  // las en pausa no cuentan: se revisan en su propia lista
+  const descuentan = activos.filter(r => r.descuenta_saldo !== false)
+  const noDescuentan = activos.filter(r => r.descuenta_saldo === false)
   const idHogar = categorias.find(c => normalizar(c.nombre).startsWith('hogar'))?.id_etiqueta ?? null
 
   // Hogar va a básico en Hogar; personal, a personal en la categoría aprendida o la elegida (que se aprende).
@@ -264,27 +267,35 @@ export default function Recibos({ idGastos, categorias, aprendido, abrirNueva, a
           </details>
         </section>
       )}
-      {datos.recibos.length > 0 && (
+      {activos.length > 0 && (
         <section>
-          <button type="button" className="enlace" aria-expanded={verDescuenta} onClick={() => setVerDescuenta(!verDescuenta)}>
-            {verDescuenta ? 'Ocultar' : 'Revisar'} cuáles descuentan de mi saldo
-          </button>
+          <p className="tenue">{descuentan.length} {descuentan.length === 1 ? 'descuenta' : 'descuentan'} de tu saldo{noDescuentan.length > 0 && ` · ${noDescuentan.length} no`}
+            {' · '}<button type="button" className="enlace" aria-expanded={verDescuenta} onClick={() => setVerDescuenta(!verDescuenta)}>{verDescuenta ? 'Ocultar' : 'Revisar'}</button></p>
           {verDescuenta && (
             <>
-              <p className="tenue">En "No", pagarla la deja pagada sin crear gasto. Los gastos que ya creó se quitan desde Editar en cada factura.</p>
-              <ul className="lista">
-                {datos.recibos.map(r => (
-                  <li key={r.id_recibo} className="dos">
-                    <span>{nombreRecibo(r)}</span>
-                    <span className="chips" role="radiogroup" aria-label={`¿${nombreRecibo(r)} descuenta de mi saldo?`}>
-                      {[true, false].map(si => (
-                        <button key={String(si)} type="button" role="radio" aria-checked={(r.descuenta_saldo !== false) === si} className="chip"
-                          onClick={() => (r.descuenta_saldo !== false) !== si && accion(() => cambiarDescuentaRecibo(r.id_recibo, si), `${nombreRecibo(r)} ${si ? 'vuelve a descontar' : 'ya no descuenta'} de tu saldo.`)}>{si ? 'Sí' : 'No'}</button>
+              {noDescuentan.length > 0
+                ? <>
+                    <h3 className="pregunta-grafico">No descuentan</h3>
+                    <p className="tenue">Pagarlas las deja pagadas sin crear gasto. Los gastos que ya crearon se quitan desde Editar en cada factura.</p>
+                    <ul className="lista">
+                      {noDescuentan.map(r => (
+                        <li key={r.id_recibo} className="dos">
+                          <span>{nombreRecibo(r)}</span>
+                          <button type="button" className="enlace" onClick={() => accion(() => cambiarDescuentaRecibo(r.id_recibo, true), `${nombreRecibo(r)} vuelve a descontar de tu saldo.`)}>Volver a descontar</button>
+                        </li>
                       ))}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+                    </ul>
+                  </>
+                : <p className="tenue">Todas descuentan: al pagarlas crean su gasto.</p>}
+              {descuentan.length > 0 && (
+                <Selector id="pasar-a-no" titulo="Pasar otra a «No descuenta»" valor="" alCambiar={idRecibo => {
+                  const r = descuentan.find(x => x.id_recibo === idRecibo)
+                  if (r) accion(() => cambiarDescuentaRecibo(r.id_recibo, false), `${nombreRecibo(r)} ya no descuenta de tu saldo.`)
+                }}>
+                  <option value="">Elige una factura</option>
+                  {descuentan.map(r => <option key={r.id_recibo} value={r.id_recibo}>{nombreRecibo(r)}</option>)}
+                </Selector>
+              )}
             </>
           )}
         </section>

@@ -31,7 +31,8 @@ export function resumenFinanzas(seguimientos: Seguimiento[], registros: Registro
     const tipo = tipoDe.get(r.id_seguimiento)
     return tipo ? [{ fecha: r.fecha, valor: r.valor, tipo, id_etiqueta: r.id_etiqueta }] : []
   })
-  const estados = fijos(movimientos, mes, anotados).map(f => estadoFijo(f, movimientos, hoy))
+  const delMes = fijos(movimientos, mes, anotados)
+  const estados = delMes.map(f => estadoFijo(f, movimientos, hoy, delMes))
   return {
     idGastos: (suyos.find(s => s.nombre === 'Gastos') ?? suyos[0]).id_seguimiento,
     ingresosFijos: { total: estados.length, pendientes: estados.filter(e => e === 'pendiente').length, atrasados: estados.filter(e => e === 'atrasado').length },

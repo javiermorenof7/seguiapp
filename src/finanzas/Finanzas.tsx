@@ -2,7 +2,7 @@ import ComoFunciona from '../ComoFunciona'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import Selector from '../Selector'
 import {
-  aprenderCategoria, crearCategoriasIniciales, guardarFijo, crearCuenta, etiquetaCuenta, crearEtiqueta, guardarPresupuesto, obtenerBanco, obtenerFinanzas, obtenerMetasAhorro, obtenerPrestamos, obtenerRecibos, obtenerRegistros, registrar, type Banco, type Cuenta, type Origen, type RegistroGuardado, type Seguimiento,
+  aprenderCategoria, crearCategoriasIniciales, guardarAdicionales, guardarFijo, crearCuenta, etiquetaCuenta, crearEtiqueta, guardarPresupuesto, obtenerBanco, obtenerFinanzas, obtenerMetasAhorro, obtenerPrestamos, obtenerRecibos, obtenerRegistros, registrar, type Banco, type Cuenta, type Origen, type RegistroGuardado, type Seguimiento,
 } from '../datos'
 import { formatoValor } from '../indicadores'
 import { categoriaDe, leerMonto, leidoDe, MONTO_INVALIDO, normalizar, type Categoria } from './parseo'
@@ -28,7 +28,7 @@ import Extracto from './Cuadrar'
 import { puedeCrear, TOPE } from './reglasCategorias'
 import type { MetaAhorro } from './metas'
 import { cincuentaTreintaVeinte, facturaParecida, gastoInusual, posibleRepetido, sugeridos } from './aprende'
-import { anotados, conTramo, esperadoVsRecibido, estadoFijo, fijos, historiales, MESES_FIJO, porFuente, porRecibir, type EstadoFijo, type Fijo } from './ingresos'
+import { adicionales, anotados, cambiarAdicional, claveDe, conTramo, esperadoVsRecibido, estadoFijo, fijos, historiales, MAX_ADICIONALES, MESES_FIJO, nuevoAdicional, porFuente, porRecibir, type EstadoFijo, type Fijo } from './ingresos'
 
 type Datos = Awaited<ReturnType<typeof obtenerFinanzas>>
 type Grupo = 'auto' | 'basico' | 'personal'
@@ -236,7 +236,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
           <p className="tenue">{new Date().toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })}</p>
         </div>
       </header>
-      <ComoFunciona modulo="finanzas" pasos={['En Gastos, Ingresos y Ahorro anotas cada movimiento: cuánto, en qué y listo.', 'En Facturas van los pagos de cada mes; al pagarlas quedan anotadas como gasto.', 'En Categorías pones un tope a cada una para saber si vas dentro del presupuesto.', 'El Resumen muestra cómo va el mes y el Historial, todo lo que has anotado.']} />
+      <ComoFunciona modulo="finanzas" pasos={['En Gastos, Ingresos y Ahorro anotas cada movimiento: cuánto, en qué y listo.', 'En Facturas van los pagos de cada mes; al pagarlas quedan anotadas como gasto.', 'En Ingresos, una fuente puede tener varios fijos (dos arriendos, dos sueldos): cada pago va al que más se parece.', 'En Categorías pones un tope a cada una para saber si vas dentro del presupuesto.', 'El Resumen muestra cómo va el mes y el Historial, todo lo que has anotado.']} />
       {error && <p role="alert" className="error">{error}</p>}
       <div ref={filaPestanas} className={`chips pestanas ${ocultas}`} role="radiogroup" aria-label="Sección de Finanzas"
         onScroll={ev => revisarFila(ev.currentTarget)}>
@@ -436,6 +436,8 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
   const [elegida, setElegida] = useState<string | null>(inicial?.id_etiqueta ?? null)
   const [idMeta, setIdMeta] = useState<string | null>(null)
   const [esFijo, setEsFijo] = useState(false)
+  // si la fuente ya tiene fijo: reemplazarlo o sumar otro fijo en la misma fuente
+  const [otroFijo, setOtroFijo] = useState(false)
   const [grupo, setGrupo] = useState<Grupo>('auto')
   const [otraFecha, setOtraFecha] = useState(false)
   // viene elegida la última cuenta usada; nunca es obligatoria
@@ -464,6 +466,8 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
   const frecuentes = useMemo(() => sugeridos(anteriores, tipo, hoyIso()), [anteriores, tipo])
   const factura = tipo === 'gasto' ? facturaParecida(datos.recibos, descripcion) : null
   const categoria: Categoria | null = lista.find(c => c.id_etiqueta === elegida) ?? propuesta
+  const yaTieneFijo = !!categoria && (!!categoria.monto_fijo || adicionales(categoria).some(x => x.monto))
+  const puedeOtroFijo = !!categoria && adicionales(categoria).length < MAX_ADICIONALES
   // un préstamo por su entidad en lo escrito, o el primero si eligió la categoría Deudas
   const prestamo = tipo !== 'gasto' || factura ? null : (() => {
     const p = facturaParecida(prestamos.map(x => ({ ...x, nombre_servicio: x.nombre_entidad })), descripcion)
@@ -501,8 +505,10 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
       if (aprende) await aprenderCategoria(normalizar(leido.descripcion), categoria.nombre).catch(() => {})
       const idFijo = tipo === 'ingreso' && esFijo ? categoria?.id_etiqueta ?? idFuenteNueva : null
       const dia = +fecha.slice(8, 10)
-      const quedoFijo = !!idFijo && await guardarFijo(idFijo, { monto: leido.valor, dia, desde: `${fecha.slice(0, 7)}-01` }, false,
-        conTramo(categoria?.historial_fijo, fecha.slice(0, 7), { monto: leido.valor, dia })).then(() => true, () => false)
+      const quedoFijo = !!idFijo && await (categoria && otroFijo && puedeOtroFijo
+        ? guardarAdicionales(idFijo, nuevoAdicional(adicionales(categoria), leido.descripcion || `${categoria.nombre} ${adicionales(categoria).length + 2}`, fecha.slice(0, 7), { monto: leido.valor, dia }))
+        : guardarFijo(idFijo, { monto: leido.valor, dia, desde: `${fecha.slice(0, 7)}-01` }, false,
+          conTramo(categoria?.historial_fijo, fecha.slice(0, 7), { monto: leido.valor, dia }))).then(() => true, () => false)
       let mensaje = resultado === 'guardado'
         ? `${TEXTO[tipo]} registrado: ${pesos(leido.valor)}${fuente ? ` ${tipo === 'gasto' ? 'en' : 'de'} ${fuente.nombre}` : ''}.`
         : 'Sin conexión: quedó guardado en este equipo y se enviará al volver la conexión.'
@@ -614,6 +620,13 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
           {tipo === 'ingreso' && !categoria && !hayCupo && descripcion.trim() && <small className="ayuda">Ya tienes {TOPE.ingreso} fuentes: elige una de arriba o se guarda sin fuente.</small>}
           {!inicial && (categoria || fuenteNueva) && (
             <label className="marca"><input type="checkbox" checked={esFijo} onChange={ev => setEsFijo(ev.target.checked)} /> Es fijo: me llega cada mes</label>
+          )}
+          {esFijo && yaTieneFijo && categoria && (
+            <div className="chips" role="radiogroup" aria-label={`¿Reemplaza a ${categoria.nombre} o es otro fijo?`}>
+              <span>¿Reemplaza a {categoria.nombre} o es otro fijo?</span>
+              <label className="marca"><input type="radio" name="otro-fijo" checked={!otroFijo} onChange={() => setOtroFijo(false)} /> Reemplaza</label>
+              {puedeOtroFijo && <label className="marca"><input type="radio" name="otro-fijo" checked={otroFijo} onChange={() => setOtroFijo(true)} /> Es otro fijo</label>}
+            </div>
           )}
         </fieldset>
       )}
@@ -977,11 +990,30 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
   const hoy = hoyIso()
   const suyos = useMemo(() => anotados(fuentes), [fuentes])
   const delMes = useMemo(() => {
-    const falta = new Map(porRecibir(movimientos, hoy, suyos).map(f => [f.id_etiqueta, f.falta]))
-    return fijos(movimientos, mes, suyos).map(f => ({ ...f, estado: estadoFijo(f, movimientos, hoy), falta: falta.get(f.id_etiqueta) ?? 0 }))
+    const falta = new Map(porRecibir(movimientos, hoy, suyos).map(f => [claveDe(f), f.falta]))
+    const todos = fijos(movimientos, mes, suyos)
+    return todos.map(f => ({ ...f, estado: estadoFijo(f, movimientos, hoy, todos), falta: falta.get(claveDe(f)) ?? 0 }))
   }, [movimientos, mes, hoy, suyos])
+  // una fila por fuente; la que tiene varios fijos se abre para ver cada uno
+  const porFuenteFija = useMemo(() => {
+    const grupos = new Map<string, typeof delMes>()
+    for (const f of delMes) grupos.set(f.id_etiqueta, [...grupos.get(f.id_etiqueta) ?? [], f])
+    return [...grupos.values()]
+  }, [delMes])
   const recibido = useMemo(() => esperadoVsRecibido(movimientos, mes, 6, suyos, historiales(fuentes)), [movimientos, mes, suyos, fuentes])
-  const esSuyo = (id: string) => suyos.some(f => f.id_etiqueta === id && !f.quitado)
+  const esSuyo = (f: Fijo) => suyos.some(s => claveDe(s) === claveDe(f) && !s.quitado)
+  const filaFijo = (f: (typeof delMes)[number]) => (
+    <li key={claveDe(f)} className="recibo">
+      <span>{f.nombre ?? nombre(f.id_etiqueta)}<span className="tenue"> · día {f.dia}{esSuyo(f) ? ' · anotado' : ''}</span></span>
+      <strong>{pesos(f.monto)}</strong>
+      <span className={`estado ${ESTADO_FIJO[f.estado].clase}`}>{ESTADO_FIJO[f.estado].texto}</span>
+      <span className="enlaces">
+        {f.falta > 0 && <button className="enlace" onClick={() => alLlego({ monto: f.falta, id_etiqueta: f.id_etiqueta })}>
+          Ya llegó{f.falta < f.monto ? ` (faltan ${pesos(f.falta)})` : ''}</button>}
+        <button className="enlace" aria-label={`Editar ${f.nombre ?? nombre(f.id_etiqueta)}`} onClick={() => setEditando(f)}>Editar</button>
+      </span>
+    </li>
+  )
   const [editando, setEditando] = useState<Fijo | null>(null)
 
   return (
@@ -1001,21 +1033,21 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
         <h2>Ingresos fijos del mes</h2>
         {delMes.length ? (
           <ul className="lista">
-            {delMes.map(f => (
-              <li key={f.id_etiqueta} className="recibo">
-                <span>{nombre(f.id_etiqueta)}<span className="tenue"> · día {f.dia}{esSuyo(f.id_etiqueta) ? ' · anotado' : ''}</span></span>
-                <strong>{pesos(f.monto)}</strong>
-                <span className={`estado ${ESTADO_FIJO[f.estado].clase}`}>{ESTADO_FIJO[f.estado].texto}</span>
-                <span className="enlaces">
-                  {f.falta > 0 && <button className="enlace" onClick={() => alLlego({ monto: f.falta, id_etiqueta: f.id_etiqueta })}>
-                    Ya llegó{f.falta < f.monto ? ` (faltan ${pesos(f.falta)})` : ''}</button>}
-                  <button className="enlace" aria-label={`Editar ${nombre(f.id_etiqueta)}`} onClick={() => setEditando(f)}>Editar</button>
-                </span>
+            {porFuenteFija.map(grupo => grupo.length === 1 ? filaFijo(grupo[0]) : (
+              <li key={grupo[0].id_etiqueta} className="grupo-fijos">
+                <details>
+                  <summary className="recibo">
+                    <span>{nombre(grupo[0].id_etiqueta)}<span className="tenue"> · {grupo.length} fijos</span></span>
+                    <strong>{pesos(grupo.reduce((t, f) => t + f.monto, 0))}</strong>
+                    <span className="tenue">{grupo.filter(f => f.estado === 'recibido').length} de {grupo.length} recibidos</span>
+                  </summary>
+                  <ul className="lista">{grupo.map(filaFijo)}</ul>
+                </details>
               </li>
             ))}
           </ul>
         ) : <p className="tenue">Un ingreso es fijo cuando llega de la misma fuente los últimos {MESES_FIJO} meses con un monto parecido, o cuando lo anotas aquí.</p>}
-        {fuentes.length > 0 && <AnotarFijo key={editando?.id_etiqueta ?? ''} fuentes={fuentes} inicial={editando} alCerrar={() => setEditando(null)} alCambiar={alCambiar} />}
+        {fuentes.length > 0 && <AnotarFijo key={editando ? claveDe(editando) : ''} fuentes={fuentes} delMes={delMes} inicial={editando} alCerrar={() => setEditando(null)} alCambiar={alCambiar} />}
       </section>
       {recibido.some(m => m.esperado > 0) && (
         <section>
@@ -1037,11 +1069,18 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
 }
 
 // El ingreso fijo anotado a mano: manda sobre el que aprende la app; vacío vuelve al aprendido.
-// "inicial": el fijo de la lista que se edita (anotado o aprendido), con su monto y su día.
-function AnotarFijo({ fuentes, alCambiar, inicial, alCerrar }: { fuentes: Categoria[]; alCambiar: () => Promise<void>; inicial: Fijo | null; alCerrar: () => void }) {
+// "inicial": el fijo de la lista que se edita (anotado o aprendido), con su monto y su día; con clave, uno adicional de la fuente.
+function AnotarFijo({ fuentes, delMes, alCambiar, inicial, alCerrar }: {
+  fuentes: Categoria[]; delMes: Fijo[]; alCambiar: () => Promise<void>; inicial: Fijo | null; alCerrar: () => void
+}) {
   const [abierto, setAbierto] = useState(!!inicial)
   const [id, setId] = useState(inicial?.id_etiqueta ?? fuentes[0].id_etiqueta)
   const fuente = fuentes.find(f => f.id_etiqueta === id)
+  // '' = el primer fijo de la fuente, 'nuevo' = otro fijo en la misma fuente, o la clave del adicional que se edita
+  const [clave, setClave] = useState(inicial?.clave ?? '')
+  const [nombreOtro, setNombreOtro] = useState('')
+  const lista = fuente ? adicionales(fuente) : []
+  const puedeOtro = clave === '' && delMes.some(f => f.id_etiqueta === id) && lista.length < MAX_ADICIONALES
   const [monto, setMonto] = useState(inicial ? String(inicial.monto) : fuente?.monto_fijo ? String(fuente.monto_fijo) : '')
   const [dia, setDia] = useState(inicial ? String(inicial.dia) : fuente?.dia_fijo ? String(fuente.dia_fijo) : '')
   const [confirmar, setConfirmar] = useState(false)
@@ -1050,12 +1089,32 @@ function AnotarFijo({ fuentes, alCambiar, inicial, alCerrar }: { fuentes: Catego
 
   function elegir(nuevo: string) {
     const f = fuentes.find(x => x.id_etiqueta === nuevo)
-    setId(nuevo); setMonto(f?.monto_fijo ? String(f.monto_fijo) : ''); setDia(f?.dia_fijo ? String(f.dia_fijo) : ''); setError(''); setConfirmar(false)
+    setId(nuevo); setMonto(f?.monto_fijo ? String(f.monto_fijo) : ''); setDia(f?.dia_fijo ? String(f.dia_fijo) : ''); setError(''); setConfirmar(false); setClave('')
+  }
+
+  function otro() {
+    setClave('nuevo'); setNombreOtro(''); setMonto(''); setDia(''); setError(''); setConfirmar(false)
   }
 
   async function guardar(fijo: { monto: number; dia: number } | null, yaNoEsFijo = false) {
     setEnviando(true)
     try {
+      const mes = hoyIso().slice(0, 7)
+      if (clave === 'nuevo' && fijo) {
+        // el primero de la fuente queda anotado con lo que ya se esperaba: si no, el aprendido dejaría de contarse
+        const aprendido = !fuente?.monto_fijo && !fuente?.sin_ingreso_fijo ? delMes.find(f => f.id_etiqueta === id && !f.clave) : undefined
+        if (aprendido) await guardarFijo(id, { monto: aprendido.monto, dia: aprendido.dia, desde: `${mes}-01` })
+        await guardarAdicionales(id, nuevoAdicional(lista, nombreOtro, mes, fijo))
+        await alCambiar()
+        setAbierto(false); setError(''); alCerrar()
+        return
+      }
+      if (clave) {
+        await guardarAdicionales(id, cambiarAdicional(lista, clave, mes, fijo))
+        await alCambiar()
+        setAbierto(false); setError(''); alCerrar()
+        return
+      }
       // shortcut: "Quitar el anotado" no deja tramo; los meses pasados siguen con el último anotado, si molesta guardar el aprendido
       const antes = inicial ?? (fuente?.monto_fijo && fuente.dia_fijo ? { monto: fuente.monto_fijo, dia: fuente.dia_fijo } : null)
       const historial = fijo || yaNoEsFijo ? conTramo(fuente?.historial_fijo, hoyIso().slice(0, 7), fijo, antes) : undefined
@@ -1073,6 +1132,7 @@ function AnotarFijo({ fuentes, alCambiar, inicial, alCerrar }: { fuentes: Catego
     evento.preventDefault()
     const valor = leerMonto(monto)
     const d = /^\d{1,2}$/.test(dia.trim()) ? Number(dia) : NaN
+    if (clave === 'nuevo' && !nombreOtro.trim()) return setError('Ponle un nombre, por ejemplo «Apto 2».')
     if (valor === null || valor <= 0) return setError(MONTO_INVALIDO)
     if (!(d >= 1 && d <= 31)) return setError('Escribe el día de pago, de 1 a 31.')
     void guardar({ monto: valor, dia: d })
@@ -1084,10 +1144,17 @@ function AnotarFijo({ fuentes, alCambiar, inicial, alCerrar }: { fuentes: Catego
       {abierto && (
         <form className="formulario" onSubmit={anotar}>
           <label>Fuente
-            <select value={id} onChange={ev => elegir(ev.target.value)}>
+            <select value={id} disabled={clave !== ''} onChange={ev => elegir(ev.target.value)}>
               {fuentes.map(f => <option key={f.id_etiqueta} value={f.id_etiqueta}>{f.nombre}</option>)}
             </select>
           </label>
+          {clave === 'nuevo' && (
+            <label>Nombre de este fijo
+              <input required maxLength={40} value={nombreOtro} onChange={ev => setNombreOtro(ev.target.value)} placeholder="Ej.: Apto 2" />
+              <small className="ayuda">Otro fijo de {fuente?.nombre}: cada pago se asigna al que más se parece.</small>
+            </label>
+          )}
+          {clave !== '' && clave !== 'nuevo' && <p className="tenue">{inicial?.nombre} · fijo de {fuente?.nombre}</p>}
           <label>Monto del mes
             <input required maxLength={16} value={monto} onChange={ev => setMonto(ev.target.value)} placeholder="Cuánto te llega" />
             <small className="ayuda" aria-live="polite">{leidoDe(monto) || 'Ej.: 3 millones o 3.000.000'}</small>
@@ -1095,8 +1162,10 @@ function AnotarFijo({ fuentes, alCambiar, inicial, alCerrar }: { fuentes: Catego
           <label>Día de pago<input required inputMode="numeric" maxLength={2} value={dia} onChange={ev => setDia(ev.target.value)} placeholder="1 a 31" /></label>
           <div className="chips">
             <button className="principal" disabled={enviando}>Guardar</button>
-            {fuente?.monto_fijo && <button type="button" className="secundario" disabled={enviando} onClick={() => void guardar(null)}>Quitar el anotado</button>}
-            {inicial && !confirmar && <button type="button" className="secundario" disabled={enviando} onClick={() => setConfirmar(true)}>Ya no es fijo</button>}
+            {clave === '' && fuente?.monto_fijo && <button type="button" className="secundario" disabled={enviando} onClick={() => void guardar(null)}>Quitar el anotado</button>}
+            {puedeOtro && <button type="button" className="secundario" disabled={enviando} onClick={otro}>+ Otro fijo en esta fuente</button>}
+            {clave === 'nuevo' && <button type="button" className="secundario" disabled={enviando} onClick={() => elegir(id)}>Cancelar</button>}
+            {inicial && clave !== 'nuevo' && !confirmar && <button type="button" className="secundario" disabled={enviando} onClick={() => setConfirmar(true)}>Ya no es fijo</button>}
           </div>
           {confirmar && (
             <div className="chips" role="group" aria-label="Confirmar">

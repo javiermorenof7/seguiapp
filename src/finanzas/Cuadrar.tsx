@@ -13,7 +13,7 @@ import { categoriaDeBanco, bancoDe, cuentaDe, repetidoPosible, comercio, concili
 import { leerMonto, normalizar } from './parseo'
 
 // los bancos cuyos extractos ya se leen (BANCOS también tiene los que solo se pueden elegir)
-const LEIDOS = ['Davivienda', 'Nequi', 'Banco Falabella']
+const LEIDOS = ['Davivienda', 'Nequi', 'Banco Falabella', 'Banco Caja Social']
 const QUE_LEE = `Lee cuentas de ahorro y corriente de ${LEIDOS.slice(0, -1).join(', ')} y ${LEIDOS.at(-1)}. Tarjetas de crédito todavía no.`
 const TARJETA = 'Este parece un extracto de tarjeta de crédito: todavía no los leo. ' + QUE_LEE
 
@@ -107,6 +107,13 @@ export default function Extracto({ ids, datos, banco, registros, desdeRegistros,
 
   // true si con esas líneas ya hay algo que mostrar (el cuadre o la pregunta de las columnas)
   function interpretar(lineas: string[], formato?: Formato): boolean {
+    // solo bancos probados con un extracto real: otro banco puede leerse mal sin aviso (sin texto, sigue al OCR)
+    const delBanco = bancoDe(lineas)
+    if (lineas.length && (!delBanco || !LEIDOS.includes(delBanco))) {
+      setEstado({ paso: 'inicio' })
+      setError(`Todavía no leo extractos de ${delBanco ?? 'este banco'}: no cargué nada. ` + QUE_LEE)
+      return true
+    }
     const guardado = sabidos.formatos.get(firma(lineas))
     const lectura = leerExtracto(lineas, formato ?? (guardado ? JSON.parse(guardado) as Formato : undefined))
     if (lectura.ok) {

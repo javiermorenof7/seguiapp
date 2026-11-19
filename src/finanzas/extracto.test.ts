@@ -53,6 +53,15 @@ describe('leerExtracto', () => {
     expect(e.movimientos[0]).toMatchObject({ fecha: '2026-10-02', descripcion: 'COMPRA TIENDA LA ESQUINA', valor: -4500000 })
   })
 
+  it('lee fechas con el mes antes del día (JUL 01), como Banco Caja Social', () => {
+    const e = leido(['Banco Caja Social', 'Periodo del Informe', '1 de Julio a 31 de Julio de 2026', 'Cuenta 12345678901',
+      'Saldo Anterior 1,000,000.00', 'Fecha Transacción Documento Lugar Débitos Créditos Saldos',
+      'JUL 01 RECEPCION DINERO 1234 BOGOTA 500,000.00 1,500,000.00',
+      'JUL 15 COMPRA EN COMERCIO TIENDA 200,000.00 1,300,000.00',
+      'JUL 30 ABONO DE INTERESES 1234 BOGOTA 10.50 1,300,010.50', 'Nuevo Saldo 1,300,010.50'])
+    expect(e.movimientos.map(m => [m.fecha, m.valor])).toEqual([['2026-07-01', 50000000], ['2026-07-15', -20000000], ['2026-07-30', 1050]])
+  })
+
   it('dos movimientos iguales el mismo día tienen huella distinta', () => {
     const [, , a, b] = leido(POR_LINEA).movimientos
     expect(a.valor).toBe(b.valor)
@@ -181,6 +190,7 @@ describe('conciliar', () => {
   it('lee el banco por el contenido y reconoce un extracto de tarjeta', () => {
     expect(bancoDe(['EXTRACTO CUENTA DE AHORROS', 'Banco Falabella S.A.'])).toBe('Banco Falabella')
     expect(bancoDe(['Banco Davivienda', 'Cuenta de ahorros'])).toBe('Davivienda')
+    expect(bancoDe(['Cuentamiga de Banco Caja Social'])).toBe('Banco Caja Social')
     expect(bancoDe(['Movimientos del mes'])).toBeNull()
     expect(pareceTarjeta(['Tarjeta de Crédito Visa', 'Pago mínimo $120.000'])).toBe(true)
     expect(pareceTarjeta(['Cuenta de ahorros', 'Saldo anterior'])).toBe(false)

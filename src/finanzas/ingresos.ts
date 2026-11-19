@@ -15,6 +15,10 @@ const diasDelMes = (mes: string) => new Date(Date.UTC(+mes.slice(0, 4), +mes.sli
 
 export const MESES_FIJO = 2
 export const MAX_ADICIONALES = 3
+// los que ya no son fijos se guardan por su historial pero no cuentan en el cupo de MAX_ADICIONALES
+export const MAX_GUARDADOS = 8
+export const DIAS_CERCA = 7
+export const hayCupo = (lista: Adicional[]) => lista.filter(a => a.monto).length < MAX_ADICIONALES && lista.length < MAX_GUARDADOS
 // Identifica cada fijo: la fuente sola para el primero, fuente y clave para los adicionales.
 export const claveDe = (f: { id_etiqueta: string; clave?: string }) => f.clave ? `${f.id_etiqueta}:${f.clave}` : f.id_etiqueta
 
@@ -34,7 +38,7 @@ export function adicionales(f: Categoria): Adicional[] {
     && typeof a.nombre === 'string' && a.nombre.trim().length > 0 && a.nombre.length <= 40
     && (a.monto === null ? a.dia === null : entero(a.monto, 1, 1000000000) && entero(a.dia, 1, 31))
     && typeof a.desde === 'string' && /^\d{4}-\d{2}$/.test(a.desde))
-    .slice(0, MAX_ADICIONALES).map(a => ({ ...a, historial: ordenados(a.historial) }))
+    .slice(0, MAX_GUARDADOS).map(a => ({ ...a, historial: ordenados(a.historial) }))
 }
 
 // Los fijos que se anotaron a mano en las fuentes (con sus adicionales) y las que ya no son fijas.
@@ -67,7 +71,8 @@ export function fijos(movimientos: Movimiento[], mes: string, todos: Fijo[] = []
 }
 
 // Lo que llegó en el mes a cada fijo de "delMes". Con un fijo en la fuente, todo lo de la fuente (como las quincenas);
-// con varios, cada pago va al fijo cuyo faltante se parece más (hasta +10 %) y, si empatan, al de día más cercano.
+// con varios, cada pago va al fijo cuyo faltante se parece (±10 %) y cuyo día está a DIAS_CERCA o menos; si ninguno,
+// al de día más cercano entre los que aún aceptan ese monto (así una quincena no se va al otro sueldo).
 // Un pago que no encaja en ninguno no se le asigna a nadie (sí cuenta en lo recibido del mes).
 export function llegadas(delMes: Fijo[], movimientos: Movimiento[], mes: string): Map<string, number> {
   const llego = new Map(delMes.map(f => [claveDe(f), 0]))
@@ -77,10 +82,12 @@ export function llegadas(delMes: Fijo[], movimientos: Movimiento[], mes: string)
   for (const m of [...pagos].sort((a, b) => a.fecha.localeCompare(b.fecha))) {
     const suyos = deFuente.get(m.id_etiqueta!)!
     const dia = +m.fecha.slice(8, 10)
-    const mejor = suyos.length === 1 ? suyos[0] : suyos
-      .map(f => ({ f, falta: f.monto - llego.get(claveDe(f))! }))
+    const caben = suyos
+      .map(f => ({ f, falta: f.monto - llego.get(claveDe(f))!, lejos: Math.abs(f.dia - dia) }))
       .filter(c => c.falta > 0 && m.valor <= c.falta * (1 + TOLERANCIA))
-      .sort((a, b) => Math.abs(a.falta - m.valor) - Math.abs(b.falta - m.valor) || Math.abs(a.f.dia - dia) - Math.abs(b.f.dia - dia))[0]?.f
+    const parecidos = caben.filter(c => Math.abs(c.falta - m.valor) <= c.falta * TOLERANCIA && c.lejos <= DIAS_CERCA)
+    const mejor = suyos.length === 1 ? suyos[0] : (parecidos.length ? parecidos : caben)
+      .sort((a, b) => a.lejos - b.lejos || Math.abs(a.falta - m.valor) - Math.abs(b.falta - m.valor))[0]?.f
     if (mejor) llego.set(claveDe(mejor), llego.get(claveDe(mejor))! + m.valor)
   }
   return llego

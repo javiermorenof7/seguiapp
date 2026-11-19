@@ -28,7 +28,7 @@ import Extracto from './Cuadrar'
 import { puedeCrear, TOPE } from './reglasCategorias'
 import type { MetaAhorro } from './metas'
 import { cincuentaTreintaVeinte, facturaParecida, gastoInusual, posibleRepetido, sugeridos } from './aprende'
-import { adicionales, anotados, cambiarAdicional, claveDe, conTramo, esperadoVsRecibido, estadoFijo, fijos, historiales, MAX_ADICIONALES, MESES_FIJO, nuevoAdicional, porFuente, porRecibir, type EstadoFijo, type Fijo } from './ingresos'
+import { adicionales, anotados, cambiarAdicional, claveDe, conTramo, esperadoVsRecibido, estadoFijo, fijos, hayCupo as hayCupoFijo, historiales, MESES_FIJO, nuevoAdicional, porFuente, porRecibir, type EstadoFijo, type Fijo } from './ingresos'
 
 type Datos = Awaited<ReturnType<typeof obtenerFinanzas>>
 type Grupo = 'auto' | 'basico' | 'personal'
@@ -467,7 +467,7 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
   const factura = tipo === 'gasto' ? facturaParecida(datos.recibos, descripcion) : null
   const categoria: Categoria | null = lista.find(c => c.id_etiqueta === elegida) ?? propuesta
   const yaTieneFijo = !!categoria && (!!categoria.monto_fijo || adicionales(categoria).some(x => x.monto))
-  const puedeOtroFijo = !!categoria && adicionales(categoria).length < MAX_ADICIONALES
+  const puedeOtroFijo = !!categoria && hayCupoFijo(adicionales(categoria))
   // un préstamo por su entidad en lo escrito, o el primero si eligió la categoría Deudas
   const prestamo = tipo !== 'gasto' || factura ? null : (() => {
     const p = facturaParecida(prestamos.map(x => ({ ...x, nombre_servicio: x.nombre_entidad })), descripcion)
@@ -506,7 +506,7 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
       const idFijo = tipo === 'ingreso' && esFijo ? categoria?.id_etiqueta ?? idFuenteNueva : null
       const dia = +fecha.slice(8, 10)
       const quedoFijo = !!idFijo && await (categoria && otroFijo && puedeOtroFijo
-        ? guardarAdicionales(idFijo, nuevoAdicional(adicionales(categoria), leido.descripcion || `${categoria.nombre} ${adicionales(categoria).length + 2}`, fecha.slice(0, 7), { monto: leido.valor, dia }))
+        ? guardarAdicionales(idFijo, nuevoAdicional(adicionales(categoria), leido.descripcion || `${categoria.nombre} ${adicionales(categoria).filter(x => x.monto).length + 2}`, fecha.slice(0, 7), { monto: leido.valor, dia }))
         : guardarFijo(idFijo, { monto: leido.valor, dia, desde: `${fecha.slice(0, 7)}-01` }, false,
           conTramo(categoria?.historial_fijo, fecha.slice(0, 7), { monto: leido.valor, dia }))).then(() => true, () => false)
       let mensaje = resultado === 'guardado'
@@ -1080,7 +1080,7 @@ function AnotarFijo({ fuentes, delMes, alCambiar, inicial, alCerrar }: {
   const [clave, setClave] = useState(inicial?.clave ?? '')
   const [nombreOtro, setNombreOtro] = useState('')
   const lista = fuente ? adicionales(fuente) : []
-  const puedeOtro = clave === '' && delMes.some(f => f.id_etiqueta === id) && lista.length < MAX_ADICIONALES
+  const puedeOtro = clave === '' && delMes.some(f => f.id_etiqueta === id) && hayCupoFijo(lista)
   const [monto, setMonto] = useState(inicial ? String(inicial.monto) : fuente?.monto_fijo ? String(fuente.monto_fijo) : '')
   const [dia, setDia] = useState(inicial ? String(inicial.dia) : fuente?.dia_fijo ? String(fuente.dia_fijo) : '')
   const [confirmar, setConfirmar] = useState(false)

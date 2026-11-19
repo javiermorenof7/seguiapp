@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { adicionales, anotados, cambiarAdicional, nuevoAdicional, claveDe, conTramo, esperadoVsRecibido, estadoFijo, fijos, fuenteDeFijo, historiales, llegadas, porFuente, porRecibir } from './ingresos'
+import { adicionales, anotados, cambiarAdicional, hayCupo, nuevoAdicional, claveDe, conTramo, esperadoVsRecibido, estadoFijo, fijos, fuenteDeFijo, historiales, llegadas, porFuente, porRecibir } from './ingresos'
 import type { Movimiento } from './calculos'
 import type { Categoria } from './parseo'
 
@@ -178,5 +178,28 @@ describe('varios fijos en una fuente', () => {
     const sin = cambiarAdicional(lista, lista[1].clave, '2026-12', null)
     expect(sin[0]).toBe(lista[0])
     expect(sin[1]).toMatchObject({ monto: null, dia: null, historial: [{ desde: '' }, { desde: '2026-11' }, { desde: '2026-12', monto: null }] })
+  })
+
+  it('las quincenas de un sueldo no se van al otro sueldo que vale lo mismo', () => {
+    const dos = anotados([{ ...fuente, id_etiqueta: 'sueldo', monto_fijo: 3000000, dia_fijo: 15,
+      fijos_adicionales: [{ clave: 's2', nombre: 'Otro', monto: 1500000, dia: 1, desde: '2026-10', historial: [] }] }])
+    const llego = llegadas(dos, [ing('2026-10-01', 1500000), ing('2026-10-15', 1500000), ing('2026-10-30', 1500000)], '2026-10')
+    expect([llego.get('sueldo'), llego.get('sueldo:s2')]).toEqual([3000000, 1500000])
+    expect(llegadas(dos, [ing('2026-10-15', 1500000)], '2026-10').get('sueldo')).toBe(1500000)
+  })
+
+  it('el monto manda cuando el día está cerca', () => {
+    const llego = llegadas(suyos, [arr('2026-10-06', 900000)], '2026-10')
+    expect([llego.get('arriendos'), llego.get('arriendos:a1')]).toEqual([0, 900000])
+  })
+
+  it('el cupo cuenta solo los fijos activos', () => {
+    const lleno = [1, 2, 3].reduce(l => nuevoAdicional(l, 'x', '2026-10', { monto: 1, dia: 1 }), [] as ReturnType<typeof adicionales>)
+    expect(hayCupo(lleno)).toBe(false)
+    const conQuitado = cambiarAdicional(lleno, lleno[0].clave, '2026-11', null)
+    expect(hayCupo(conQuitado)).toBe(true)
+    const otraVez = nuevoAdicional(conQuitado, 'y', '2026-11', { monto: 2, dia: 2 })
+    expect(adicionales({ ...fuente, fijos_adicionales: otraVez })).toHaveLength(4)
+    expect(anotados([{ ...fuente, fijos_adicionales: otraVez }])).toHaveLength(4)
   })
 })

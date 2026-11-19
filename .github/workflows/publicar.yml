@@ -26,9 +26,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      # lo que se publica no admite vulnerabilidades; las herramientas de compilación frenan solo si son críticas
-      - run: npm audit --omit=dev --audit-level=moderate
-      - run: npm audit --audit-level=critical
+      - run: npm audit --audit-level=moderate
       - run: npm test
       - run: npm run build
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

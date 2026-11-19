@@ -284,6 +284,13 @@ export function calorias(sesiones: Sesion[], desde: string, hasta: string, hoy: 
   return { pesas: Math.round(pesas), cardio: Math.round(cardio), total: Math.round(pesas + cardio), supuesto: pesoCorporal === null }
 }
 
+// Calorías de cada tramo (un día, o un mes en el año); los tramos que aún no llegan van en null.
+export const caloriasEnTramos = (sesiones: Sesion[], tramos: { desde: string; hasta: string }[], hoy: string, pesoCorporal: number | null) =>
+  tramos.map(t => t.desde > hoy ? null : calorias(sesiones, t.desde, t.hasta, hoy, pesoCorporal))
+
+// Cambio en % frente a antes; sin nada antes no hay con qué comparar.
+export const cambioPorcentual = (actual: number, antes: number) => antes > 0 ? Math.round((actual - antes) / antes * 100) : null
+
 // "Si sigues así", mirando las 4 semanas completas anteriores: tendencia, nunca una cifra de músculo.
 // constancia: menos de 3 de 4 semanas con la meta de días (3 si no hay meta); crece: además sube el peso en la mayoría de sus ejercicios; quieto: constante pero sin subir.
 export function siSigues(sesiones: Sesion[], hoy: string, metaDias?: number): 'crece' | 'quieto' | 'constancia' | null {

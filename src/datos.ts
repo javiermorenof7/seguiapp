@@ -206,7 +206,7 @@ export interface Presupuesto { id_meta: string; id_etiqueta: string; valor: numb
 // Lo que necesita la pantalla Finanzas además de los registros: categorías de Gastos, fuentes de Ingresos, presupuestos,
 // lo aprendido y los recibos con sus pagos de los últimos 4 meses (para los pendientes).
 export async function obtenerFinanzas(idGastos: string, desdePagos: string, idIngresos?: string) {
-  const etiquetas = (id: string) => supabase.from('etiqueta').select('id_etiqueta, nombre, grupo, palabras_clave')
+  const etiquetas = (id: string) => supabase.from('etiqueta').select('id_etiqueta, nombre, grupo, palabras_clave, monto_fijo, dia_fijo')
     .eq('id_seguimiento', id).eq('estado', 'activo').order('nombre')
   const [categorias, fuentes, presupuestos, aprendido, recibos, pagos, deFacturas, dePrestamos] = await Promise.all([
     etiquetas(idGastos),
@@ -659,10 +659,24 @@ export async function registrarSeries(base: { id_seguimiento: string; id_etiquet
 }
 
 // Corrige una serie ya guardada con el mismo reparto de registrarSeries.
-export async function corregirSerie(idRegistro: string, s: { series: number; repeticiones: number; peso: number | null }, unidad: 'kg' | 'lb' = 'kg') {
+export async function corregirSerie(idRegistro: string, s: { series: number; repeticiones: number; peso: number | null; minutos?: number | null; km?: number | null }, unidad: 'kg' | 'lb' = 'kg') {
   revisar(await supabase.from('serie_gym')
-    .update({ cantidad_series: s.series, cantidad_repeticiones: s.repeticiones, peso_kilogramos: s.peso, unidad_peso: unidad }).eq('id_registro', idRegistro))
-  revisar(await supabase.from('registro').update({ valor: s.peso ?? s.repeticiones }).eq('id_registro', idRegistro))
+    .update(s.minutos
+      ? { minutos: s.minutos, distancia_km: s.km ?? null }
+      : { cantidad_series: s.series, cantidad_repeticiones: s.repeticiones, peso_kilogramos: s.peso, unidad_peso: unidad }).eq('id_registro', idRegistro))
+  revisar(await supabase.from('registro').update({ valor: s.minutos ?? s.peso ?? s.repeticiones }).eq('id_registro', idRegistro))
+}
+
+// Anota o quita (null) el ingreso fijo de una fuente.
+export async function guardarFijo(idEtiqueta: string, fijo: { monto: number; dia: number } | null) {
+  revisar(await supabase.from('etiqueta').update({ monto_fijo: fijo?.monto ?? null, dia_fijo: fijo?.dia ?? null }).eq('id_etiqueta', idEtiqueta))
+}
+
+// Los ingresos fijos anotados a mano, para el resumen de Inicio.
+export async function obtenerFijosAnotados() {
+  const filas = revisar(await supabase.from('etiqueta').select('id_etiqueta, monto_fijo, dia_fijo')
+    .eq('estado', 'activo').not('monto_fijo', 'is', null)) as { id_etiqueta: string; monto_fijo: number; dia_fijo: number }[]
+  return filas.map(f => ({ id_etiqueta: f.id_etiqueta, monto: Number(f.monto_fijo), dia: f.dia_fijo }))
 }
 
 // Cambia o quita (valor null) la meta general de un seguimiento.

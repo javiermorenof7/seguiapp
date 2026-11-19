@@ -2,7 +2,7 @@ import ComoFunciona from '../ComoFunciona'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import Selector from '../Selector'
 import {
-  aprenderCategoria, crearCategoriasIniciales, crearCuenta, etiquetaCuenta, crearEtiqueta, guardarPresupuesto, obtenerBanco, obtenerFinanzas, obtenerMetasAhorro, obtenerPrestamos, obtenerRecibos, obtenerRegistros, registrar, type Banco, type Cuenta, type Origen, type RegistroGuardado, type Seguimiento,
+  aprenderCategoria, crearCategoriasIniciales, guardarFijo, crearCuenta, etiquetaCuenta, crearEtiqueta, guardarPresupuesto, obtenerBanco, obtenerFinanzas, obtenerMetasAhorro, obtenerPrestamos, obtenerRecibos, obtenerRegistros, registrar, type Banco, type Cuenta, type Origen, type RegistroGuardado, type Seguimiento,
 } from '../datos'
 import { formatoValor } from '../indicadores'
 import { categoriaDe, leerMonto, leidoDe, MONTO_INVALIDO, normalizar, type Categoria } from './parseo'
@@ -28,7 +28,7 @@ import Extracto from './Cuadrar'
 import { puedeCrear, TOPE } from './reglasCategorias'
 import type { MetaAhorro } from './metas'
 import { cincuentaTreintaVeinte, facturaParecida, gastoInusual, posibleRepetido, sugeridos } from './aprende'
-import { esperadoVsRecibido, estadoFijo, fijos, porFuente, porRecibir, type EstadoFijo } from './ingresos'
+import { anotados, esperadoVsRecibido, estadoFijo, fijos, MESES_FIJO, porFuente, porRecibir, type EstadoFijo, type Fijo } from './ingresos'
 
 type Datos = Awaited<ReturnType<typeof obtenerFinanzas>>
 type Grupo = 'auto' | 'basico' | 'personal'
@@ -169,7 +169,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
     const filas = porCategoria(movs, mes, datos.categorias, presupuestos, pendientes, idHogar)
     const delMes = resumenMes(movs, mes)
     // solo el mes en curso: de un mes pasado lo que no llegó ya no se espera
-    const faltan = periodo === hoyIso().slice(0, 7) ? porRecibir(todos, hoyIso()) : []
+    const faltan = periodo === hoyIso().slice(0, 7) ? porRecibir(todos, hoyIso(), anotados(datos.fuentes)) : []
     return { presupuestos, pendientes, filas, delMes, despues: saldoDespues(delMes.saldo, filas, pendientes), porRecibir: faltan }
   }, [datos, todos])
   const cuentas = useMemo(() => cuentasDe(mes), [cuentasDe, mes])
@@ -366,7 +366,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
                 {!esAno && facturasVer && <FacturasDelMes totales={facturasVer} alVer={() => setPestana('recibos')} />}
                 <EnQueSeVa filas={cuentasVer.filas} alVer={() => setPestana('gastos')} alVerCategoria={verCategoria} />
                 <PorCategoria filas={cuentasVer.filas} alVer={() => setPestana('gastos')} alVerCategoria={verCategoria} />
-                {!esAno && idIngresos && <IngresosDelMes movimientos={todos} mes={mesVer} alVer={() => setPestana('ingresos')} />}
+                {!esAno && idIngresos && <IngresosDelMes movimientos={todos} suyos={anotados(datos.fuentes)} mes={mesVer} alVer={() => setPestana('ingresos')} />}
                 {idIngresos && <IngresosPorFuente movimientos={todos} mes={esAno ? finAno : mesVer} fuentes={datos.fuentes} alVer={() => setPestana('ingresos')} />}
                 {metasAhorro && <MetasDelMes metas={metasAhorro.metas}
                   ahorros={metasAhorro.ahorros.map(r => ({ fecha: r.fecha, valor: r.valor, tipo: 'ahorro' as const, id_etiqueta: r.id_etiqueta }))} alVer={() => setPestana('ahorro')} />}
@@ -805,8 +805,8 @@ function FacturasDelMes({ totales: t, alVer }: { totales: ReturnType<typeof tota
   )
 }
 
-function IngresosDelMes({ movimientos, mes, alVer }: { movimientos: Movimiento[]; mes: string; alVer: () => void }) {
-  const actual = useMemo(() => esperadoVsRecibido(movimientos, mes).find(m => m.mes === mes), [movimientos, mes])
+function IngresosDelMes({ movimientos, suyos, mes, alVer }: { movimientos: Movimiento[]; suyos: Fijo[]; mes: string; alVer: () => void }) {
+  const actual = useMemo(() => esperadoVsRecibido(movimientos, mes, 6, suyos).find(m => m.mes === mes), [movimientos, mes, suyos])
   const recibido = resumenMes(movimientos, mes).ingresos
   if (!actual?.esperado && !recibido) return null
   return (
@@ -965,11 +965,13 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
 }) {
   const nombre = (id: string | null) => fuentes.find(f => f.id_etiqueta === id)?.nombre ?? 'Sin fuente'
   const hoy = hoyIso()
+  const suyos = useMemo(() => anotados(fuentes), [fuentes])
   const delMes = useMemo(() => {
-    const falta = new Map(porRecibir(movimientos, hoy).map(f => [f.id_etiqueta, f.falta]))
-    return fijos(movimientos, mes).map(f => ({ ...f, estado: estadoFijo(f, movimientos, hoy), falta: falta.get(f.id_etiqueta) ?? 0 }))
-  }, [movimientos, mes, hoy])
-  const recibido = useMemo(() => esperadoVsRecibido(movimientos, mes), [movimientos, mes])
+    const falta = new Map(porRecibir(movimientos, hoy, suyos).map(f => [f.id_etiqueta, f.falta]))
+    return fijos(movimientos, mes, suyos).map(f => ({ ...f, estado: estadoFijo(f, movimientos, hoy), falta: falta.get(f.id_etiqueta) ?? 0 }))
+  }, [movimientos, mes, hoy, suyos])
+  const recibido = useMemo(() => esperadoVsRecibido(movimientos, mes, 6, suyos), [movimientos, mes, suyos])
+  const esSuyo = (id: string) => suyos.some(f => f.id_etiqueta === id)
 
   return (
     <>
@@ -990,7 +992,7 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
           <ul className="lista">
             {delMes.map(f => (
               <li key={f.id_etiqueta} className="recibo">
-                <span>{nombre(f.id_etiqueta)}<span className="tenue"> · día {f.dia}</span></span>
+                <span>{nombre(f.id_etiqueta)}<span className="tenue"> · día {f.dia}{esSuyo(f.id_etiqueta) ? ' · anotado' : ''}</span></span>
                 <strong>{pesos(f.monto)}</strong>
                 <span className={`estado ${ESTADO_FIJO[f.estado].clase}`}>{ESTADO_FIJO[f.estado].texto}</span>
                 {f.falta > 0 && <button className="enlace" onClick={() => alLlego({ monto: f.falta, id_etiqueta: f.id_etiqueta })}>
@@ -998,7 +1000,8 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
               </li>
             ))}
           </ul>
-        ) : <p className="tenue">Un ingreso es fijo cuando llega de la misma fuente los últimos 3 meses con un monto parecido. Ponle fuente a tus ingresos para verlos aquí.</p>}
+        ) : <p className="tenue">Un ingreso es fijo cuando llega de la misma fuente los últimos {MESES_FIJO} meses con un monto parecido, o cuando lo anotas aquí.</p>}
+        {fuentes.length > 0 && <AnotarFijo fuentes={fuentes} alCambiar={alCambiar} />}
       </section>
       {recibido.some(m => m.esperado > 0) && (
         <section>
@@ -1014,6 +1017,69 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
       <Asistente idSeguimiento={idIngresos} tipo="ingreso" categorias={fuentes}
         alCrear={!puedeCrear('ingreso', fuentes.length) ? undefined : async nombre => ({ id_etiqueta: await crearEtiqueta(idIngresos, nombre), nombre, grupo: null, palabras_clave: [] })}
         alCambiar={alCambiar} />
+    </>
+  )
+}
+
+// El ingreso fijo anotado a mano: manda sobre el que aprende la app; vacío vuelve al aprendido.
+function AnotarFijo({ fuentes, alCambiar }: { fuentes: Categoria[]; alCambiar: () => Promise<void> }) {
+  const [abierto, setAbierto] = useState(false)
+  const [id, setId] = useState(fuentes[0].id_etiqueta)
+  const fuente = fuentes.find(f => f.id_etiqueta === id)
+  const [monto, setMonto] = useState(fuente?.monto_fijo ? String(fuente.monto_fijo) : '')
+  const [dia, setDia] = useState(fuente?.dia_fijo ? String(fuente.dia_fijo) : '')
+  const [error, setError] = useState('')
+  const [enviando, setEnviando] = useState(false)
+
+  function elegir(nuevo: string) {
+    const f = fuentes.find(x => x.id_etiqueta === nuevo)
+    setId(nuevo); setMonto(f?.monto_fijo ? String(f.monto_fijo) : ''); setDia(f?.dia_fijo ? String(f.dia_fijo) : ''); setError('')
+  }
+
+  async function guardar(fijo: { monto: number; dia: number } | null) {
+    setEnviando(true)
+    try {
+      await guardarFijo(id, fijo)
+      await alCambiar()
+      setAbierto(false); setError('')
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  function anotar(evento: FormEvent) {
+    evento.preventDefault()
+    const valor = leerMonto(monto)
+    const d = /^\d{1,2}$/.test(dia.trim()) ? Number(dia) : NaN
+    if (valor === null || valor <= 0) return setError(MONTO_INVALIDO)
+    if (!(d >= 1 && d <= 31)) return setError('Escribe el día de pago, de 1 a 31.')
+    void guardar({ monto: valor, dia: d })
+  }
+
+  return (
+    <>
+      <button className="secundario" aria-expanded={abierto} onClick={() => setAbierto(!abierto)}>{abierto ? 'Cerrar' : '+ Anotar un ingreso fijo'}</button>
+      {abierto && (
+        <form className="formulario" onSubmit={anotar}>
+          <label>Fuente
+            <select value={id} onChange={ev => elegir(ev.target.value)}>
+              {fuentes.map(f => <option key={f.id_etiqueta} value={f.id_etiqueta}>{f.nombre}</option>)}
+            </select>
+          </label>
+          <label>Monto del mes
+            <input required maxLength={16} value={monto} onChange={ev => setMonto(ev.target.value)} placeholder="Cuánto te llega" />
+            <small className="ayuda" aria-live="polite">{leidoDe(monto) || 'Ej.: 3 millones o 3.000.000'}</small>
+          </label>
+          <label>Día de pago<input required inputMode="numeric" maxLength={2} value={dia} onChange={ev => setDia(ev.target.value)} placeholder="1 a 31" /></label>
+          <div className="chips">
+            <button className="principal" disabled={enviando}>Guardar</button>
+            {fuente?.monto_fijo && <button type="button" className="secundario" disabled={enviando} onClick={() => void guardar(null)}>Quitar el anotado</button>}
+          </div>
+          {error && <p role="alert" className="error">{error}</p>}
+        </form>
+      )}
     </>
   )
 }

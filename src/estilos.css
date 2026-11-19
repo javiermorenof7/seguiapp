@@ -588,4 +588,10 @@ section .enlace, form .enlace, li .enlace { display: inline-flex; align-items: c
 @media (max-width: 420px) { .lista li.iguales > details { grid-row: 4; } }
 
 .resumen-salud .cifra { color: var(--salud); }
+.lista + .secundario { margin-top: 12px; }
+.calorias-cifras { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.calorias-cifras p { margin: 0; }
+.calorias .cifra-media { color: var(--salud); }
+.calorias .estado.en-meta { background: var(--en-meta); color: var(--fondo); }
+.calorias .estado.cerca { background: var(--cerca); color: var(--fondo); }
 .resumen-salud .mini-semana.en-pagina > span.lleno { background: var(--salud); color: var(--fondo); }

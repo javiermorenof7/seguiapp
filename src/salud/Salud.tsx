@@ -16,7 +16,7 @@ import { SemanaGym } from '../inicio/Minis'
 import { normalizar } from '../finanzas/parseo'
 import {
   cambioPeso, coincidencias, comparar, conPaso, conSigno, constancia, enUnidad, faltaParaMeta, fechasDeRecord, recordsSegunMeta, indicesRecord, kg, leerSerie, parecido, parteDe, pasoDe, pesoPorDia, seriesPorParte,
-  PARTES, PESO_SUPUESTO, aKg, calorias, leerCardio, minutosCardio, siSigues, progreso, restarDias, seriesDeUltima, textoSerie, textoSeries,
+  PARTES, PESO_SUPUESTO, aKg, calorias, caloriasEnTramos, cambioPorcentual, leerCardio, minutosCardio, siSigues, progreso, restarDias, seriesDeUltima, textoSerie, textoSeries,
   type Parte, type Sesion, type Unidad,
 } from './calculos'
 
@@ -328,7 +328,7 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
                   const suya = s.unidad ?? unidadDe(g.ejercicio)
                   return (
                     <FilaSimple key={s.id} fecha="" titulo={`Fila ${i + 1}`} detalle={textoSerie(actual, unidadDe(g.ejercicio))}
-                      alBorrar={() => eliminarRegistro(s.id).then(alCambiar)} sinAcciones={editando === s.id} alEditar={s.minutos ? undefined : () => setEditando(s.id)}>
+                      alBorrar={() => eliminarRegistro(s.id).then(alCambiar)} sinAcciones={editando === s.id} alEditar={() => setEditando(s.id)}>
                       {editando === s.id && (
                         <EditarSerie actual={actual} unidad={suya} alCancelar={() => setEditando(null)}
                           alGuardar={async nueva => { await corregirSerie(s.id, nueva, suya); setEditando(null); await Promise.all([cargar(), alCambiar()]) }} />
@@ -563,14 +563,17 @@ function EditarEjercicio({ nombre, parte, unidad, alGuardar, alCancelar }: {
 function EditarSerie({ actual, unidad, alGuardar, alCancelar }: {
   actual: Omit<Sesion, 'fecha'>; unidad: Unidad; alGuardar: (s: Omit<Sesion, 'fecha'>) => Promise<void>; alCancelar: () => void
 }) {
-  const [campos, setCampos] = useState({ series: String(actual.series), repeticiones: String(actual.repeticiones), peso: actual.peso === null ? '' : String(enUnidad(actual.peso, unidad)).replace('.', ',') })
+  const esCardio = !!actual.minutos
+  const decimal = (n: number | null | undefined) => n == null ? '' : String(n).replace('.', ',')
+  const [campos, setCampos] = useState({ series: String(actual.series), repeticiones: String(actual.repeticiones), peso: actual.peso === null ? '' : decimal(enUnidad(actual.peso, unidad)),
+    minutos: String(actual.minutos ?? ''), km: decimal(actual.km) })
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
 
   async function guardar(evento: FormEvent) {
     evento.preventDefault()
-    const s = leerSerie(actual.ejercicio, campos.series, campos.repeticiones, campos.peso, unidad)
-    if (!s) return setError(`Revisa: series de 1 a 100, repeticiones de 1 a 1.000 y el peso en ${unidad} (vacío si es con tu cuerpo).`)
+    const s = esCardio ? leerCardio(actual.ejercicio, campos.minutos, campos.km) : leerSerie(actual.ejercicio, campos.series, campos.repeticiones, campos.peso, unidad)
+    if (!s) return setError(esCardio ? 'Revisa: minutos de 1 a 600 y los km mayores que 0 (vacío si no los anotas).' : `Revisa: series de 1 a 100, repeticiones de 1 a 1.000 y el peso en ${unidad} (vacío si es con tu cuerpo).`)
     setEnviando(true)
     try {
       await alGuardar(s)
@@ -583,11 +586,18 @@ function EditarSerie({ actual, unidad, alGuardar, alCancelar }: {
 
   return (
     <form className="formulario corregir" onSubmit={guardar}>
+      {esCardio ? (
+      <div className="campos campos-serie">
+        <label>Minutos<input required inputMode="numeric" maxLength={3} value={campos.minutos} onChange={ev => setCampos({ ...campos, minutos: ev.target.value })} /></label>
+        <label>Km<input inputMode="decimal" maxLength={6} value={campos.km} placeholder="Opcional" onChange={ev => setCampos({ ...campos, km: ev.target.value })} /></label>
+      </div>
+      ) : (
       <div className="campos campos-serie">
         <label>Series<input required inputMode="numeric" maxLength={3} value={campos.series} onChange={ev => setCampos({ ...campos, series: ev.target.value })} /></label>
         <label>Repeticiones<input required inputMode="numeric" maxLength={4} value={campos.repeticiones} onChange={ev => setCampos({ ...campos, repeticiones: ev.target.value })} /></label>
         <label>{unidad === 'lb' ? 'Libras' : 'Kilos'}<input inputMode="decimal" maxLength={8} value={campos.peso} placeholder="Peso de la máquina" onChange={ev => setCampos({ ...campos, peso: ev.target.value })} /></label>
       </div>
+      )}
       <div className="chips">
         <button className="principal" disabled={enviando}>Guardar</button>
         <button type="button" className="secundario" onClick={alCancelar}>Cancelar</button>
@@ -702,18 +712,10 @@ function ResumenSalud({ sesiones, hoy, metaDias, ejercicios, fichas, medidas, re
               {semana.length > 0 && <SemanaGym semana={semana} meta={meta && r.hasta >= hoy ? meta : null} enPagina />}
               <p className="tenue">{[`${series} ${series === 1 ? 'serie' : 'series'}`, cardio > 0 && `${cardio} min de cardio`, `${recordsEnRango} ${recordsEnRango === 1 ? 'récord' : 'récords'}`,
                 ultimoPeso && peso && `Peso ${formatoValor('numero', ultimoPeso.valor, peso.unidad)}`].filter(Boolean).join(' · ')}</p>
-              {kcal.total > 0 && (
-                <>
-                  <p>≈ <strong>{kcal.total.toLocaleString('es-CO')} kcal</strong> <span className="tenue">quemadas {cuando}</span></p>
-                  <details className="de-donde">
-                    <summary className="enlace">¿De dónde sale?</summary>
-                    <p className="tenue">{kcal.pesas.toLocaleString('es-CO')} kcal de pesas (unos 2,5 minutos por serie con su descanso) y {kcal.cardio.toLocaleString('es-CO')} de cardio según su tipo,
-                      con {kcal.supuesto ? `${PESO_SUPUESTO} kg porque aún no anotas tu peso en Cuerpo` : `tu peso de ${formatoValor('numero', ultimoPeso!.valor, peso!.unidad)}`}. Es un aproximado.</p>
-                  </details>
-                </>
-              )}
             </div>
           </section>
+          {kcal.total > 0 && <Calorias sesiones={sesiones} hoy={hoy} ventana={ventana} kilos={kilosPersona}
+            peso={ultimoPeso && peso ? formatoValor('numero', ultimoPeso.valor, peso.unidad) : null} />}
           <QueTrabaje sesiones={sesiones} hoy={hoy} ventana={ventana} parteDe={parteDeEjercicio} />
           {/* en la semana la tira de días ya dice cuándo entrenaste */}
           {ventana.escala !== 'semana' && <Constancia sesiones={sesiones} hoy={hoy} ventana={ventana} alVer={() => alVer('gym')} />}
@@ -729,6 +731,51 @@ function ResumenSalud({ sesiones, hoy, metaDias, ejercicios, fichas, medidas, re
       <CuerpoHoy medidas={medidas} registros={registros} ventana={ventana} hoy={hoy} alVer={() => alVer('cuerpo')} />
       {sesiones.length > 0 && <Impacto sesiones={sesiones} hoy={hoy} metaDias={metaDias} />}
     </>
+  )
+}
+
+const ANTES = { semana: 'la semana pasada', mes: 'el mes pasado', ano: 'el año pasado' }
+const DIAS_CORTOS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb']
+
+// Calorías día a día (mes a mes en el año), pesas y cardio apiladas, con el mejor día y el cambio frente al período anterior a la misma altura.
+function Calorias({ sesiones, hoy, ventana, kilos, peso }: { sesiones: Sesion[]; hoy: string; ventana: Ventana; kilos: number | null; peso: string | null }) {
+  const r = rangoDe(ventana.escala, ventana.ancla)
+  const enAno = ventana.escala === 'ano'
+  const tramos = useMemo(() => enAno
+    ? Array.from({ length: 12 }, (_, m) => ({ desde: `${r.desde.slice(0, 4)}-${String(m + 1).padStart(2, '0')}-01`, hasta: new Date(Date.UTC(+r.desde.slice(0, 4), m + 1, 0)).toISOString().slice(0, 10) }))
+    : Array.from({ length: Math.round((Date.parse(r.hasta) - Date.parse(r.desde)) / 86400000) + 1 }, (_, i) => { const d = restarDias(r.desde, -i); return { desde: d, hasta: d } }),
+  [enAno, r.desde, r.hasta])
+  const kcal = calorias(sesiones, r.desde, r.hasta, hoy, kilos)
+  const porTramo = useMemo(() => caloriasEnTramos(sesiones, tramos, hoy, kilos), [sesiones, tramos, hoy, kilos])
+  // en curso se compara con lo que llevaba el período anterior el mismo día; si ya pasó, con todo el anterior
+  const previo = rangoDe(ventana.escala, mover(ventana.escala, ventana.ancla, -1))
+  const corte = r.hasta >= hoy ? restarDias(previo.desde, -Math.round((Date.parse(hoy) - Date.parse(r.desde)) / 86400000)) : previo.hasta
+  const cambio = cambioPorcentual(kcal.total, calorias(sesiones, previo.desde, corte < previo.hasta ? corte : previo.hasta, hoy, kilos).total)
+  const etiquetas = tramos.map(t => enAno ? MESES[Number(t.desde.slice(5, 7)) - 1] : ventana.escala === 'semana' ? DIAS_CORTOS[new Date(`${t.desde}T12:00:00Z`).getUTCDay()] : String(Number(t.desde.slice(8, 10))))
+  const titulos = tramos.map((t, i) => enAno ? `${etiquetas[i]} ${t.desde.slice(0, 4)}` : `${DIAS_CORTOS[new Date(`${t.desde}T12:00:00Z`).getUTCDay()]} ${diaMes(t.desde)}`)
+  const mejor = porTramo.reduce((m, c, i) => c && c.total > (porTramo[m]?.total ?? 0) ? i : m, 0)
+  const series = useMemo(() => [
+    { nombre: 'Pesas', datos: porTramo.map(c => c && c.pesas), color: cssVar('--salud') },
+    ...(kcal.cardio ? [{ nombre: 'Cardio', datos: porTramo.map(c => c && c.cardio), color: cssVar('--c1') }] : []),
+  ], [porTramo, kcal.cardio])
+  const cuando = enPeriodo(ventana, hoy)
+  return (
+    <section className="calorias" aria-label="Calorías quemadas">
+      <h2>Calorías quemadas</h2>
+      <div className="calorias-cifras">
+        <p><strong className="cifra-media">≈ {kcal.total.toLocaleString('es-CO')}</strong> <span className="tenue">kcal {cuando}</span></p>
+        {cambio !== null && <span className={`estado ${cambio >= 0 ? 'en-meta' : 'cerca'}`}>{cambio >= 0 ? '▲' : '▼'} {Math.abs(cambio)} % que {ANTES[ventana.escala]}{r.hasta >= hoy ? ' a esta altura' : ''}</span>}
+      </div>
+      {porTramo[mejor]?.total ? <p className="tenue">{enAno ? 'Tu mejor mes' : 'Tu mejor día'}: <strong>{titulos[mejor]}</strong> con {porTramo[mejor]!.total.toLocaleString('es-CO')} kcal</p> : null}
+      <Barras etiquetas={etiquetas} series={series} apilado leyenda={series.length > 1} dias={{ titulos }}
+        formato={v => `${Math.round(v).toLocaleString('es-CO')} kcal`} formatoEje={v => v.toLocaleString('es-CO')} colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
+        descripcion={`Calorías por ${enAno ? 'mes' : 'día'} (${r.titulo}): ${porTramo.map((c, i) => c?.total ? `${titulos[i]} ${c.total}` : '').filter(Boolean).join(', ')}`} />
+      <details className="de-donde">
+        <summary className="enlace">¿De dónde sale?</summary>
+        <p className="tenue">{kcal.pesas.toLocaleString('es-CO')} kcal de pesas (unos 2,5 minutos por serie con su descanso) y {kcal.cardio.toLocaleString('es-CO')} de cardio según su tipo,
+          con {peso ? `tu peso de ${peso}` : `${PESO_SUPUESTO} kg porque aún no anotas tu peso en Cuerpo`}. Es un aproximado.</p>
+      </details>
+    </section>
   )
 }
 

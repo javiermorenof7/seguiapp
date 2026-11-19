@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNo
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 import {
-  asegurarPerfil, cerrarSesion, eliminarRegistro, enviarCola, obtenerMetasAhorro, obtenerPlantillasActivas, obtenerTareas, obtenerPrestamos, obtenerRecibos, obtenerRegistros,
+  asegurarPerfil, cerrarSesion, eliminarRegistro, enviarCola, obtenerFijosAnotados, obtenerMetasAhorro, obtenerPlantillasActivas, obtenerTareas, obtenerPrestamos, obtenerRecibos, obtenerRegistros,
   obtenerSeguimientos, registrar, soyAdministrador, type RegistroGuardado, type Seguimiento,
 } from './datos'
 import {
@@ -27,6 +27,7 @@ import { recibosDelMes } from './finanzas/estadoRecibos'
 import { amortizacion, estadoPrestamo } from './finanzas/prestamos'
 import { metaProxima } from './finanzas/metas'
 import { conSigno, estadoSemana } from './salud/calculos'
+import type { Fijo } from './finanzas/ingresos'
 import { activos, moduloDe, MODULOS, resumenFinanzas, resumenHabitos, resumenSalud, type Modulo } from './inicio/resumenes'
 import { activarModulos, Bienvenida, COLOR, Crear, NOMBRE, QUE_MIDE, type Destino } from './inicio/Crear'
 import { AgendaHoy, EntroSalio, HabitosHoy, SemanaGym, TareasHoy, type ItemAgenda } from './inicio/Minis'
@@ -243,7 +244,8 @@ function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, al
   alAbrir: (id: string) => void
 }) {
   const hoy = hoyIso()
-  const finanzas = useMemo(() => seguimientos && resumenFinanzas(seguimientos, registros, hoy), [seguimientos, registros, hoy])
+  const [suyos, setSuyos] = useState<Fijo[]>([])
+  const finanzas = useMemo(() => seguimientos && resumenFinanzas(seguimientos, registros, hoy, suyos), [seguimientos, registros, hoy, suyos])
   const salud = useMemo(() => seguimientos && resumenSalud(seguimientos, registros, hoy), [seguimientos, registros, hoy])
   const habitos = useMemo(() => seguimientos && resumenHabitos(seguimientos, registros, hoy), [seguimientos, registros, hoy])
   const otros = useMemo(() => (seguimientos ?? []).filter(s => !moduloDe(s.codigo_plantilla))
@@ -287,6 +289,7 @@ function Inicio({ seguimientos, registros, activos, alCrear, alActivar, alIr, al
       const estados = d.prestamos.map(p => estadoPrestamo(amortizacion(p, d.movimientos.filter(m => m.id_prestamo === p.id_prestamo)).filas, hoy).estado)
       setCuotas({ pendientes: estados.filter(e => e === 'pendiente').length, atrasadas: estados.filter(e => e === 'atrasada').length, total: estados.length })
     }).catch(() => setCuotas(null))
+    obtenerFijosAnotados().then(setSuyos).catch(() => setSuyos([]))
     if (idAhorro) obtenerMetasAhorro(idAhorro).then(d => setMeta(metaProxima(d.metas, d.ahorros.map(r =>
       ({ fecha: r.fecha, valor: r.valor, tipo: 'ahorro' as const, id_etiqueta: r.id_etiqueta })), hoy))).catch(() => setMeta(null))
   }, [conFinanzas, registros, hoy, idAhorro])

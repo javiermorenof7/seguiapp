@@ -1,5 +1,6 @@
-// Ingresos por fuente (etiqueta de Ingresos) y los fijos aprendidos de los últimos 3 meses. "mes" es 'AAAA-MM', "hoy" 'AAAA-MM-DD'.
+// Ingresos por fuente (etiqueta de Ingresos) y los fijos: los que se anotan a mano y los aprendidos de los últimos 2 meses. "mes" es 'AAAA-MM', "hoy" 'AAAA-MM-DD'.
 import { mesDe, mesesAntes, type Movimiento } from './calculos'
+import type { Categoria } from './parseo'
 
 export type EstadoFijo = 'recibido' | 'pendiente' | 'atrasado'
 export interface Fijo { id_etiqueta: string; monto: number; dia: number }
@@ -9,9 +10,15 @@ const GRACIA_DIAS = 3
 const mediana = (v: number[]) => [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)]
 const diasDelMes = (mes: string) => new Date(Date.UTC(+mes.slice(0, 4), +mes.slice(5, 7), 0)).getUTCDate()
 
-// Fija si llegó en cada uno de los 3 meses anteriores con una diferencia de hasta 10 %.
-export function fijos(movimientos: Movimiento[], mes: string): Fijo[] {
-  const meses = [1, 2, 3].map(n => mesesAntes(mes, n))
+export const MESES_FIJO = 2
+
+// Los fijos que se anotaron a mano en las fuentes.
+export const anotados = (fuentes: Categoria[]): Fijo[] =>
+  fuentes.flatMap(f => f.monto_fijo && f.dia_fijo ? [{ id_etiqueta: f.id_etiqueta, monto: f.monto_fijo, dia: f.dia_fijo }] : [])
+
+// Fija si llegó en cada uno de los 2 meses anteriores con una diferencia de hasta 10 %; el anotado a mano manda sobre el aprendido.
+export function fijos(movimientos: Movimiento[], mes: string, suyos: Fijo[] = []): Fijo[] {
+  const meses = Array.from({ length: MESES_FIJO }, (_, i) => mesesAntes(mes, i + 1))
   const porFuente = new Map<string, Map<string, { total: number; dia: number }>>()
   for (const m of movimientos) {
     if (m.tipo !== 'ingreso' || !m.id_etiqueta || !meses.includes(mesDe(m.fecha))) continue
@@ -20,12 +27,13 @@ export function fijos(movimientos: Movimiento[], mes: string): Fijo[] {
     delaFuente.set(mesDe(m.fecha), { total: actual.total + m.valor, dia: Math.min(actual.dia, +m.fecha.slice(8, 10)) })
     porFuente.set(m.id_etiqueta, delaFuente)
   }
-  return [...porFuente].flatMap(([id_etiqueta, porMes]) => {
-    if (porMes.size < 3) return []
+  const conSuyo = new Set(suyos.map(f => f.id_etiqueta))
+  return [...suyos, ...[...porFuente].flatMap(([id_etiqueta, porMes]) => {
+    if (porMes.size < MESES_FIJO || conSuyo.has(id_etiqueta)) return []
     const totales = [...porMes.values()].map(x => x.total)
     if (Math.max(...totales) > Math.min(...totales) * (1 + TOLERANCIA)) return []
     return [{ id_etiqueta, monto: Math.round(mediana(totales)), dia: mediana([...porMes.values()].map(x => x.dia)) }]
-  })
+  })]
 }
 
 const llegoDe = (fijo: Fijo, movimientos: Movimiento[], mes: string) =>
@@ -40,15 +48,15 @@ export function estadoFijo(fijo: Fijo, movimientos: Movimiento[], hoy: string): 
 }
 
 // Lo que falta de cada fijo que aún no llega en el mes de "hoy": no entra al saldo, solo se muestra aparte.
-export function porRecibir(movimientos: Movimiento[], hoy: string) {
+export function porRecibir(movimientos: Movimiento[], hoy: string, suyos: Fijo[] = []) {
   const mes = mesDe(hoy)
-  return fijos(movimientos, mes).flatMap(f => yaLlego(f, movimientos, mes) ? [] : [{ ...f, falta: f.monto - llegoDe(f, movimientos, mes) }])
+  return fijos(movimientos, mes, suyos).flatMap(f => yaLlego(f, movimientos, mes) ? [] : [{ ...f, falta: f.monto - llegoDe(f, movimientos, mes) }])
 }
 
 // Fuente del fijo que aún no llega ese mes y cuyo faltante se parece (±10 %) a un ingreso del banco, en pesos.
 // shortcut: una quincena suelta no se reconoce (vale la mitad del faltante), si hace falta comparar también contra monto / 2.
-export function fuenteDeFijo(movimientos: Movimiento[], fecha: string, valor: number): string | null {
-  const falta = porRecibir(movimientos, fecha).find(f => Math.abs(valor - f.falta) <= f.falta * TOLERANCIA)
+export function fuenteDeFijo(movimientos: Movimiento[], fecha: string, valor: number, suyos: Fijo[] = []): string | null {
+  const falta = porRecibir(movimientos, fecha, suyos).find(f => Math.abs(valor - f.falta) <= f.falta * TOLERANCIA)
   return falta?.id_etiqueta ?? null
 }
 
@@ -67,9 +75,9 @@ export function porFuente(movimientos: Movimiento[], mes: string, n = 6) {
 }
 
 // Lo esperado (fijos aprendidos hasta ese mes) frente a lo recibido de esas fuentes, mes a mes.
-export function esperadoVsRecibido(movimientos: Movimiento[], mes: string, n = 6) {
+export function esperadoVsRecibido(movimientos: Movimiento[], mes: string, n = 6, suyos: Fijo[] = []) {
   return Array.from({ length: n }, (_, i) => mesesAntes(mes, n - 1 - i)).map(m => {
-    const delMes = fijos(movimientos, m)
+    const delMes = fijos(movimientos, m, suyos)
     const ids = new Set(delMes.map(f => f.id_etiqueta))
     return {
       mes: m,

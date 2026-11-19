@@ -742,9 +742,11 @@ function Calorias({ sesiones, hoy, ventana, kilos, peso }: { sesiones: Sesion[];
   const r = rangoDe(ventana.escala, ventana.ancla)
   const enAno = ventana.escala === 'ano'
   const tramos = useMemo(() => enAno
+    // año en celular: los últimos 6 meses que ya empezaron, como en "¿Cuánto entrené?"
     ? Array.from({ length: 12 }, (_, m) => ({ desde: `${r.desde.slice(0, 4)}-${String(m + 1).padStart(2, '0')}-01`, hasta: new Date(Date.UTC(+r.desde.slice(0, 4), m + 1, 0)).toISOString().slice(0, 10) }))
+      .filter((t, _, todos) => !matchMedia('(max-width: 560px)').matches || (t.desde <= hoy && todos.filter(x => x.desde <= hoy).slice(-6).includes(t)))
     : Array.from({ length: Math.round((Date.parse(r.hasta) - Date.parse(r.desde)) / 86400000) + 1 }, (_, i) => { const d = restarDias(r.desde, -i); return { desde: d, hasta: d } }),
-  [enAno, r.desde, r.hasta])
+  [enAno, r.desde, r.hasta, hoy])
   const kcal = calorias(sesiones, r.desde, r.hasta, hoy, kilos)
   const porTramo = useMemo(() => caloriasEnTramos(sesiones, tramos, hoy, kilos), [sesiones, tramos, hoy, kilos])
   // en curso se compara con lo que llevaba el período anterior el mismo día; si ya pasó, con todo el anterior

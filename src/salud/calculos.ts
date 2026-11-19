@@ -4,7 +4,8 @@ import { normalizar } from '../finanzas/parseo'
 import { formatoValor } from '../indicadores'
 
 // unidad: en la que se escribió la serie; vacía en las anteriores, que se ven en la unidad del ejercicio
-export interface Sesion { fecha: string; ejercicio: string; series: number; repeticiones: number; peso: number | null; unidad?: Unidad | null }
+// cardio: minutos (y km si se anotaron), con series y repeticiones en 0
+export interface Sesion { fecha: string; ejercicio: string; series: number; repeticiones: number; peso: number | null; unidad?: Unidad | null; minutos?: number | null; km?: number | null }
 export interface Medicion { fecha: string; valor: number }
 
 const NUMERO = String.raw`\d+(?:[.,]\d+)?`
@@ -30,7 +31,7 @@ export const PARTES = {
 export type Parte = keyof typeof PARTES
 // Del más específico al más general: "press francés" es tríceps antes que "press" sea pecho, "curl femoral" es piernas antes que bíceps.
 const PISTAS: [Parte, RegExp][] = [
-  ['cardio', /cardio|caminadora|trotadora|bicicleta|eliptica|trote|correr|escaladora/],
+  ['cardio', /cardio|caminadora|trotadora|bicicleta|eliptica|trote|correr|escaladora|escalera|cinta|spinning|remo ergometro|caminar/],
   ['pantorrillas', /pantorrilla|gemelo|talon/],
   ['triceps', /tricep|frances|copa|rompecraneo/],
   ['gluteos', /gluteo|hip thrust|patada|puente/],
@@ -134,7 +135,9 @@ export function textoSeries(series: Omit<Sesion, 'fecha' | 'ejercicio'>[], unida
 }
 
 // Una serie como se lee en el gimnasio: "60 kg × 10"; las viejas que juntaban varias series, "4 × 10 · 60 kg".
-export const textoSerie = (s: Omit<Sesion, 'fecha' | 'ejercicio'>, unidad: Unidad = 'kg') => s.series === 1
+export const textoSerie = (s: Omit<Sesion, 'fecha' | 'ejercicio'>, unidad: Unidad = 'kg') => s.minutos
+  ? `${s.minutos} min${s.km ? ` · ${numero(s.km)} km` : ''}`
+  : s.series === 1
   ? `${s.peso === null ? 'Tu cuerpo' : kg(s.peso, s.unidad ?? unidad)} × ${s.repeticiones}`
   : `${s.series} × ${s.repeticiones}${s.peso === null ? '' : ` · ${kg(s.peso, s.unidad ?? unidad)}`}`
 
@@ -151,11 +154,11 @@ export function sesionesPorDia(sesiones: Sesion[], ejercicio: string, n = 3) {
 // La última sesión para precargar el formulario: las series seguidas iguales van juntas en una fila ("4 × 10 · 60 kg").
 export function seriesDeUltima(sesiones: Sesion[], ejercicio: string) {
   const [dia] = sesionesPorDia(sesiones, ejercicio, 1)
-  const filas: { series: number; repeticiones: number; peso: number | null; unidad?: Unidad | null }[] = []
+  const filas: { series: number; repeticiones: number; peso: number | null; unidad?: Unidad | null; minutos?: number | null; km?: number | null }[] = []
   for (const s of dia?.series ?? []) {
     const ultima = filas[filas.length - 1]
-    if (ultima && ultima.repeticiones === s.repeticiones && ultima.peso === s.peso) ultima.series += s.series
-    else filas.push({ series: s.series, repeticiones: s.repeticiones, peso: s.peso, unidad: s.unidad })
+    if (ultima && !s.minutos && ultima.repeticiones === s.repeticiones && ultima.peso === s.peso) ultima.series += s.series
+    else filas.push({ series: s.series, repeticiones: s.repeticiones, peso: s.peso, unidad: s.unidad, minutos: s.minutos, km: s.km })
   }
   return filas
 }
@@ -248,3 +251,16 @@ export function seriesPorParte(sesiones: Sesion[], parteDeEjercicio: (ejercicio:
   }
   return [...total].map(([parte, series]) => ({ parte, series })).sort((a, b) => b.series - a.series)
 }
+
+// Cardio: minutos de 1 a 600 y km opcionales (hasta 200), con coma o punto.
+export function leerCardio(ejercicio: string, minutos: string, km: string): Omit<Sesion, 'fecha'> | null {
+  const nombre = normalizar(ejercicio)
+  const m = /^\d+$/.test(minutos.trim()) ? Number(minutos) : NaN
+  const k = km.trim() ? aNumero(km.trim()) : null
+  if (!nombre || nombre.length > 60 || !(m >= 1 && m <= 600) || (k !== null && !(k > 0 && k <= 200))) return null
+  return { ejercicio: nombre, series: 0, repeticiones: 0, peso: null, minutos: m, km: k === null ? null : Math.round(k * 100) / 100 }
+}
+
+// Minutos de cardio en el rango.
+export const minutosCardio = (sesiones: Sesion[], desde: string, hasta: string, hoy: string) =>
+  sesiones.reduce((t, s) => t + (s.minutos && s.fecha >= desde && s.fecha <= hasta && s.fecha <= hoy ? s.minutos : 0), 0)

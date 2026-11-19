@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  aKg, anteriorDe, cambioPeso, coincidencias, comparar, fechasDeRecord, recordsSegunMeta, constancia, seriesPorDia, diasEntrenados, faltaParaMeta, estadoSemana, leerSerie, conPaso, textoSeries, parecido, parteDe, enUnidad, pesoPorDia, progreso, seriesDeUltima, seriesPorParte, sesionesPorDia, sugerencia, textoSerie, type Sesion,
+  aKg, anteriorDe, cambioPeso, coincidencias, comparar, fechasDeRecord, recordsSegunMeta, constancia, seriesPorDia, diasEntrenados, faltaParaMeta, estadoSemana, leerSerie, conPaso, textoSeries, parecido, parteDe, enUnidad, pesoPorDia, leerCardio, minutosCardio, progreso, seriesDeUltima, seriesPorParte, sesionesPorDia, sugerencia, textoSerie, type Sesion,
 } from './calculos'
 
 const s = (fecha: string, ejercicio: string, series: number, repeticiones: number, peso: number | null): Sesion =>
@@ -205,5 +205,21 @@ describe('seriesPorParte', () => {
       s('2026-11-16', 'Press banca', 3, 10, 60), s('2026-11-10', 'Sentadilla', 9, 8, 80), s('2026-11-19', 'Press banca', 9, 10, 60)]
     expect(seriesPorParte(sesiones, parteDe, '2026-11-16', '2026-11-22', '2026-11-18')).toEqual([
       { parte: 'pecho', series: 7 }, { parte: 'piernas', series: 5 }, { parte: null, series: 2 }])
+  })
+})
+
+describe('cardio en minutos', () => {
+  it('lee minutos y km opcionales, y rechaza lo que no cabe', () => {
+    expect(leerCardio('Cinta', '30', '')).toMatchObject({ ejercicio: 'cinta', minutos: 30, km: null, peso: null, series: 0 })
+    expect(leerCardio('Cinta', '30', '4,25')).toMatchObject({ minutos: 30, km: 4.25 })
+    expect(leerCardio('Cinta', '0', '')).toBeNull()
+    expect(leerCardio('Cinta', '30', 'mucho')).toBeNull()
+  })
+  it('se lee en minutos, suma aparte de las series y se repite como la última vez', () => {
+    const cinta = { fecha: '2026-11-18', ejercicio: 'Cinta', series: 0, repeticiones: 0, peso: null, minutos: 30, km: 4.2 }
+    expect(textoSerie(cinta)).toBe('30 min · 4,2 km')
+    expect(parteDe('Escalera')).toBe('cardio')
+    expect(minutosCardio([cinta, { ...cinta, fecha: '2026-11-10' }, s('2026-11-18', 'Press banca', 3, 10, 60)], '2026-11-16', '2026-11-22', '2026-11-19')).toBe(30)
+    expect(seriesDeUltima([cinta], 'Cinta')).toEqual([expect.objectContaining({ minutos: 30, km: 4.2 })])
   })
 })

@@ -38,12 +38,14 @@ async function enviar(suscripciones: Suscripcion[], aviso: Aviso) {
   let entregados = 0
   for (const s of suscripciones) {
     try {
-      await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.llave_p256dh, auth: s.llave_auth } }, JSON.stringify(aviso), { TTL: 3600 })
+      await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.llave_p256dh, auth: s.llave_auth } }, JSON.stringify(aviso), { TTL: 86400 })
       entregados++
       await base.from('suscripcion_push').update({ fecha_ultimo_envio: new Date().toISOString() }).eq('id_suscripcion_push', s.id_suscripcion_push)
     } catch (e) {
-      // shortcut: los equipos que ya no existen (404/410) no se borran solos; se quitan desde la app o al cerrar sesión.
-      console.log('aviso no entregado', (e as { statusCode?: number }).statusCode ?? 'error')
+      const estado = (e as { statusCode?: number }).statusCode
+      // 404/410: el equipo ya no existe; la app vuelve a suscribirlo al abrirse si la persona sigue queriendo avisos.
+      if (estado === 404 || estado === 410) await base.from('suscripcion_push').delete().eq('id_suscripcion_push', s.id_suscripcion_push)
+      console.log('aviso no entregado', estado ?? 'error')
     }
   }
   return entregados

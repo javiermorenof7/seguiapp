@@ -18,6 +18,7 @@ import Salud from './salud/Salud'
 import Habitos from './habitos/Habitos'
 import Tareas from './tareas/Tareas'
 import Avisos from './avisos/Avisos'
+import { renovarAvisos } from './avisos/suscripcion'
 import MisDatos from './misdatos/MisDatos'
 import Administrar from './misdatos/Administrar'
 import { aTiempoSemana, deHoy, fechaColombia, hora12, sumarDias } from './tareas/calculos'
@@ -155,6 +156,8 @@ function Panel({ sesion, alPrivacidad, alInstalar }: { sesion: Session; alPrivac
     }
   }, [])
 
+  useEffect(() => { renovarAvisos(sesion.user.id).catch(() => {}) }, [sesion.user.id])
+
   useEffect(() => {
     asegurarPerfil(nombre).catch(() => {}).then(() => enviarCola()).then(cargar)
     const alVolverConexion = () => { enviarCola().then(n => { if (n) cargar() }) }
@@ -187,7 +190,7 @@ function Panel({ sesion, alPrivacidad, alInstalar }: { sesion: Session; alPrivac
           alVolver={alInicio} alCambiar={cargar} />
       )}
       {vista.tipo === 'tareas' && <Tareas abrir={vista.abrir} alVolver={alInicio} />}
-      {vista.tipo === 'avisos' && <Avisos alVolver={alInicio} alInstalar={alInstalar} />}
+      {vista.tipo === 'avisos' && <Avisos idUsuario={sesion.user.id} alVolver={alInicio} alInstalar={alInstalar} />}
       {vista.tipo === 'misdatos' && <MisDatos alVolver={alInicio} />}
       {vista.tipo === 'administrar' && administrador && <Administrar alVolver={alInicio} />}
       {vista.tipo === 'detalle' && actual && !moduloDe(actual.codigo_plantilla) && (

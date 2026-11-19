@@ -31,8 +31,10 @@ self.addEventListener('fetch', evento => {
 })
 
 // Avisos: el texto llega cifrado desde la función de Supabase; al tocarlo abre (o enfoca) la app en la pantalla del aviso.
+// Siempre muestra algo: iOS quita el permiso a la app si recibe avisos que no se muestran.
 self.addEventListener('push', evento => {
-  const aviso = evento.data ? evento.data.json() : { titulo: 'seguiapp', cuerpo: 'Tienes un aviso.', abrir: '/' }
+  let aviso = { titulo: 'seguiapp', cuerpo: 'Tienes un aviso.', abrir: '/' }
+  try { aviso = { ...aviso, ...evento.data.json() } } catch { /* sin datos legibles va el aviso genérico */ }
   evento.waitUntil(self.registration.showNotification(aviso.titulo, {
     body: aviso.cuerpo, icon: 'icono.svg', badge: 'icono.svg', data: { abrir: aviso.abrir },
   }))

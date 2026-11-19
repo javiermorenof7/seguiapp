@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { enviarAvisoPrueba, guardarPreferenciaAviso, guardarSuscripcion, obtenerAvisos, obtenerMarcas, obtenerSeguimientos, quitarSuscripcion } from '../datos'
+import { enviarAvisoPrueba, guardarPreferenciaAviso, obtenerAvisos, obtenerMarcas, obtenerSeguimientos, quitarSuscripcion } from '../datos'
 import { horaColombia, moduloDe, MODULOS, porQue, ritmo, type Marca, type Modulo } from './ritmo'
-import { LLAVE_PUBLICA_VAPID } from './llave'
+import { recordarAvisos, soportaPush, suscribir, suscripcionActual } from './suscripcion'
 import { equipoDe, estaInstalada } from '../equipo'
 import type { Repeticion } from '../tareas/calculos'
 import { PREFERENCIA_INICIAL, TIPOS_RECORDATORIO, type PreferenciaAviso } from './reglas'
@@ -13,22 +13,8 @@ type EstadoEquipo = 'sin_soporte' | 'instalar' | 'bloqueado' | 'apagado' | 'acti
 const NOMBRE_MODULO: Record<Modulo, string> = { gastos: 'Gastos', gym: 'Gym', habitos: 'Hábitos' }
 const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 const TIPO: Record<Repeticion, string> = { unico: 'Una vez', diario: 'Cada día', habiles: 'Lunes a viernes', semanal: 'Cada semana', mensual: 'Cada mes' }
-const soportaPush = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
-const nombreEquipo = () => {
-  const equipo = equipoDe(navigator.userAgent, navigator.maxTouchPoints)
-  return equipo === 'iphone' ? 'iPhone' : equipo === 'android' ? 'Android' : 'Computador'
-}
-// La llave VAPID viaja en base64 url; pushManager la pide en bytes.
-const enBytes = (b64: string) => Uint8Array.from(atob(b64.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - b64.length % 4) % 4)), c => c.charCodeAt(0))
-const enBase64 = (buffer: ArrayBuffer | null) => btoa(String.fromCharCode(...new Uint8Array(buffer ?? new ArrayBuffer(0))))
 
-async function suscripcionActual() {
-  if (!soportaPush()) return null
-  const registro = await navigator.serviceWorker.getRegistration()
-  return registro ? registro.pushManager.getSubscription() : null
-}
-
-export default function Avisos({ alVolver, alInstalar }: { alVolver: () => void; alInstalar: () => void }) {
+export default function Avisos({ idUsuario, alVolver, alInstalar }: { idUsuario: string; alVolver: () => void; alInstalar: () => void }) {
   const [preferencia, setPreferencia] = useState<Preferencia | null>(null)
   // el ritmo que aprendió la app de cada módulo que usa la persona (para "por qué me llega")
   const [ritmos, setRitmos] = useState<[Modulo, string][]>([])
@@ -78,15 +64,15 @@ export default function Avisos({ alVolver, alInstalar }: { alVolver: () => void;
 
   const activarEquipo = () => hacer(async () => {
     if (await Notification.requestPermission() !== 'granted') { await revisarEquipo(); throw new Error('Sin tu permiso este equipo no puede recibir avisos.') }
-    const registro = await navigator.serviceWorker.ready
-    const s = await registro.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: enBytes(LLAVE_PUBLICA_VAPID) })
-    await guardarSuscripcion({ endpoint: s.endpoint, llave_p256dh: enBase64(s.getKey('p256dh')), llave_auth: enBase64(s.getKey('auth')), nombre_equipo: nombreEquipo() })
+    await suscribir()
+    recordarAvisos(idUsuario, true)
     if (!guardada && preferencia) { await guardarPreferenciaAviso(preferencia); setGuardada(true) }
     setOtros(otros + 1)
     setEquipo('activo')
   }, 'Listo: este equipo recibirá tus avisos.')
 
   const desactivarEquipo = () => hacer(async () => {
+    recordarAvisos(idUsuario, false)
     const s = await suscripcionActual()
     if (s) {
       await quitarSuscripcion(s.endpoint)

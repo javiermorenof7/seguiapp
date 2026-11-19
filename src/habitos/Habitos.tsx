@@ -216,7 +216,7 @@ export default function Habitos({ seguimientos, registros, enfocar, alVolver, al
               {habitos.map(h => {
                 const suyas = marcas.get(h.id_seguimiento) ?? []
                 return (
-                  <li key={h.id_seguimiento} className="dos">
+                  <li key={h.id_seguimiento} className="dos habito">
                     <span>{h.nombre} <span className="tenue">· {delDia(h, suyas, hoy) ?? 'pendiente'}</span></span>
                     <span>racha <strong>{dias(racha(suyas, hoy, metaDe(h)))}</strong> <span className="tenue">· mejor {dias(mejorRacha(suyas, metaDe(h)))}</span>
                       {' '}<button className="enlace" aria-expanded={renombrando?.id === h.id_seguimiento}

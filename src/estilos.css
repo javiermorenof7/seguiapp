@@ -546,6 +546,7 @@ section .enlace, form .enlace, li .enlace { display: inline-flex; align-items: c
 .lista li.recibo:has(> form.corregir), .lista li.ultimo:has(> form.corregir) { display: grid; }
 .formulario { grid-template-columns: minmax(0, 1fr); }
 .lista li.dos > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 420px) { .lista li.dos.habito { grid-template-columns: 1fr; gap: 4px; } }
 
 .como-funciona { margin: -8px 0 16px; }
 .como-funciona .enlace { min-height: 44px; }

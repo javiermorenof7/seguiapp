@@ -7,6 +7,7 @@ import type { PagoRecibo, Recibo } from './finanzas/calculos'
 import type { PagoGuardado, ReciboVisible } from './finanzas/estadoRecibos'
 import type { MovimientoPrestamo, Prestamo } from './finanzas/prestamos'
 import type { MetaAhorro } from './finanzas/metas'
+import { anotados, type Adicional } from './finanzas/ingresos'
 import type { Recordatorio, Tarea } from './tareas/calculos'
 import type { PreferenciaAviso } from './avisos/reglas'
 
@@ -206,7 +207,7 @@ export interface Presupuesto { id_meta: string; id_etiqueta: string; valor: numb
 // Lo que necesita la pantalla Finanzas además de los registros: categorías de Gastos, fuentes de Ingresos, presupuestos,
 // lo aprendido y los recibos con sus pagos de los últimos 4 meses (para los pendientes).
 export async function obtenerFinanzas(idGastos: string, desdePagos: string, idIngresos?: string) {
-  const etiquetas = (id: string) => supabase.from('etiqueta').select('id_etiqueta, nombre, grupo, palabras_clave, monto_fijo, dia_fijo, fecha_fijo_desde, sin_ingreso_fijo, historial_fijo')
+  const etiquetas = (id: string) => supabase.from('etiqueta').select('id_etiqueta, nombre, grupo, palabras_clave, monto_fijo, dia_fijo, fecha_fijo_desde, sin_ingreso_fijo, historial_fijo, fijos_adicionales')
     .eq('id_seguimiento', id).eq('estado', 'activo').order('nombre')
   const [categorias, fuentes, presupuestos, aprendido, recibos, pagos, deFacturas, dePrestamos] = await Promise.all([
     etiquetas(idGastos),
@@ -673,12 +674,16 @@ export async function guardarFijo(idEtiqueta: string, fijo: { monto: number; dia
   revisar(await supabase.from('etiqueta').update({ monto_fijo: fijo?.monto ?? null, dia_fijo: fijo?.dia ?? null, fecha_fijo_desde: fijo?.desde ?? null, sin_ingreso_fijo: yaNoEsFijo, ...(historial && { historial_fijo: historial }) }).eq('id_etiqueta', idEtiqueta))
 }
 
+// Los fijos adicionales de una fuente de Ingresos (otro arriendo, otro sueldo).
+export async function guardarAdicionales(idEtiqueta: string, lista: Adicional[]) {
+  revisar(await supabase.from('etiqueta').update({ fijos_adicionales: lista }).eq('id_etiqueta', idEtiqueta))
+}
+
 // Los ingresos fijos anotados a mano, para el resumen de Inicio.
 export async function obtenerFijosAnotados() {
-  const filas = revisar(await supabase.from('etiqueta').select('id_etiqueta, monto_fijo, dia_fijo, fecha_fijo_desde, sin_ingreso_fijo')
-    .eq('estado', 'activo').or('monto_fijo.not.is.null,sin_ingreso_fijo.is.true')) as { id_etiqueta: string; monto_fijo: number | null; dia_fijo: number | null; fecha_fijo_desde: string | null; sin_ingreso_fijo: boolean }[]
-  return filas.map(f => f.sin_ingreso_fijo ? { id_etiqueta: f.id_etiqueta, monto: 0, dia: 0, quitado: true }
-    : { id_etiqueta: f.id_etiqueta, monto: Number(f.monto_fijo), dia: f.dia_fijo ?? 1, desde: f.fecha_fijo_desde?.slice(0, 7) })
+  const filas = revisar(await supabase.from('etiqueta').select('id_etiqueta, nombre, grupo, palabras_clave, monto_fijo, dia_fijo, fecha_fijo_desde, sin_ingreso_fijo, fijos_adicionales')
+    .eq('estado', 'activo')) as Categoria[]
+  return anotados(filas)
 }
 
 // Cambia o quita (valor null) la meta general de un seguimiento.

@@ -264,3 +264,40 @@ export function leerCardio(ejercicio: string, minutos: string, km: string): Omit
 // Minutos de cardio en el rango.
 export const minutosCardio = (sesiones: Sesion[], desde: string, hasta: string, hoy: string) =>
   sesiones.reduce((t, s) => t + (s.minutos && s.fecha >= desde && s.fecha <= hasta && s.fecha <= hoy ? s.minutos : 0), 0)
+
+// Calorías aproximadas con MET × kg de la persona × horas. Pesas: MET 5 y 2,5 minutos por serie con su descanso.
+// Cardio: MET según el tipo; sin peso anotado en Cuerpo se usan 70 kg y se dice.
+const MET_PESAS = 5
+const MINUTOS_POR_SERIE = 2.5
+export const PESO_SUPUESTO = 70
+const MET_CARDIO: [RegExp, number][] = [[/correr|trote|trotadora/, 9.8], [/escalera|escaladora/, 9], [/cinta|caminadora/, 8], [/bicicleta|spinning/, 7], [/eliptica/, 5]]
+export const metDe = (ejercicio: string) => MET_CARDIO.find(([pista]) => pista.test(normalizar(ejercicio)))?.[1] ?? 6
+
+export function calorias(sesiones: Sesion[], desde: string, hasta: string, hoy: string, pesoCorporal: number | null) {
+  const kilos = pesoCorporal ?? PESO_SUPUESTO
+  let pesas = 0, cardio = 0
+  for (const s of sesiones) {
+    if (s.fecha < desde || s.fecha > hasta || s.fecha > hoy) continue
+    if (s.minutos) cardio += metDe(s.ejercicio) * kilos * s.minutos / 60
+    else pesas += MET_PESAS * kilos * s.series * MINUTOS_POR_SERIE / 60
+  }
+  return { pesas: Math.round(pesas), cardio: Math.round(cardio), total: Math.round(pesas + cardio), supuesto: pesoCorporal === null }
+}
+
+// "Si sigues así", mirando las 4 semanas completas anteriores: tendencia, nunca una cifra de músculo.
+// constancia: menos de 3 de 4 semanas con la meta de días (3 si no hay meta); crece: además sube el peso en la mayoría de sus ejercicios; quieto: constante pero sin subir.
+export function siSigues(sesiones: Sesion[], hoy: string, metaDias?: number): 'crece' | 'quieto' | 'constancia' | null {
+  const dia = new Date(`${hoy}T12:00:00Z`).getUTCDay()
+  const lunes = restarDias(hoy, (dia + 6) % 7)
+  const desde = restarDias(lunes, 28)
+  const delMes = sesiones.filter(s => s.fecha >= desde && s.fecha < lunes)
+  if (!delMes.length) return null
+  const meta = metaDias ?? 3
+  const cumplidas = [0, 1, 2, 3].filter(i => {
+    const ini = restarDias(lunes, 28 - i * 7), fin = restarDias(lunes, 21 - i * 7)
+    return new Set(delMes.filter(s => s.fecha >= ini && s.fecha < fin).map(s => s.fecha)).size >= meta
+  }).length
+  if (cumplidas < 3) return 'constancia'
+  const cambios = [...new Set(delMes.map(s => s.ejercicio))].map(e => cambioPeso(pesoPorDia(delMes, e))).filter((c): c is number => c !== null)
+  return cambios.length && cambios.filter(c => c > 0).length > cambios.length / 2 ? 'crece' : 'quieto'
+}

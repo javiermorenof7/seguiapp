@@ -16,7 +16,7 @@ import { SemanaGym } from '../inicio/Minis'
 import { normalizar } from '../finanzas/parseo'
 import {
   cambioPeso, coincidencias, comparar, conPaso, conSigno, constancia, enUnidad, faltaParaMeta, fechasDeRecord, recordsSegunMeta, indicesRecord, kg, leerSerie, parecido, parteDe, pasoDe, pesoPorDia, seriesPorParte,
-  PARTES, leerCardio, minutosCardio, progreso, restarDias, seriesDeUltima, textoSerie, textoSeries,
+  PARTES, PESO_SUPUESTO, aKg, calorias, leerCardio, minutosCardio, siSigues, progreso, restarDias, seriesDeUltima, textoSerie, textoSeries,
   type Parte, type Sesion, type Unidad,
 } from './calculos'
 
@@ -672,6 +672,10 @@ function ResumenSalud({ sesiones, hoy, metaDias, ejercicios, fichas, medidas, re
   const peso = medidas.find(m => normalizar(m.nombre) === 'peso')
   const ultimoPeso = peso && registros.filter(x => x.id_seguimiento === peso.id_seguimiento).sort((a, b) => b.fecha.localeCompare(a.fecha))[0]
   const meta = ventana.escala === 'semana' ? metaDias : undefined
+  // calorías automáticas: con lo anotado y el último peso de Cuerpo
+  const kilosPersona = ultimoPeso && peso ? (peso.unidad?.toLowerCase() === 'lb' ? aKg(Number(ultimoPeso.valor), 'lb') : Number(ultimoPeso.valor)) : null
+  const kcal = calorias(sesiones, r.desde, r.hasta, hoy, kilosPersona)
+  const tendencia = siSigues(sesiones, hoy, metaDias)
   const entrenados = new Set(enRango.map(s => s.fecha))
   const semana = ventana.escala !== 'semana' ? [] : Array.from({ length: 7 }, (_, i) => {
     const fecha = new Date(Date.parse(r.desde) + i * 86400000).toISOString().slice(0, 10)
@@ -698,6 +702,16 @@ function ResumenSalud({ sesiones, hoy, metaDias, ejercicios, fichas, medidas, re
               {semana.length > 0 && <SemanaGym semana={semana} meta={meta && r.hasta >= hoy ? meta : null} enPagina />}
               <p className="tenue">{[`${series} ${series === 1 ? 'serie' : 'series'}`, cardio > 0 && `${cardio} min de cardio`, `${recordsEnRango} ${recordsEnRango === 1 ? 'récord' : 'récords'}`,
                 ultimoPeso && peso && `Peso ${formatoValor('numero', ultimoPeso.valor, peso.unidad)}`].filter(Boolean).join(' · ')}</p>
+              {kcal.total > 0 && (
+                <>
+                  <p>≈ <strong>{kcal.total.toLocaleString('es-CO')} kcal</strong> <span className="tenue">quemadas {cuando}</span></p>
+                  <details className="de-donde">
+                    <summary className="enlace">¿De dónde sale?</summary>
+                    <p className="tenue">{kcal.pesas.toLocaleString('es-CO')} kcal de pesas (unos 2,5 minutos por serie con su descanso) y {kcal.cardio.toLocaleString('es-CO')} de cardio según su tipo,
+                      con {kcal.supuesto ? `${PESO_SUPUESTO} kg porque aún no anotas tu peso en Cuerpo` : `tu peso de ${formatoValor('numero', ultimoPeso!.valor, peso!.unidad)}`}. Es un aproximado.</p>
+                  </details>
+                </>
+              )}
             </div>
           </section>
           <QueTrabaje sesiones={sesiones} hoy={hoy} ventana={ventana} parteDe={parteDeEjercicio} />
@@ -706,12 +720,23 @@ function ResumenSalud({ sesiones, hoy, metaDias, ejercicios, fichas, medidas, re
           <Progreso sesiones={sesiones} hoy={hoy} ejercicios={ejercicios} fichas={fichas} ventana={ventana} alVer={() => alVer('historial')} />
         </>
       )}
+      {tendencia && (
+        <section aria-label="Si sigues así">
+          <h2>Si sigues así</h2>
+          <p>{SI_SIGUES[tendencia]}</p>
+        </section>
+      )}
       <CuerpoHoy medidas={medidas} registros={registros} ventana={ventana} hoy={hoy} alVer={() => alVer('cuerpo')} />
       {sesiones.length > 0 && <Impacto sesiones={sesiones} hoy={hoy} metaDias={metaDias} />}
     </>
   )
 }
 
+const SI_SIGUES = {
+  crece: 'Vas en camino a ganar fuerza y masa muscular: cumpliste tu meta casi todas las semanas y tus pesos van subiendo.',
+  quieto: 'Vas constante. Para seguir ganando fuerza y masa muscular, sube poco a poco el peso o las repeticiones.',
+  constancia: 'Lo primero es la constancia: cumple tu meta de días 3 de cada 4 semanas y los resultados llegan.',
+}
 const COLORES_PARTE = ['--salud', '--c1', '--c2', '--c3', '--c4', '--c5']
 // Series por parte del cuerpo en el período y, en una línea, las partes que no se trabajaron.
 function QueTrabaje({ sesiones, hoy, ventana, parteDe: parteDeEjercicio }: { sesiones: Sesion[]; hoy: string; ventana: Ventana; parteDe: (e: string) => Parte | null }) {

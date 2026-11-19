@@ -54,6 +54,7 @@ describe('porRecibir', () => {
     expect(porRecibir(sueldo, '2026-10-10')).toEqual([{ id_etiqueta: 'sueldo', monto: 3000000, dia: 30, falta: 3000000 }])
     expect(porRecibir([...sueldo, ing('2026-10-15', 1500000)], '2026-10-20')[0].falta).toBe(1500000)
     expect(porRecibir([...sueldo, ing('2026-10-30', 2900000)], '2026-10-30')).toEqual([])
+    expect(porRecibir([...sueldo, ing('2026-10-30', 3500000)], '2026-10-30')).toEqual([])
   })
   it('una quincena sola no lo deja recibido', () => {
     expect(estadoFijo({ id_etiqueta: 'sueldo', monto: 3000000, dia: 30 }, [ing('2026-10-15', 1500000)], '2026-10-20')).toBe('pendiente')

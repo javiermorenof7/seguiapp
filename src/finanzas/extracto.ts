@@ -31,21 +31,29 @@ export type Lectura =
   | { ok: false; motivo: 'columnas'; ejemplo: { descripcion: string; montos: number[] } }
 
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
-const FECHA = /^(?:(\d{4})-(\d{2})-(\d{2})|(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?|(\d{1,2})\s+(?:de\s+)?(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)[a-z]*\.?(?:\s+(?:de\s+)?(\d{4}))?)(?=\s|$)/i
+const FECHA = /^(?:(\d{4})-(\d{2})-(\d{2})|(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?|(\d{1,2})\s+(?:de\s+)?(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)[a-z]*\.?(?:\s+(?:de\s+)?(\d{4}))?|(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)[a-z]*\.?\s+(\d{1,2}))(?=\s|$)/i
 // Un monto lleva decimales o separador de miles; un número largo corrido (una referencia) no lo es.
 const MONTO = /(?<![\d.,])[-(]?\$?\s?(?:\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d+[.,]\d{2})\)?-?(?![\d.,]*\d)/g
 
 const dos = (n: number | string) => String(n).padStart(2, '0')
 
+// letras sueltas que el PDF pega antes de la fecha (el logo "B C" de Banco Caja Social)
+const SUELTAS = /^(?:[a-z]\s+){1,3}/i
+// "1 de Julio a 30 de Septiembre": es el periodo del informe, no un movimiento
+const PERIODO = /^\s+a\s+\d{1,2}\s+de\s/i
+
 function leerFecha(linea: string, ano: number): { fecha: string; resto: string } | null {
+  if (!FECHA.test(linea)) linea = linea.replace(SUELTAS, '')
   const m = FECHA.exec(linea)
-  if (!m) return null
+  if (!m || PERIODO.test(linea.slice(m[0].length))) return null
   let a: number, mes: number, dia: number
   if (m[1]) [a, mes, dia] = [Number(m[1]), Number(m[2]), Number(m[3])]
   else if (m[4]) {
     dia = Number(m[4]); mes = Number(m[5])
     a = m[6] ? (m[6].length === 2 ? 2000 + Number(m[6]) : Number(m[6])) : ano
-  } else { dia = Number(m[7]); mes = MESES.indexOf(m[8].toLowerCase()) + 1; a = m[9] ? Number(m[9]) : ano }
+  } else if (m[7]) { dia = Number(m[7]); mes = MESES.indexOf(m[8].toLowerCase()) + 1; a = m[9] ? Number(m[9]) : ano }
+  // "JUL 01" (Banco Caja Social): mes y luego día
+  else { dia = Number(m[11]); mes = MESES.indexOf(m[10].toLowerCase()) + 1; a = ano }
   if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null
   return { fecha: `${a}-${dos(mes)}-${dos(dia)}`, resto: linea.slice(m[0].length) }
 }
@@ -293,6 +301,7 @@ export function cuentaDe<C extends CuentaLeible>(cuentas: C[], ultimos4: string 
 
 export function bancoDe(lineas: string[]): string | null {
   const texto = normalizar(lineas.slice(0, 60).join(' '))
+  if (texto.includes('caja social') || texto.includes('bancocajasocial')) return 'Banco Caja Social'
   if (texto.includes('falabella')) return 'Banco Falabella'
   if (texto.includes('davivienda') || texto.includes('daviplata')) return 'Davivienda'
   if (texto.includes('nequi')) return 'Nequi'

@@ -5,6 +5,7 @@
   --tenue: #516357;
   --linea: #DDE3DA;
   --acento: #0B6E4F;
+  --salud: #C2410C;
   --t1: #0B6E4F; --t2: #C2410C; --t3: #BE185D; --t4: #1D4ED8; --t5: #6D28D9; --t6: #0F766E; --t7: #A16207;
   --radio: 22px;
   /* estado frente a la meta, apto para daltonismo y siempre con texto */
@@ -21,6 +22,7 @@
     --tenue: #9DB2A4;
     --linea: #24352B;
     --t1: #0E7F5C;
+    --salud: #FB923C;
     --en-meta: #60A5FA; --cerca: #F59E0B; --fuera: #FB7185;
     --ingresos: #34D399; --gastos: #EA580C; --ahorro: #A78BFA; --pista: #2B3F33;
     --c1: #2DD4BF; --c2: #818CF8; --c3: #FBBF24; --c4: #A3E635; --c5: #E879F9;
@@ -583,3 +585,6 @@ section .enlace, form .enlace, li .enlace { display: inline-flex; align-items: c
 .lista li.iguales > details > summary { min-height: 44px; display: flex; align-items: center; color: var(--acento); font-weight: 600; cursor: pointer; }
 .lista li.iguales .lista { margin: 0 0 0 12px; }
 @media (max-width: 420px) { .lista li.iguales > details { grid-row: 4; } }
+
+.resumen-salud .cifra { color: var(--salud); }
+.resumen-salud .mini-semana.en-pagina > span.lleno { background: var(--salud); color: var(--fondo); }

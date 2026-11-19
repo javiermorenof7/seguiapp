@@ -21,6 +21,12 @@ describe('50-30-20', () => {
     expect(r.avisos).toHaveLength(1)
     expect(r.avisos[0]).toContain('básicos')
   })
+  it('con lo que falta recibir, los porcentajes van sobre el pronóstico', () => {
+    const r = cincuentaTreintaVeinte(movimientos, '2026-10', grupos)!
+    const conPronostico = cincuentaTreintaVeinte(movimientos, '2026-10', grupos, 1000000)!
+    expect(conPronostico.basicos).toBeLessThan(r.basicos)
+    expect(cincuentaTreintaVeinte(movimientos, '2026-09', grupos, 1000000)).not.toBeNull()
+  })
   it('sin ingresos no hay reparto', () => {
     expect(cincuentaTreintaVeinte(movimientos, '2026-09', grupos)).toBeNull()
   })

@@ -168,7 +168,8 @@ button:disabled { opacity: .6; cursor: default; }
 }
 .lista li.recibo { grid-template-columns: 1fr auto auto auto; }
 .lista li.recibo > button { justify-self: end; }
-@media (max-width: 560px) { .lista li.recibo { grid-template-columns: 1fr auto; } .lista li.recibo > button { grid-column: 1 / -1; justify-self: stretch; } }
+.lista li.recibo > .enlaces { display: flex; flex-wrap: wrap; gap: 4px 16px; justify-self: end; }
+@media (max-width: 560px) { .lista li.recibo { grid-template-columns: 1fr auto; } .lista li.recibo > button { grid-column: 1 / -1; justify-self: stretch; } .lista li.recibo > .enlaces { grid-column: 1 / -1; justify-self: start; } }
 .lista li.recibo > form, .lista li.recibo > .acciones, .lista li.recibo > [role="alert"] { grid-column: 1 / -1; margin: 0; }
 .lista li.recibo > span:first-child .tenue { display: block; font-size: 14px; white-space: normal; }
 .lista .estado.en-meta { background: var(--en-meta); color: var(--fondo); }
@@ -572,6 +573,8 @@ section .enlace, form .enlace, li .enlace { display: inline-flex; align-items: c
 .lista .opcion-banco .tenue { flex: 1 1 14em; white-space: normal; overflow-wrap: anywhere; }
 .fila-extracto .marca { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
 .fila-extracto .marca input { width: 20px; height: 20px; min-height: 0; }
+.formulario label.marca { display: flex; flex-direction: row; align-items: center; gap: 8px; min-height: 44px; }
+.formulario label.marca input { width: 20px; height: 20px; min-height: 0; flex: none; }
 .fila-extracto select { max-width: 100%; }
 .fila-extracto .monto-dudoso { width: 9em; border-color: var(--fuera); }
 .cuadre-acciones { position: sticky; bottom: 0; padding: 12px 0; background: var(--fondo); justify-self: stretch; }

@@ -435,6 +435,7 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
   const [fecha, setFecha] = useState(hoyIso())
   const [elegida, setElegida] = useState<string | null>(inicial?.id_etiqueta ?? null)
   const [idMeta, setIdMeta] = useState<string | null>(null)
+  const [esFijo, setEsFijo] = useState(false)
   const [grupo, setGrupo] = useState<Grupo>('auto')
   const [otraFecha, setOtraFecha] = useState(false)
   // viene elegida la última cuenta usada; nunca es obligatoria
@@ -498,9 +499,14 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
       // aprende solo cuando la persona eligió algo distinto de lo propuesto
       const aprende = !!categoria && !!leido.descripcion && categoria.id_etiqueta !== propuesta?.id_etiqueta
       if (aprende) await aprenderCategoria(normalizar(leido.descripcion), categoria.nombre).catch(() => {})
+      const idFijo = tipo === 'ingreso' && esFijo ? categoria?.id_etiqueta ?? idFuenteNueva : null
+      const dia = +fecha.slice(8, 10)
+      const quedoFijo = !!idFijo && await guardarFijo(idFijo, { monto: leido.valor, dia, desde: `${fecha.slice(0, 7)}-01` }).then(() => true, () => false)
       let mensaje = resultado === 'guardado'
         ? `${TEXTO[tipo]} registrado: ${pesos(leido.valor)}${fuente ? ` ${tipo === 'gasto' ? 'en' : 'de'} ${fuente.nombre}` : ''}.`
         : 'Sin conexión: quedó guardado en este equipo y se enviará al volver la conexión.'
+      if (quedoFijo) mensaje += ` Queda como fijo: se espera cada mes el día ${dia}.`
+      else if (idFijo) mensaje += ' No pude dejarlo como fijo: anótalo en Ingresos fijos del mes.'
       if (tipo === 'gasto' && categoria) {
         const presupuesto = presupuestos.get(categoria.id_etiqueta) ?? null
         const total = gastadoDe(categoria.id_etiqueta) + leido.valor
@@ -605,6 +611,9 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
           </div>
           {fuenteNueva && <small className="ayuda">Fuente nueva: «{fuenteNueva}». Se crea al guardar, o elige una de arriba.</small>}
           {tipo === 'ingreso' && !categoria && !hayCupo && descripcion.trim() && <small className="ayuda">Ya tienes {TOPE.ingreso} fuentes: elige una de arriba o se guarda sin fuente.</small>}
+          {!inicial && (categoria || fuenteNueva) && (
+            <label className="marca"><input type="checkbox" checked={esFijo} onChange={ev => setEsFijo(ev.target.checked)} /> Es fijo: me llega cada mes</label>
+          )}
         </fieldset>
       )}
       {tipo === 'ahorro' && metas.length > 0 && (
@@ -971,7 +980,8 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
     return fijos(movimientos, mes, suyos).map(f => ({ ...f, estado: estadoFijo(f, movimientos, hoy), falta: falta.get(f.id_etiqueta) ?? 0 }))
   }, [movimientos, mes, hoy, suyos])
   const recibido = useMemo(() => esperadoVsRecibido(movimientos, mes, 6, suyos), [movimientos, mes, suyos])
-  const esSuyo = (id: string) => suyos.some(f => f.id_etiqueta === id)
+  const esSuyo = (id: string) => suyos.some(f => f.id_etiqueta === id && !f.quitado)
+  const [editando, setEditando] = useState<Fijo | null>(null)
 
   return (
     <>
@@ -995,13 +1005,16 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
                 <span>{nombre(f.id_etiqueta)}<span className="tenue"> · día {f.dia}{esSuyo(f.id_etiqueta) ? ' · anotado' : ''}</span></span>
                 <strong>{pesos(f.monto)}</strong>
                 <span className={`estado ${ESTADO_FIJO[f.estado].clase}`}>{ESTADO_FIJO[f.estado].texto}</span>
-                {f.falta > 0 && <button className="enlace" onClick={() => alLlego({ monto: f.falta, id_etiqueta: f.id_etiqueta })}>
-                  Ya llegó{f.falta < f.monto ? ` (faltan ${pesos(f.falta)})` : ''}</button>}
+                <span className="enlaces">
+                  {f.falta > 0 && <button className="enlace" onClick={() => alLlego({ monto: f.falta, id_etiqueta: f.id_etiqueta })}>
+                    Ya llegó{f.falta < f.monto ? ` (faltan ${pesos(f.falta)})` : ''}</button>}
+                  <button className="enlace" aria-label={`Editar ${nombre(f.id_etiqueta)}`} onClick={() => setEditando(f)}>Editar</button>
+                </span>
               </li>
             ))}
           </ul>
         ) : <p className="tenue">Un ingreso es fijo cuando llega de la misma fuente los últimos {MESES_FIJO} meses con un monto parecido, o cuando lo anotas aquí.</p>}
-        {fuentes.length > 0 && <AnotarFijo fuentes={fuentes} alCambiar={alCambiar} />}
+        {fuentes.length > 0 && <AnotarFijo key={editando?.id_etiqueta ?? ''} fuentes={fuentes} inicial={editando} alCerrar={() => setEditando(null)} alCambiar={alCambiar} />}
       </section>
       {recibido.some(m => m.esperado > 0) && (
         <section>
@@ -1023,26 +1036,28 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
 }
 
 // El ingreso fijo anotado a mano: manda sobre el que aprende la app; vacío vuelve al aprendido.
-function AnotarFijo({ fuentes, alCambiar }: { fuentes: Categoria[]; alCambiar: () => Promise<void> }) {
-  const [abierto, setAbierto] = useState(false)
-  const [id, setId] = useState(fuentes[0].id_etiqueta)
+// "inicial": el fijo de la lista que se edita (anotado o aprendido), con su monto y su día.
+function AnotarFijo({ fuentes, alCambiar, inicial, alCerrar }: { fuentes: Categoria[]; alCambiar: () => Promise<void>; inicial: Fijo | null; alCerrar: () => void }) {
+  const [abierto, setAbierto] = useState(!!inicial)
+  const [id, setId] = useState(inicial?.id_etiqueta ?? fuentes[0].id_etiqueta)
   const fuente = fuentes.find(f => f.id_etiqueta === id)
-  const [monto, setMonto] = useState(fuente?.monto_fijo ? String(fuente.monto_fijo) : '')
-  const [dia, setDia] = useState(fuente?.dia_fijo ? String(fuente.dia_fijo) : '')
+  const [monto, setMonto] = useState(inicial ? String(inicial.monto) : fuente?.monto_fijo ? String(fuente.monto_fijo) : '')
+  const [dia, setDia] = useState(inicial ? String(inicial.dia) : fuente?.dia_fijo ? String(fuente.dia_fijo) : '')
+  const [confirmar, setConfirmar] = useState(false)
   const [error, setError] = useState('')
   const [enviando, setEnviando] = useState(false)
 
   function elegir(nuevo: string) {
     const f = fuentes.find(x => x.id_etiqueta === nuevo)
-    setId(nuevo); setMonto(f?.monto_fijo ? String(f.monto_fijo) : ''); setDia(f?.dia_fijo ? String(f.dia_fijo) : ''); setError('')
+    setId(nuevo); setMonto(f?.monto_fijo ? String(f.monto_fijo) : ''); setDia(f?.dia_fijo ? String(f.dia_fijo) : ''); setError(''); setConfirmar(false)
   }
 
-  async function guardar(fijo: { monto: number; dia: number } | null) {
+  async function guardar(fijo: { monto: number; dia: number } | null, yaNoEsFijo = false) {
     setEnviando(true)
     try {
-      await guardarFijo(id, fijo && { ...fijo, desde: fuente?.fecha_fijo_desde ?? `${hoyIso().slice(0, 7)}-01` })
+      await guardarFijo(id, fijo && { ...fijo, desde: fuente?.fecha_fijo_desde ?? `${hoyIso().slice(0, 7)}-01` }, yaNoEsFijo)
       await alCambiar()
-      setAbierto(false); setError('')
+      setAbierto(false); setError(''); alCerrar()
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -1061,7 +1076,7 @@ function AnotarFijo({ fuentes, alCambiar }: { fuentes: Categoria[]; alCambiar: (
 
   return (
     <>
-      <button className="secundario" aria-expanded={abierto} onClick={() => setAbierto(!abierto)}>{abierto ? 'Cerrar' : '+ Anotar un ingreso fijo'}</button>
+      <button className="secundario" aria-expanded={abierto} onClick={() => { setAbierto(!abierto); if (abierto) alCerrar() }}>{abierto ? 'Cerrar' : '+ Anotar un ingreso fijo'}</button>
       {abierto && (
         <form className="formulario" onSubmit={anotar}>
           <label>Fuente
@@ -1077,7 +1092,15 @@ function AnotarFijo({ fuentes, alCambiar }: { fuentes: Categoria[]; alCambiar: (
           <div className="chips">
             <button className="principal" disabled={enviando}>Guardar</button>
             {fuente?.monto_fijo && <button type="button" className="secundario" disabled={enviando} onClick={() => void guardar(null)}>Quitar el anotado</button>}
+            {inicial && !confirmar && <button type="button" className="secundario" disabled={enviando} onClick={() => setConfirmar(true)}>Ya no es fijo</button>}
           </div>
+          {confirmar && (
+            <div className="chips" role="group" aria-label="Confirmar">
+              <span>La app deja de esperarlo hasta que lo vuelvas a anotar.</span>
+              <button type="button" className="principal" disabled={enviando} onClick={() => void guardar(null, true)}>Sí, ya no es fijo</button>
+              <button type="button" className="secundario" disabled={enviando} onClick={() => setConfirmar(false)}>Cancelar</button>
+            </div>
+          )}
           {error && <p role="alert" className="error">{error}</p>}
         </form>
       )}

@@ -3,7 +3,8 @@ import { mesDe, mesesAntes, type Movimiento } from './calculos'
 import type { Categoria } from './parseo'
 
 export type EstadoFijo = 'recibido' | 'pendiente' | 'atrasado'
-export interface Fijo { id_etiqueta: string; monto: number; dia: number; desde?: string }
+// quitado: él dijo que ya no es fijo; no se espera ni se aprende
+export interface Fijo { id_etiqueta: string; monto: number; dia: number; desde?: string; quitado?: boolean }
 
 const TOLERANCIA = 0.1
 const GRACIA_DIAS = 3
@@ -12,9 +13,10 @@ const diasDelMes = (mes: string) => new Date(Date.UTC(+mes.slice(0, 4), +mes.sli
 
 export const MESES_FIJO = 2
 
-// Los fijos que se anotaron a mano en las fuentes.
+// Los fijos que se anotaron a mano en las fuentes y las que ya no son fijas.
 export const anotados = (fuentes: Categoria[]): Fijo[] =>
-  fuentes.flatMap(f => f.monto_fijo && f.dia_fijo ? [{ id_etiqueta: f.id_etiqueta, monto: f.monto_fijo, dia: f.dia_fijo, desde: f.fecha_fijo_desde?.slice(0, 7) }] : [])
+  fuentes.flatMap<Fijo>(f => f.sin_ingreso_fijo ? [{ id_etiqueta: f.id_etiqueta, monto: 0, dia: 0, quitado: true }]
+    : f.monto_fijo && f.dia_fijo ? [{ id_etiqueta: f.id_etiqueta, monto: f.monto_fijo, dia: f.dia_fijo, desde: f.fecha_fijo_desde?.slice(0, 7) }] : [])
 
 // Fija si llegó en cada uno de los 2 meses anteriores con una diferencia de hasta 10 %; el anotado a mano manda sobre el aprendido desde su mes.
 export function fijos(movimientos: Movimiento[], mes: string, todos: Fijo[] = []): Fijo[] {
@@ -29,7 +31,7 @@ export function fijos(movimientos: Movimiento[], mes: string, todos: Fijo[] = []
     porFuente.set(m.id_etiqueta, delaFuente)
   }
   const conSuyo = new Set(suyos.map(f => f.id_etiqueta))
-  return [...suyos, ...[...porFuente].flatMap(([id_etiqueta, porMes]) => {
+  return [...suyos.filter(f => !f.quitado), ...[...porFuente].flatMap(([id_etiqueta, porMes]) => {
     if (porMes.size < MESES_FIJO || conSuyo.has(id_etiqueta)) return []
     const totales = [...porMes.values()].map(x => x.total)
     if (Math.max(...totales) > Math.min(...totales) * (1 + TOLERANCIA)) return []

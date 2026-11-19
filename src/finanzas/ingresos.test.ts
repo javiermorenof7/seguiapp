@@ -33,6 +33,13 @@ describe('fijos', () => {
     expect(fijos([], '2026-11', [suyo])).toEqual([suyo])
     expect(anotados([{ id_etiqueta: 'sueldo', nombre: 'Sueldo', grupo: null, palabras_clave: [], monto_fijo: 2500000, dia_fijo: 5, fecha_fijo_desde: '2026-11-01' }])).toEqual([suyo])
   })
+  it('una fuente que ya no es fija no se espera ni se aprende', () => {
+    const quitado = anotados([{ id_etiqueta: 'sueldo', nombre: 'Sueldo', grupo: null, palabras_clave: [], sin_ingreso_fijo: true }])
+    expect(quitado).toEqual([{ id_etiqueta: 'sueldo', monto: 0, dia: 0, quitado: true }])
+    expect(fijos(sueldo, '2026-10', quitado)).toEqual([])
+    expect(porRecibir(sueldo, '2026-10-10', quitado)).toEqual([])
+    expect(esperadoVsRecibido(sueldo, '2026-10', 1, quitado)).toEqual([{ mes: '2026-10', esperado: 0, recibido: 0 }])
+  })
   it('lee los anotados de las fuentes que tienen monto y día', () => {
     const fuente = { id_etiqueta: 'sueldo', nombre: 'Sueldo', grupo: null, palabras_clave: [] }
     expect(anotados([{ ...fuente, monto_fijo: 2500000, dia_fijo: 5 }, { ...fuente, id_etiqueta: 'otra' }])).toEqual([{ id_etiqueta: 'sueldo', monto: 2500000, dia: 5 }])

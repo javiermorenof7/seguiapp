@@ -75,11 +75,12 @@ export function porFuente(movimientos: Movimiento[], mes: string, n = 6) {
   return { meses, series: [...series].map(([id_etiqueta, datos]) => ({ id_etiqueta, datos })) }
 }
 
-// Todo lo que llegó cada mes; lo esperado (los fijos) solo en el último, el que se ve.
+// Cada mes, lo esperado de los fijos del mes que se ve frente a todo lo que llegó.
 export function esperadoVsRecibido(movimientos: Movimiento[], mes: string, n = 6, suyos: Fijo[] = []) {
+  const esperado = fijos(movimientos, mes, suyos).reduce((s, f) => s + f.monto, 0)
   return Array.from({ length: n }, (_, i) => mesesAntes(mes, n - 1 - i)).map(m => ({
     mes: m,
-    esperado: m === mes ? fijos(movimientos, m, suyos).reduce((s, f) => s + f.monto, 0) : 0,
+    esperado,
     recibido: movimientos.filter(x => x.tipo === 'ingreso' && mesDe(x.fecha) === m).reduce((s, x) => s + x.valor, 0),
   }))
 }

@@ -1006,13 +1006,13 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
       {recibido.some(m => m.esperado > 0) && (
         <section>
           <h2>¿Llegó lo esperado?</h2>
-          <p className="tenue">Este mes, lo que esperas de tus ingresos fijos frente a lo que ya llegó; los meses anteriores, lo que llegó.</p>
+          <p className="tenue">Cada mes, lo que esperas hoy de tus ingresos fijos frente a lo que llegó.</p>
           <Barras etiquetas={recibido.map(m => nombreMes(m.mes))} colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')} formato={pesos}
             series={[
-              { nombre: 'Esperado este mes', datos: recibido.map(m => m.esperado || null), color: 'transparent', borde: cssVar('--tenue') },
+              { nombre: 'Esperado', datos: recibido.map(m => m.esperado), color: 'transparent', borde: cssVar('--tenue') },
               { nombre: 'Llegó', datos: recibido.map(m => m.recibido), color: cssVar('--ingresos') },
             ]}
-            descripcion="Ingresos que llegaron en los últimos 6 meses y, este mes, lo esperado de los ingresos fijos" />
+            descripcion="Ingresos que llegaron en los últimos 6 meses frente a lo esperado hoy de los ingresos fijos" />
         </section>
       )}
       <Asistente idSeguimiento={idIngresos} tipo="ingreso" categorias={fuentes}

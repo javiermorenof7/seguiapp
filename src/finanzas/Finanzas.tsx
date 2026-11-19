@@ -814,7 +814,7 @@ function IngresosDelMes({ movimientos, suyos, mes, alVer }: { movimientos: Movim
       <div className="bloque-pie"><h2>¿Llegó lo que esperaba?</h2>{ver(alVer)}</div>
       <p className="tenue">Recibido {pesos(recibido)}{actual?.esperado ? ` de ${pesos(actual.esperado)} esperados (ingresos fijos)` : ''}</p>
       {!!actual?.esperado && <Avance valor={actual.recibido} tope={actual.esperado} color={cssVar('--ingresos')}
-        descripcion={`Ingresos fijos: recibido ${pesos(actual.recibido)} de ${pesos(actual.esperado)}`} />}
+        descripcion={`Recibido ${pesos(actual.recibido)} de ${pesos(actual.esperado)} esperados`} />}
     </section>
   )
 }
@@ -1006,12 +1006,13 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
       {recibido.some(m => m.esperado > 0) && (
         <section>
           <h2>¿Llegó lo esperado?</h2>
+          <p className="tenue">Este mes, lo que esperas de tus ingresos fijos frente a lo que ya llegó; los meses anteriores, lo que llegó.</p>
           <Barras etiquetas={recibido.map(m => nombreMes(m.mes))} colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')} formato={pesos}
             series={[
-              { nombre: 'Esperado', datos: recibido.map(m => m.esperado), color: 'transparent', borde: cssVar('--tenue') },
-              { nombre: 'Recibido', datos: recibido.map(m => m.recibido), color: cssVar('--ingresos') },
+              { nombre: 'Esperado este mes', datos: recibido.map(m => m.esperado || null), color: 'transparent', borde: cssVar('--tenue') },
+              { nombre: 'Llegó', datos: recibido.map(m => m.recibido), color: cssVar('--ingresos') },
             ]}
-            descripcion="Ingresos fijos esperados frente a lo recibido de esas fuentes en los últimos 6 meses" />
+            descripcion="Ingresos que llegaron en los últimos 6 meses y, este mes, lo esperado de los ingresos fijos" />
         </section>
       )}
       <Asistente idSeguimiento={idIngresos} tipo="ingreso" categorias={fuentes}

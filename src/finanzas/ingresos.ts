@@ -75,16 +75,11 @@ export function porFuente(movimientos: Movimiento[], mes: string, n = 6) {
   return { meses, series: [...series].map(([id_etiqueta, datos]) => ({ id_etiqueta, datos })) }
 }
 
-// Lo esperado (fijos aprendidos hasta ese mes) frente a lo recibido de esas fuentes, mes a mes.
-// De un mes pasado lo que no llegó nada ya no se espera (dejó de ser fijo); el último mes lo espera completo.
+// Todo lo que llegó cada mes; lo esperado (los fijos) solo en el último, el que se ve.
 export function esperadoVsRecibido(movimientos: Movimiento[], mes: string, n = 6, suyos: Fijo[] = []) {
-  return Array.from({ length: n }, (_, i) => mesesAntes(mes, n - 1 - i)).map(m => {
-    const delMes = fijos(movimientos, m, suyos).filter(f => m === mes || llegoDe(f, movimientos, m) > 0)
-    const ids = new Set(delMes.map(f => f.id_etiqueta))
-    return {
-      mes: m,
-      esperado: delMes.reduce((s, f) => s + f.monto, 0),
-      recibido: movimientos.filter(x => x.tipo === 'ingreso' && mesDe(x.fecha) === m && ids.has(x.id_etiqueta ?? '')).reduce((s, x) => s + x.valor, 0),
-    }
-  })
+  return Array.from({ length: n }, (_, i) => mesesAntes(mes, n - 1 - i)).map(m => ({
+    mes: m,
+    esperado: m === mes ? fijos(movimientos, m, suyos).reduce((s, f) => s + f.monto, 0) : 0,
+    recibido: movimientos.filter(x => x.tipo === 'ingreso' && mesDe(x.fecha) === m).reduce((s, x) => s + x.valor, 0),
+  }))
 }

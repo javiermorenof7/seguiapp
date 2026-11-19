@@ -74,7 +74,7 @@ export default function Barras({ etiquetas, series, formato, descripcion, colorT
             borderWidth: 2, pointRadius: linea.punteada ? 0 : 3, tension: 0, ...(linea.punteada ? { borderDash: [6, 5] } : {}) }] : []),
           ...series.map((s, i) => ({
             type: 'bar' as const, label: s.nombre, data: s.datos, backgroundColor: s.color, borderColor: s.borde ?? s.color,
-            borderWidth: s.borde ? 1.5 : 0, borderRadius: 6, maxBarThickness: superpuesto && i ? 12 : 22,
+            borderWidth: s.borde ? 1.5 : 0, borderRadius: 6, maxBarThickness: superpuesto && i ? 12 : 22, skipNull: true,
             ...(superpuesto ? { grouped: false, order: -i } : {}),
           })),
         ],

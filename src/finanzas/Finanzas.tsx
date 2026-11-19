@@ -28,12 +28,12 @@ import Extracto from './Cuadrar'
 import { puedeCrear, TOPE } from './reglasCategorias'
 import type { MetaAhorro } from './metas'
 import { cincuentaTreintaVeinte, facturaParecida, gastoInusual, posibleRepetido, sugeridos } from './aprende'
-import { esperadoVsRecibido, estadoFijo, fijos, porFuente, type EstadoFijo } from './ingresos'
+import { esperadoVsRecibido, estadoFijo, fijos, porFuente, porRecibir, type EstadoFijo } from './ingresos'
 
 type Datos = Awaited<ReturnType<typeof obtenerFinanzas>>
 type Grupo = 'auto' | 'basico' | 'personal'
 interface Cuentas {
-  delMes: ReturnType<typeof resumenMes>; despues: number
+  delMes: ReturnType<typeof resumenMes>; despues: number; porRecibir: ReturnType<typeof porRecibir>
   filas: ReturnType<typeof porCategoria>; pendientes: ReturnType<typeof recibosPendientes>; presupuestos: Map<string, number>
 }
 
@@ -88,6 +88,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
   }, [pestana])
   const [registrando, setRegistrando] = useState<TipoMovimiento | null>(abrir === 'gasto' || abrir === 'ingreso' || abrir === 'ahorro' ? abrir : null)
   const [registrado, setRegistrado] = useState('')
+  const [llego, setLlego] = useState<{ monto: number; id_etiqueta: string } | null>(null)
   // préstamos y facturas para el Resumen y el aviso "¿es la cuota de…?"; si fallan, esos bloques no salen
   const [deudas, setDeudas] = useState<Awaited<ReturnType<typeof obtenerPrestamos>> | null>(null)
   const [recibosVer, setRecibosVer] = useState<Awaited<ReturnType<typeof obtenerRecibos>> | null>(null)
@@ -167,7 +168,9 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
     const idHogar = datos.categorias.find(c => normalizar(c.nombre).startsWith('hogar'))?.id_etiqueta ?? null
     const filas = porCategoria(movs, mes, datos.categorias, presupuestos, pendientes, idHogar)
     const delMes = resumenMes(movs, mes)
-    return { presupuestos, pendientes, filas, delMes, despues: saldoDespues(delMes.saldo, filas, pendientes) }
+    // solo el mes en curso: de un mes pasado lo que no llegó ya no se espera
+    const faltan = periodo === hoyIso().slice(0, 7) ? porRecibir(todos, hoyIso()) : []
+    return { presupuestos, pendientes, filas, delMes, despues: saldoDespues(delMes.saldo, filas, pendientes), porRecibir: faltan }
   }, [datos, todos])
   const cuentas = useMemo(() => cuentasDe(mes), [cuentasDe, mes])
   // el Resumen abre siempre en el mes actual; se puede ir hasta 11 meses atrás (lo que ya está cargado)
@@ -191,6 +194,8 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
       metas={metasAhorro?.metas ?? []}
       anteriores={movimientos}
       tipoInicial={tipo}
+      key={tipo === 'ingreso' && llego ? llego.id_etiqueta : tipo}
+      inicial={tipo === 'ingreso' ? llego : null}
       cuentasPago={banco?.cuentas ?? []}
       alCrearCuenta={banco ? async nombre => { const id = await crearCuenta(nombre); await cargarBanco(); return id } : undefined}
       alIrAExtracto={banco ? () => { setRegistrando(null); setPestana('extracto') } : undefined}
@@ -210,7 +215,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
     />
   ) : (
     <section>
-      <button className={`principal registrar-uno ${tipo}`} onClick={() => { setRegistrado(''); setRegistrando(tipo) }}>+ Registrar {TEXTO[tipo].toLowerCase()}</button>
+      <button className={`principal registrar-uno ${tipo}`} onClick={() => { setRegistrado(''); setLlego(null); setRegistrando(tipo) }}>+ Registrar {TEXTO[tipo].toLowerCase()}</button>
       {registrado && <p role="status" className="aviso">{registrado}</p>}
     </section>
   ))
@@ -299,6 +304,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
         {registrar('ingreso')}
         <Ingresos movimientos={movimientos} mes={mes} fuentes={datos.fuentes} idIngresos={idIngresos} idGastos={idGastos}
           registros={registros.filter(r => r.id_seguimiento === idIngresos && r.fecha.startsWith(mes))}
+          alLlego={f => { setRegistrado(''); setLlego(f); setRegistrando('ingreso'); window.scrollTo(0, 0) }}
           alCambiar={async () => { await Promise.all([alCambiar(), cargar()]) }} />
       </>)}
       {datos && cuentasVer && pestana === 'resumen' && (() => {
@@ -350,7 +356,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
                 acciones={[{ texto: 'Volver a este mes', hacer: () => setMesVer(mes) }, { texto: '+ Registrar gasto', hacer: () => { setPestana('gastos'); setRegistrando('gasto') } }]} />
             ) : (
               <>
-                <Resumen cuentas={cuentasVer} acumulado={acumuladoAno(todos, esAno ? finAno : mesVer, banco?.ajuste)} alVerRecibos={() => setPestana('recibos')}
+                <Resumen cuentas={cuentasVer} alVerIngresos={() => setPestana('ingresos')} acumulado={acumuladoAno(todos, esAno ? finAno : mesVer, banco?.ajuste)} alVerRecibos={() => setPestana('recibos')}
                   ajuste={banco?.ajuste && banco.ajuste.fecha.slice(0, 4) === mesVer.slice(0, 4) && mesDe(banco.ajuste.fecha) <= (esAno ? finAno : mesVer) ? banco.ajuste.fecha : null}
                   alAjustar={banco ? () => setPestana('extracto') : undefined} />
                 {banco && mesVer === mes && (!banco.extractos.length || mesDe(banco.extractos[0].fecha_hasta) < mesesAntes(mes, 1)) && (
@@ -401,7 +407,7 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
   )
 }
 
-function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, ids, gastadoDe, presupuestos, inusual, alCerrar, alIrAFacturas, alIrADeudas, prestamos, alCrearIniciales, alGuardar, alCrearCuenta, alIrAExtracto }: {
+function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, ids, gastadoDe, presupuestos, inusual, alCerrar, alIrAFacturas, alIrADeudas, prestamos, alCrearIniciales, alGuardar, alCrearCuenta, alIrAExtracto, inicial = null }: {
   datos: Datos
   metas: MetaAhorro[]
   anteriores: Movimiento[]
@@ -419,12 +425,14 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
   alGuardar: (aprendio: boolean, mensaje: string) => Promise<void>
   alCrearCuenta?: (nombre: string) => Promise<string>
   alIrAExtracto?: () => void
+  /** "Ya llegó" de un ingreso fijo: fuente y lo que falta */
+  inicial?: { monto: number; id_etiqueta: string } | null
 }) {
   const tipo = tipoInicial
-  const [monto, setMonto] = useState('')
+  const [monto, setMonto] = useState(inicial ? Math.round(inicial.monto).toLocaleString('es-CO') : '')
   const [descripcion, setDescripcion] = useState('')
   const [fecha, setFecha] = useState(hoyIso())
-  const [elegida, setElegida] = useState<string | null>(null)
+  const [elegida, setElegida] = useState<string | null>(inicial?.id_etiqueta ?? null)
   const [idMeta, setIdMeta] = useState<string | null>(null)
   const [grupo, setGrupo] = useState<Grupo>('auto')
   const [otraFecha, setOtraFecha] = useState(false)
@@ -677,15 +685,21 @@ function Reparto({ movimientos, mes, categorias }: { movimientos: Movimiento[]; 
 }
 
 
-function Resumen({ cuentas, acumulado, ajuste, alVerRecibos, alAjustar }: { cuentas: Cuentas; acumulado: number; ajuste: string | null; alVerRecibos: () => void; alAjustar?: () => void }) {
-  const { delMes, despues, pendientes } = cuentas
+function Resumen({ cuentas, acumulado, ajuste, alVerRecibos, alVerIngresos, alAjustar }: { cuentas: Cuentas; acumulado: number; ajuste: string | null; alVerRecibos: () => void; alVerIngresos: () => void; alAjustar?: () => void }) {
+  const { delMes, despues, pendientes, porRecibir: faltan } = cuentas
+  const falta = faltan.reduce((t, f) => t + f.falta, 0)
   return (
     <section className="resumen-finanzas" aria-label="Saldo">
       <div>
         <p className="tenue">Saldo del mes</p>
         <span className={delMes.saldo < 0 ? 'cifra negativo' : 'cifra'}>{pesos(delMes.saldo)}</span>
-        {delMes.saldo < 0 && <span className="estado fuera">✕ Este mes sale más de lo que entra</span>}
+        {delMes.saldo + falta < 0 && <span className="estado fuera">✕ Este mes sale más de lo que entra</span>}
         <p className="tenue">Ingresos {pesos(delMes.ingresos)} · Gastos {pesos(delMes.gastos)} · Ahorro {pesos(delMes.ahorro)}</p>
+        {falta > 0 && (
+          <p className="tenue">
+            Te falta recibir {pesos(falta)} ({faltan.length === 1 ? '1 ingreso fijo' : `${faltan.length} ingresos fijos`}) · con eso quedas en {pesos(delMes.saldo + falta)} · <button className="enlace" onClick={alVerIngresos}>Ver ingresos</button>
+          </p>
+        )}
         {pendientes.length > 0 && (
           <p className="tenue">
             Tienes {pendientes.length} {pendientes.length === 1 ? 'factura' : 'facturas'} por pagar
@@ -935,13 +949,16 @@ function FilaPresupuesto({ nombre, actual, sugerido, enfocar, alGuardar }: {
   )
 }
 
-function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, alCambiar }: {
+function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, alCambiar, alLlego }: {
   movimientos: Movimiento[]; registros: RegistroGuardado[]; mes: string; fuentes: Categoria[]; idIngresos: string; idGastos: string
-  alCambiar: () => Promise<void>
+  alCambiar: () => Promise<void>; alLlego: (f: { monto: number; id_etiqueta: string }) => void
 }) {
   const nombre = (id: string | null) => fuentes.find(f => f.id_etiqueta === id)?.nombre ?? 'Sin fuente'
   const hoy = hoyIso()
-  const delMes = useMemo(() => fijos(movimientos, mes).map(f => ({ ...f, estado: estadoFijo(f, movimientos, hoy) })), [movimientos, mes, hoy])
+  const delMes = useMemo(() => {
+    const falta = new Map(porRecibir(movimientos, hoy).map(f => [f.id_etiqueta, f.falta]))
+    return fijos(movimientos, mes).map(f => ({ ...f, estado: estadoFijo(f, movimientos, hoy), falta: falta.get(f.id_etiqueta) ?? 0 }))
+  }, [movimientos, mes, hoy])
   const recibido = useMemo(() => esperadoVsRecibido(movimientos, mes), [movimientos, mes])
 
   return (
@@ -966,6 +983,8 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
                 <span>{nombre(f.id_etiqueta)}<span className="tenue"> · día {f.dia}</span></span>
                 <strong>{pesos(f.monto)}</strong>
                 <span className={`estado ${ESTADO_FIJO[f.estado].clase}`}>{ESTADO_FIJO[f.estado].texto}</span>
+                {f.falta > 0 && <button className="enlace" onClick={() => alLlego({ monto: f.falta, id_etiqueta: f.id_etiqueta })}>
+                  Ya llegó{f.falta < f.monto ? ` (faltan ${pesos(f.falta)})` : ''}</button>}
               </li>
             ))}
           </ul>

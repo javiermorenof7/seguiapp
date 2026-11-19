@@ -8,6 +8,7 @@ import { formatoValor } from '../indicadores'
 import { facturaParecida } from './aprende'
 import { acumuladoAno, mesDe, type Movimiento } from './calculos'
 import { queDescuentan } from './estadoRecibos'
+import { fuenteDeFijo } from './ingresos'
 import { categoriaDeBanco, bancoDe, cuentaDe, repetidoPosible, comercio, conciliar, diferencia, enPesos, pareceTarjeta, leerExtracto, limpiarOcr, porDestino, posibles, sugeridas, saldoEstimado, type Anotado, type Manual, type ExtractoLeido, type Formato, type MovimientoBanco } from './extracto'
 import { leerMonto, normalizar } from './parseo'
 
@@ -160,7 +161,7 @@ export default function Extracto({ ids, datos, banco, registros, desdeRegistros,
       )}
       {estado.paso === 'cuadre' && (
         <Cuadre key={estado.extracto.desde + estado.extracto.hasta + estado.extracto.saldoFinal} extracto={estado.extracto} bancoLeido={bancoDe(estado.lineas)} elegida={elegida} ids={ids} datos={datos} banco={banco}
-          sabidos={sabidos.traslados} historia={historia} signo={signo} deFinanzas={deFinanzas} alCambiar={alCambiar}
+          sabidos={sabidos.traslados} historia={historia} signo={signo} deFinanzas={deFinanzas} alCambiar={alCambiar} movimientos={movimientos}
           alCancelar={() => setEstado({ paso: 'inicio' })}
           alTerminar={mensaje => { setEstado({ paso: 'inicio' }); setAviso(mensaje) }} />
       )}
@@ -213,7 +214,8 @@ function Columnas({ ejemplo, alElegir, alCancelar }: { ejemplo: { descripcion: s
   )
 }
 
-function Cuadre({ extracto: e, bancoLeido, elegida, ids, datos, banco, sabidos, historia, signo, deFinanzas, alCambiar, alCancelar, alTerminar }: {
+function Cuadre({ extracto: e, bancoLeido, elegida, ids, datos, banco, sabidos, historia, signo, deFinanzas, alCambiar, alCancelar, alTerminar, movimientos }: {
+  movimientos: Movimiento[]
   extracto: ExtractoLeido; bancoLeido: string | null; elegida: string; ids: Ids; datos: Datos; banco: Banco; sabidos: Map<string, string>; historia: { texto: string; id_etiqueta: string }[]
   signo: (r: RegistroGuardado) => number; deFinanzas: (r: RegistroGuardado) => boolean
   alCambiar: () => Promise<void>; alCancelar: () => void; alTerminar: (mensaje: string) => void
@@ -265,14 +267,15 @@ function Cuadre({ extracto: e, bancoLeido, elegida, ids, datos, banco, sabidos, 
 
   const propuesta = (m: MovimientoBanco): Decision => {
     if (sabidos.has(normalizar(m.descripcion).slice(0, 100))) return { incluir: true, destino: 't', valor: m.valor }
-    if (m.valor > 0) return { incluir: true, destino: `i:${categoriaDeBanco(m.descripcion, datos.aprendido, datos.fuentes, historia)?.id_etiqueta ?? ''}`, valor: m.valor }
+    // sin fuente aprendida, la de un ingreso fijo que aún no llega ese mes y vale parecido
+    if (m.valor > 0) return { incluir: true, destino: `i:${categoriaDeBanco(m.descripcion, datos.aprendido, datos.fuentes, historia)?.id_etiqueta ?? fuenteDeFijo(movimientos, m.fecha, enPesos(m.valor) / 100) ?? ''}`, valor: m.valor }
     // el banco pega las palabras con puntos ("NAL.CLARO"): se separan antes de buscar la factura
     const factura = facturaParecida(queDescuentan(datos.recibos), normalizar(m.descripcion).replace(/[^a-z0-9ñ]+/g, ' '))
     const categoria = factura ? datos.categorias.find(c => normalizar(c.nombre) === 'hogar') : categoriaDeBanco(m.descripcion, datos.aprendido, datos.categorias, historia)
     return { incluir: true, destino: `g:${categoria?.id_etiqueta ?? ''}`, id_recibo: factura?.id_recibo, valor: m.valor }
   }
   // las propuestas se calculan una vez por extracto: comparan cada fila con todo lo anotado
-  const propuestas = useMemo(() => new Map(cuadre.faltan.map(m => [m.huella, propuesta(m)])), [cuadre.faltan, sabidos, historia, datos])
+  const propuestas = useMemo(() => new Map(cuadre.faltan.map(m => [m.huella, propuesta(m)])), [cuadre.faltan, sabidos, historia, datos, movimientos])
   const decision = (m: MovimientoBanco) => decisiones.get(m.huella) ?? propuestas.get(m.huella) ?? propuesta(m)
   // movimientos iguales: misma descripción y mismo sentido
   const igual = (m: MovimientoBanco) => `${Math.sign(m.valor)}|${normalizar(m.descripcion)}`

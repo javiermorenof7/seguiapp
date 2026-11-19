@@ -28,10 +28,28 @@ export function fijos(movimientos: Movimiento[], mes: string): Fijo[] {
   })
 }
 
+const llegoDe = (fijo: Fijo, movimientos: Movimiento[], mes: string) =>
+  movimientos.filter(m => m.tipo === 'ingreso' && m.id_etiqueta === fijo.id_etiqueta && mesDe(m.fecha) === mes).reduce((s, m) => s + m.valor, 0)
+// recibido cuando ya llegó casi todo (la primera quincena sola no basta)
+const yaLlego = (fijo: Fijo, movimientos: Movimiento[], mes: string) => llegoDe(fijo, movimientos, mes) >= fijo.monto * (1 - TOLERANCIA)
+
 export function estadoFijo(fijo: Fijo, movimientos: Movimiento[], hoy: string): EstadoFijo {
   const mes = mesDe(hoy)
-  if (movimientos.some(m => m.tipo === 'ingreso' && m.id_etiqueta === fijo.id_etiqueta && mesDe(m.fecha) === mes)) return 'recibido'
+  if (yaLlego(fijo, movimientos, mes)) return 'recibido'
   return +hoy.slice(8, 10) > Math.min(fijo.dia, diasDelMes(mes)) + GRACIA_DIAS ? 'atrasado' : 'pendiente'
+}
+
+// Lo que falta de cada fijo que aún no llega en el mes de "hoy": no entra al saldo, solo se muestra aparte.
+export function porRecibir(movimientos: Movimiento[], hoy: string) {
+  const mes = mesDe(hoy)
+  return fijos(movimientos, mes).flatMap(f => yaLlego(f, movimientos, mes) ? [] : [{ ...f, falta: f.monto - llegoDe(f, movimientos, mes) }])
+}
+
+// Fuente del fijo que aún no llega ese mes y cuyo faltante se parece (±10 %) a un ingreso del banco, en pesos.
+// shortcut: una quincena suelta no se reconoce (vale la mitad del faltante), si hace falta comparar también contra monto / 2.
+export function fuenteDeFijo(movimientos: Movimiento[], fecha: string, valor: number): string | null {
+  const falta = porRecibir(movimientos, fecha).find(f => Math.abs(valor - f.falta) <= f.falta * TOLERANCIA)
+  return falta?.id_etiqueta ?? null
 }
 
 // Ingresos de cada fuente en los últimos "n" meses (incluido el actual); sin fuente va con id null.

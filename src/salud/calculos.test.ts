@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  aKg, anteriorDe, cambioPeso, coincidencias, comparar, fechasDeRecord, recordsSegunMeta, constancia, seriesPorDia, diasEntrenados, faltaParaMeta, estadoSemana, leerSerie, conPaso, textoSeries, parecido, parteDe, enUnidad, pesoPorDia, calorias, leerCardio, metDe, minutosCardio, progreso, siSigues, seriesDeUltima, seriesPorParte, sesionesPorDia, sugerencia, textoSerie, type Sesion,
+  aKg, anteriorDe, cambioPeso, coincidencias, comparar, fechasDeRecord, recordsSegunMeta, constancia, seriesPorDia, diasEntrenados, faltaParaMeta, estadoSemana, leerSerie, conPaso, textoSeries, parecido, parteDe, enUnidad, pesoPorDia, calorias, caloriasEnTramos, cambioPorcentual, leerCardio, metDe, minutosCardio, progreso, siSigues, seriesDeUltima, seriesPorParte, sesionesPorDia, sugerencia, textoSerie, type Sesion,
 } from './calculos'
 
 const s = (fecha: string, ejercicio: string, series: number, repeticiones: number, peso: number | null): Sesion =>
@@ -232,6 +232,12 @@ describe('calorías y "si sigues así"', () => {
     expect(calorias(semana, '2026-11-16', '2026-11-22', '2026-11-19', 72)).toEqual({ pesas: 480, cardio: 288, total: 768, supuesto: false })
     expect(calorias(semana, '2026-11-16', '2026-11-22', '2026-11-19', null).supuesto).toBe(true)
     expect([metDe('Correr'), metDe('Elíptica'), metDe('Remo')]).toEqual([9.8, 5, 6])
+  })
+  it('reparte las calorías por día, deja en null lo que no llega y compara con antes', () => {
+    const semana = [s('2026-11-17', 'Press banca', 16, 10, 60), { fecha: '2026-11-18', ejercicio: 'Cinta', series: 0, repeticiones: 0, peso: null, minutos: 30 }]
+    const tramos = ['2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20'].map(d => ({ desde: d, hasta: d }))
+    expect(caloriasEnTramos(semana, tramos, '2026-11-19', 72).map(c => c && c.total)).toEqual([240, 288, 0, null])
+    expect([cambioPorcentual(120, 100), cambioPorcentual(80, 100), cambioPorcentual(50, 0)]).toEqual([20, -20, null])
   })
   const dias = (desde: string, n: number, peso: number) => Array.from({ length: n }, (_, i) => s(new Date(Date.parse(desde) + i * 86400000).toISOString().slice(0, 10), 'Press banca', 3, 10, peso))
   // semanas completas antes del lunes 16/11: 19/10, 26/10, 2/11 y 9/11

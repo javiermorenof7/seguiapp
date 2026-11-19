@@ -8,7 +8,7 @@ import { formatoValor } from '../indicadores'
 import { facturaParecida } from './aprende'
 import { acumuladoAno, mesDe, type Movimiento } from './calculos'
 import { queDescuentan } from './estadoRecibos'
-import { fuenteDeFijo } from './ingresos'
+import { anotados as fijosAnotados, fuenteDeFijo } from './ingresos'
 import { categoriaDeBanco, bancoDe, cuentaDe, repetidoPosible, comercio, conciliar, diferencia, enPesos, pareceTarjeta, leerExtracto, limpiarOcr, porDestino, posibles, sugeridas, saldoEstimado, type Anotado, type Manual, type ExtractoLeido, type Formato, type MovimientoBanco } from './extracto'
 import { leerMonto, normalizar } from './parseo'
 
@@ -275,7 +275,7 @@ function Cuadre({ extracto: e, bancoLeido, elegida, ids, datos, banco, sabidos, 
   const propuesta = (m: MovimientoBanco): Decision => {
     if (sabidos.has(normalizar(m.descripcion).slice(0, 100))) return { incluir: true, destino: 't', valor: m.valor }
     // sin fuente aprendida, la de un ingreso fijo que aún no llega ese mes y vale parecido
-    if (m.valor > 0) return { incluir: true, destino: `i:${categoriaDeBanco(m.descripcion, datos.aprendido, datos.fuentes, historia)?.id_etiqueta ?? fuenteDeFijo(movimientos, m.fecha, enPesos(m.valor) / 100) ?? ''}`, valor: m.valor }
+    if (m.valor > 0) return { incluir: true, destino: `i:${categoriaDeBanco(m.descripcion, datos.aprendido, datos.fuentes, historia)?.id_etiqueta ?? fuenteDeFijo(movimientos, m.fecha, enPesos(m.valor) / 100, fijosAnotados(datos.fuentes)) ?? ''}`, valor: m.valor }
     // el banco pega las palabras con puntos ("NAL.CLARO"): se separan antes de buscar la factura
     const factura = facturaParecida(queDescuentan(datos.recibos), normalizar(m.descripcion).replace(/[^a-z0-9ñ]+/g, ' '))
     const categoria = factura ? datos.categorias.find(c => normalizar(c.nombre) === 'hogar') : categoriaDeBanco(m.descripcion, datos.aprendido, datos.categorias, historia)

@@ -3,7 +3,7 @@ import type { RegistroGuardado, Seguimiento } from '../datos'
 import { estado, inicioPeriodo } from '../indicadores'
 import { resumenMes, type Movimiento, type TipoMovimiento } from '../finanzas/calculos'
 import { racha, totalDelDia } from '../habitos/calculos'
-import { estadoFijo, fijos } from '../finanzas/ingresos'
+import { estadoFijo, fijos, type Fijo } from '../finanzas/ingresos'
 import { comparar, restarDias } from '../salud/calculos'
 
 export type Modulo = 'finanzas' | 'salud' | 'habitos' | 'tareas'
@@ -22,7 +22,7 @@ export function activos(seguimientos: Seguimiento[], plantillas: string[]): Set<
 }
 
 // Saldo del mes con lo que entró y lo que salió (gastos y ahorro).
-export function resumenFinanzas(seguimientos: Seguimiento[], registros: RegistroGuardado[], hoy: string) {
+export function resumenFinanzas(seguimientos: Seguimiento[], registros: RegistroGuardado[], hoy: string, anotados: Fijo[] = []) {
   const suyos = seguimientos.filter(s => s.codigo_plantilla === 'finanzas' && TIPO_FINANZAS[s.nombre])
   if (!suyos.length) return null
   const tipoDe = new Map(suyos.map(s => [s.id_seguimiento, TIPO_FINANZAS[s.nombre]]))
@@ -31,7 +31,7 @@ export function resumenFinanzas(seguimientos: Seguimiento[], registros: Registro
     const tipo = tipoDe.get(r.id_seguimiento)
     return tipo ? [{ fecha: r.fecha, valor: r.valor, tipo, id_etiqueta: r.id_etiqueta }] : []
   })
-  const estados = fijos(movimientos, mes).map(f => estadoFijo(f, movimientos, hoy))
+  const estados = fijos(movimientos, mes, anotados).map(f => estadoFijo(f, movimientos, hoy))
   return {
     idGastos: (suyos.find(s => s.nombre === 'Gastos') ?? suyos[0]).id_seguimiento,
     ingresosFijos: { total: estados.length, pendientes: estados.filter(e => e === 'pendiente').length, atrasados: estados.filter(e => e === 'atrasado').length },

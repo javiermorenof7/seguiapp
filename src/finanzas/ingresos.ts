@@ -111,11 +111,19 @@ export function porRecibir(movimientos: Movimiento[], hoy: string, suyos: Fijo[]
   return delMes.flatMap(f => yaLlego(f, llego) ? [] : [{ ...f, falta: f.monto - (llego.get(claveDe(f)) ?? 0) }])
 }
 
-// Fuente del fijo que aún no llega ese mes y cuyo faltante se parece (±10 %) a un ingreso del banco, en pesos.
+// Fuente del fijo que aún no llega ese mes y cuyo faltante se parece (±10 %) a un ingreso del banco, en pesos;
+// si ninguno, el de día de pago a DIAS_CERCA o menos que reciba hasta 50 % más de lo que falta (subió el sueldo).
 // shortcut: una quincena suelta no se reconoce (vale la mitad del faltante), si hace falta comparar también contra monto / 2.
+export const MAS_DE_LO_ESPERADO = 0.5
 export function fuenteDeFijo(movimientos: Movimiento[], fecha: string, valor: number, suyos: Fijo[] = []): string | null {
-  const falta = porRecibir(movimientos, fecha, suyos).find(f => Math.abs(valor - f.falta) <= f.falta * TOLERANCIA)
-  return falta?.id_etiqueta ?? null
+  const faltan = porRecibir(movimientos, fecha, suyos)
+  const parecido = faltan.find(f => Math.abs(valor - f.falta) <= f.falta * TOLERANCIA)
+  if (parecido) return parecido.id_etiqueta
+  const dia = +fecha.slice(8, 10)
+  const lejos = (f: Fijo) => Math.abs(Math.min(f.dia, diasDelMes(mesDe(fecha))) - dia)
+  const mayor = faltan.filter(f => valor > f.falta && valor <= f.falta * (1 + MAS_DE_LO_ESPERADO) && lejos(f) <= DIAS_CERCA)
+    .sort((a, b) => lejos(a) - lejos(b))[0]
+  return mayor?.id_etiqueta ?? null
 }
 
 // Ingresos de cada fuente en los últimos "n" meses (incluido el actual); sin fuente va con id null.

@@ -111,6 +111,13 @@ describe('fuenteDeFijo', () => {
     expect(fuenteDeFijo(sueldo, '2026-10-30', 200000)).toBeNull()
     expect(fuenteDeFijo([...sueldo, ing('2026-10-30', 3000000)], '2026-10-31', 3000000)).toBeNull()
   })
+  it('sugiere la fuente si llegó más de lo esperado cerca del día de pago, hasta 50 % más', () => {
+    const seis = [{ id_etiqueta: 'sueldo', monto: 6000000, dia: 30 }]
+    expect(fuenteDeFijo([], '2026-10-30', 7000000, seis)).toBe('sueldo')
+    expect(fuenteDeFijo([], '2026-10-10', 7000000, seis)).toBeNull()
+    expect(fuenteDeFijo([], '2026-10-30', 10000000, seis)).toBeNull()
+    expect(fuenteDeFijo([], '2026-02-27', 7000000, seis)).toBe('sueldo')
+  })
 })
 
 describe('varios fijos en una fuente', () => {

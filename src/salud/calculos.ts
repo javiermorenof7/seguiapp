@@ -237,3 +237,14 @@ export function constancia(sesiones: Sesion[], escala: 'semana' | 'mes' | 'ano',
   const lunes = restarDias(desde, (new Date(`${desde}T12:00:00Z`).getUTCDay() || 7) - 1)
   return Array.from({ length: Math.ceil((diasEntre(lunes, hasta) + 1) / 7) }, (_, i) => restarDias(lunes, -7 * i)).map(d => grupo(d, restarDias(d, -6)))
 }
+
+// Series de cada parte del cuerpo en el rango, de mayor a menor; los ejercicios sin parte van con null.
+export function seriesPorParte(sesiones: Sesion[], parteDeEjercicio: (ejercicio: string) => Parte | null, desde: string, hasta: string, hoy: string) {
+  const total = new Map<Parte | null, number>()
+  for (const s of sesiones) {
+    if (s.fecha < desde || s.fecha > hasta || s.fecha > hoy) continue
+    const parte = parteDeEjercicio(s.ejercicio)
+    total.set(parte, (total.get(parte) ?? 0) + s.series)
+  }
+  return [...total].map(([parte, series]) => ({ parte, series })).sort((a, b) => b.series - a.series)
+}

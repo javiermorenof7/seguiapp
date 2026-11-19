@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  aKg, anteriorDe, cambioPeso, coincidencias, comparar, fechasDeRecord, recordsSegunMeta, constancia, seriesPorDia, diasEntrenados, faltaParaMeta, estadoSemana, leerSerie, conPaso, textoSeries, parecido, parteDe, enUnidad, pesoPorDia, progreso, seriesDeUltima, sesionesPorDia, sugerencia, textoSerie, type Sesion,
+  aKg, anteriorDe, cambioPeso, coincidencias, comparar, fechasDeRecord, recordsSegunMeta, constancia, seriesPorDia, diasEntrenados, faltaParaMeta, estadoSemana, leerSerie, conPaso, textoSeries, parecido, parteDe, enUnidad, pesoPorDia, progreso, seriesDeUltima, seriesPorParte, sesionesPorDia, sugerencia, textoSerie, type Sesion,
 } from './calculos'
 
 const s = (fecha: string, ejercicio: string, series: number, repeticiones: number, peso: number | null): Sesion =>
@@ -197,4 +197,13 @@ describe('parteDe', () => {
     expect(parteDe('Dominadas')).toBe('espalda')
   })
   it('sin pista no adivina', () => expect(parteDe('Máquina 7')).toBeNull())
+})
+
+describe('seriesPorParte', () => {
+  it('suma las series de cada parte en el rango, de mayor a menor, y deja aparte las sin parte', () => {
+    const sesiones = [s('2026-11-18', 'Press banca', 4, 10, 60), s('2026-11-17', 'Máquina 7', 2, 10, 20), s('2026-11-17', 'Sentadilla', 5, 8, 80),
+      s('2026-11-16', 'Press banca', 3, 10, 60), s('2026-11-10', 'Sentadilla', 9, 8, 80), s('2026-11-19', 'Press banca', 9, 10, 60)]
+    expect(seriesPorParte(sesiones, parteDe, '2026-11-16', '2026-11-22', '2026-11-18')).toEqual([
+      { parte: 'pecho', series: 7 }, { parte: 'piernas', series: 5 }, { parte: null, series: 2 }])
+  })
 })

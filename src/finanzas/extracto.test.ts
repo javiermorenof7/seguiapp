@@ -62,6 +62,16 @@ describe('leerExtracto', () => {
     expect(e.movimientos.map(m => [m.fecha, m.valor])).toEqual([['2026-07-01', 50000000], ['2026-07-15', -20000000], ['2026-07-30', 1050]])
   })
 
+  it('un trimestre de noviembre a enero sin año en las fechas pone cada movimiento en su año', () => {
+    const e = leido(['Banco Caja Social', 'Periodo del Informe', '1 de Noviembre a 31 de Enero de 2027', 'Cuenta 12345678901',
+      'Saldo Anterior 1,000,000.00', 'Fecha Transacción Documento Lugar Débitos Créditos Saldos',
+      'NOV 28 RECEPCION DINERO 1234 BOGOTA 500,000.00 1,500,000.00',
+      'DIC 15 COMPRA EN COMERCIO TIENDA 200,000.00 1,300,000.00',
+      'ENE 10 ABONO DE INTERESES 1234 BOGOTA 10.50 1,300,010.50', 'Nuevo Saldo 1,300,010.50'])
+    expect(e.movimientos.map(m => m.fecha)).toEqual(['2026-11-28', '2026-12-15', '2027-01-10'])
+    expect(e.saldoInicial + e.movimientos.reduce((t, m) => t + m.valor, 0)).toBe(e.saldoFinal)
+  })
+
   it('dos movimientos iguales el mismo día tienen huella distinta', () => {
     const [, , a, b] = leido(POR_LINEA).movimientos
     expect(a.valor).toBe(b.valor)

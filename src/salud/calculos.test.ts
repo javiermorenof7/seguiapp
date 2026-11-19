@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  aKg, anteriorDe, cambioPeso, coincidencias, comparar, fechasDeRecord, recordsSegunMeta, constancia, seriesPorDia, diasEntrenados, faltaParaMeta, estadoSemana, leerSerie, conPaso, textoSeries, parecido, parteDe, enUnidad, pesoPorDia, progreso, seriesDeUltima, seriesPorParte, sesionesPorDia, sugerencia, textoSerie, type Sesion,
+  aKg, anteriorDe, cambioPeso, coincidencias, comparar, fechasDeRecord, recordsSegunMeta, constancia, seriesPorDia, diasEntrenados, faltaParaMeta, estadoSemana, leerSerie, conPaso, textoSeries, parecido, parteDe, enUnidad, pesoPorDia, calorias, leerCardio, metDe, minutosCardio, progreso, siSigues, seriesDeUltima, seriesPorParte, sesionesPorDia, sugerencia, textoSerie, type Sesion,
 } from './calculos'
 
 const s = (fecha: string, ejercicio: string, series: number, repeticiones: number, peso: number | null): Sesion =>
@@ -205,5 +205,41 @@ describe('seriesPorParte', () => {
       s('2026-11-16', 'Press banca', 3, 10, 60), s('2026-11-10', 'Sentadilla', 9, 8, 80), s('2026-11-19', 'Press banca', 9, 10, 60)]
     expect(seriesPorParte(sesiones, parteDe, '2026-11-16', '2026-11-22', '2026-11-18')).toEqual([
       { parte: 'pecho', series: 7 }, { parte: 'piernas', series: 5 }, { parte: null, series: 2 }])
+  })
+})
+
+describe('cardio en minutos', () => {
+  it('lee minutos y km opcionales, y rechaza lo que no cabe', () => {
+    expect(leerCardio('Cinta', '30', '')).toMatchObject({ ejercicio: 'cinta', minutos: 30, km: null, peso: null, series: 0 })
+    expect(leerCardio('Cinta', '30', '4,25')).toMatchObject({ minutos: 30, km: 4.25 })
+    expect(leerCardio('Cinta', '0', '')).toBeNull()
+    expect(leerCardio('Cinta', '30', 'mucho')).toBeNull()
+  })
+  it('se lee en minutos, suma aparte de las series y se repite como la última vez', () => {
+    const cinta = { fecha: '2026-11-18', ejercicio: 'Cinta', series: 0, repeticiones: 0, peso: null, minutos: 30, km: 4.2 }
+    expect(textoSerie(cinta)).toBe('30 min · 4,2 km')
+    expect(parteDe('Escalera')).toBe('cardio')
+    expect(minutosCardio([cinta, { ...cinta, fecha: '2026-11-10' }, s('2026-11-18', 'Press banca', 3, 10, 60)], '2026-11-16', '2026-11-22', '2026-11-19')).toBe(30)
+    expect(seriesDeUltima([cinta], 'Cinta')).toEqual([expect.objectContaining({ minutos: 30, km: 4.2 })])
+  })
+})
+
+describe('calorías y "si sigues así"', () => {
+  it('calcula con MET: pesas por series y cardio por minutos según su tipo', () => {
+    const semana = [s('2026-11-17', 'Press banca', 16, 10, 60), s('2026-11-18', 'Sentadilla', 16, 10, 80),
+      { fecha: '2026-11-18', ejercicio: 'Cinta', series: 0, repeticiones: 0, peso: null, minutos: 30 }]
+    // 32 series × 2,5 min = 80 min → 5 × 72 × 80/60 = 480; cinta 8 × 72 × 0,5 = 288
+    expect(calorias(semana, '2026-11-16', '2026-11-22', '2026-11-19', 72)).toEqual({ pesas: 480, cardio: 288, total: 768, supuesto: false })
+    expect(calorias(semana, '2026-11-16', '2026-11-22', '2026-11-19', null).supuesto).toBe(true)
+    expect([metDe('Correr'), metDe('Elíptica'), metDe('Remo')]).toEqual([9.8, 5, 6])
+  })
+  const dias = (desde: string, n: number, peso: number) => Array.from({ length: n }, (_, i) => s(new Date(Date.parse(desde) + i * 86400000).toISOString().slice(0, 10), 'Press banca', 3, 10, peso))
+  // semanas completas antes del lunes 16/11: 19/10, 26/10, 2/11 y 9/11
+  const constante = (subir: boolean) => [...dias('2026-10-19', 3, 50), ...dias('2026-10-26', 3, 52), ...dias('2026-11-02', 3, 54), ...dias('2026-11-09', 3, subir ? 56 : 50)]
+  it('crece si cumple la meta y sube el peso; quieto si no sube; constancia si no cumple', () => {
+    expect(siSigues(constante(true), '2026-11-19', 3)).toBe('crece')
+    expect(siSigues(constante(false).map(x => ({ ...x, peso: 50 })), '2026-11-19', 3)).toBe('quieto')
+    expect(siSigues(dias('2026-11-09', 2, 50), '2026-11-19', 3)).toBe('constancia')
+    expect(siSigues([], '2026-11-19', 3)).toBeNull()
   })
 })

@@ -2,7 +2,7 @@
 import { mesDe, mesesAntes, type Movimiento } from './calculos'
 import { normalizar } from './parseo'
 
-export interface Reparto { basicos: number; personales: number; ahorro: number; avisos: string[] }
+export interface Reparto { basicos: number; personales: number; ahorro: number; avisos: string[]; pesos: { basicos: number; personales: number; ahorro: number; ingresos: number } }
 
 // Porcentajes del ingreso del mes. Un gasto sin grupo ni categoría cuenta como personal.
 // esperado: lo que falta recibir de los ingresos fijos del mes (pronóstico); con el ingreso real ya anotado vale 0
@@ -19,7 +19,7 @@ export function cincuentaTreintaVeinte(movimientos: Movimiento[], mes: string, g
     else personales += m.valor
   }
   const pct = (v: number) => Math.round((v / ingresos) * 100)
-  const r = { basicos: pct(basicos), personales: pct(personales), ahorro: pct(ahorro), avisos: [] as string[] }
+  const r = { basicos: pct(basicos), personales: pct(personales), ahorro: pct(ahorro), avisos: [] as string[], pesos: { basicos, personales, ahorro, ingresos } }
   if (r.basicos > 50) r.avisos.push(`Los gastos básicos van en ${r.basicos} % de tus ingresos (lo sano es hasta 50 %).`)
   if (r.personales > 30) r.avisos.push(`Los gastos personales van en ${r.personales} % de tus ingresos (lo sano es hasta 30 %).`)
   return r

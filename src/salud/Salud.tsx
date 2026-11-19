@@ -16,7 +16,7 @@ import { SemanaGym } from '../inicio/Minis'
 import { normalizar } from '../finanzas/parseo'
 import {
   cambioPeso, coincidencias, comparar, conPaso, conSigno, constancia, enUnidad, faltaParaMeta, fechasDeRecord, recordsSegunMeta, indicesRecord, kg, leerSerie, parecido, parteDe, pasoDe, pesoPorDia, seriesPorParte,
-  PARTES, progreso, restarDias, seriesDeUltima, textoSerie, textoSeries,
+  PARTES, PESO_SUPUESTO, aKg, calorias, leerCardio, minutosCardio, siSigues, progreso, restarDias, seriesDeUltima, textoSerie, textoSeries,
   type Parte, type Sesion, type Unidad,
 } from './calculos'
 
@@ -114,6 +114,9 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
   const [filas, setFilas] = useState([{ series: '1', repeticiones: '', peso: '' }])
   // el peso se escribe en la unidad elegida y se guarda en kg; la parte se propone por el nombre hasta que la elija a mano
   const [unidad, setUnidad] = useState<Unidad>('kg')
+  // cardio: minutos y, si se abre, km
+  const [minutos, setMinutos] = useState('')
+  const [km, setKm] = useState<string | null>(null)
   const [parte, setParte] = useState<Parte | ''>('')
   const parteAMano = useRef(false)
   const [pregunta, setPregunta] = useState<{ leidas: Leido[]; sugerido: string } | null>(null)
@@ -143,13 +146,15 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
       const s = series.get(r.id_registro)
       const ejercicio = r.id_etiqueta && nombres.get(r.id_etiqueta)
       return s && ejercicio ? [{
-        fecha: r.fecha, ejercicio, series: s.cantidad_series, repeticiones: s.cantidad_repeticiones,
+        fecha: r.fecha, ejercicio, series: s.cantidad_series ?? 0, repeticiones: s.cantidad_repeticiones ?? 0,
         peso: s.peso_kilogramos === null ? null : Number(s.peso_kilogramos), unidad: s.unidad_peso,
+        minutos: s.minutos, km: s.distancia_km === null ? null : Number(s.distancia_km),
       }] : []
     })
   }, [datos, registros])
 
-  const leidas = filas.map(f => leerSerie(ejercicio, f.series, f.repeticiones, f.peso, unidad))
+  const esCardio = parte === 'cardio'
+  const leidas = esCardio ? [leerCardio(ejercicio, minutos, km ?? '')] : filas.map(f => leerSerie(ejercicio, f.series, f.repeticiones, f.peso, unidad))
   const unidadDe = (nombre: string): Unidad => datos?.fichas.get(nombre)?.unidad_peso ?? 'kg'
   const parteGuardada = (nombre: string) => (datos?.fichas.get(nombre)?.parte_cuerpo as Parte | null | undefined) ?? parteDe(nombre)
   const totalSeries = filas.reduce((t, f) => t + (/^\d+$/.test(f.series.trim()) ? Number(f.series) : 0), 0)
@@ -184,7 +189,9 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
     const suya = previas[0]?.unidad ?? (guardado ? unidadDe(guardado) : unidad)
     if (guardado) { setUnidad(suya); setParte(parteGuardada(guardado) ?? ''); parteAMano.current = false }
     else if (!parteAMano.current) setParte(parteDe(texto) ?? '')
-    if (previas.length) {
+    // cardio: los minutos y los km de la última vez
+    if (previas[0]?.minutos) { setMinutos(String(previas[0].minutos)); setKm(previas[0].km ? String(previas[0].km).replace('.', ',') : null) }
+    if (previas.length && !previas[0].minutos) {
       setFilas(previas.map(p => ({ series: String(p.series), repeticiones: String(p.repeticiones), peso: p.peso === null ? '' : String(enUnidad(p.peso, suya)).replace('.', ',') })))
       autollenadas.current = true
     } else if (autollenadas.current) {
@@ -211,12 +218,14 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
       const hechas = lista.reduce((t, x) => t + x.series, 0)
       const pesos = lista.flatMap(x => x.peso === null ? [] : [x.peso])
       const maximo = pesos.length ? Math.max(...pesos) : null
-      setAviso([
+      if (lista[0].minutos) setAviso(`${nombre}: ${textoSerie(lista[0])}.`)
+      else setAviso([
         `${nombre}: ${hechas} ${hechas === 1 ? 'serie' : 'series'} (${lista.map(x => textoSerie(x, u)).join(', ')}).`,
         maximo !== null && antes ? `Peso máximo ${kg(maximo, u)} (${conSigno(enUnidad(maximo, u) - enUnidad(antes.valor, u), u)} frente al ${diaMes(antes.fecha)}).` : '',
       ].filter(Boolean).join(' '))
       setEjercicio('')
       setFilas([{ series: '1', repeticiones: '', peso: '' }])
+      setMinutos(''); setKm(null)
       autollenadas.current = false
       setUnidad('kg')
       setParte('')
@@ -234,7 +243,8 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
   // Nombre conocido → lo aprendido → "¿Quisiste decir…?" si se parece a uno conocido → nuevo.
   function enviar(evento: FormEvent) {
     evento.preventDefault()
-    if (leidas.some(l => !l)) return setError(`Revisa cada fila: series de 1 a 100, repeticiones de 1 a 1.000 y el peso en ${unidad} (vacío si es con tu cuerpo).`)
+    if (leidas.some(l => !l)) return setError(esCardio ? 'Escribe los minutos (de 1 a 600) y, si los agregaste, los km.'
+      : `Revisa cada fila: series de 1 a 100, repeticiones de 1 a 1.000 y el peso en ${unidad} (vacío si es con tu cuerpo).`)
     if (!datos) return
     const lista = leidas as Leido[]
     const nombre = lista[0].ejercicio
@@ -286,14 +296,15 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
   const nombres = datos.nombres
   const deSerie = new Map(datos.series.map(x => [x.id_registro, x]))
   // un renglón por ejercicio y día (los 6 más recientes); sus series se abren para editarlas o borrarlas
-  const grupos = new Map<string, { fecha: string; ejercicio: string; series: { id: string; series: number; repeticiones: number; peso: number | null; unidad: Unidad | null }[] }>()
+  const grupos = new Map<string, { fecha: string; ejercicio: string; series: { id: string; series: number; repeticiones: number; peso: number | null; unidad: Unidad | null; minutos: number | null; km: number | null }[] }>()
   for (const r of registros) {
     const x = deSerie.get(r.id_registro)
     if (!x) continue
     const clave = `${r.fecha}|${r.id_etiqueta}`
     if (!grupos.has(clave)) grupos.set(clave, { fecha: r.fecha, ejercicio: nombres.get(r.id_etiqueta ?? '') ?? 'Ejercicio', series: [] })
     // llegan de la más reciente a la más antigua: al frente para leerlas en el orden en que se hicieron
-    grupos.get(clave)!.series.unshift({ id: r.id_registro, series: x.cantidad_series, repeticiones: x.cantidad_repeticiones, peso: x.peso_kilogramos === null ? null : Number(x.peso_kilogramos), unidad: x.unidad_peso })
+    grupos.get(clave)!.series.unshift({ id: r.id_registro, series: x.cantidad_series ?? 0, repeticiones: x.cantidad_repeticiones ?? 0, peso: x.peso_kilogramos === null ? null : Number(x.peso_kilogramos),
+      unidad: x.unidad_peso, minutos: x.minutos, km: x.distancia_km === null ? null : Number(x.distancia_km) })
   }
   const ultimos = [...grupos].slice(0, 6)
   const loUltimo = ultimos.length > 0 && (
@@ -313,11 +324,11 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
             {grupoAbierto === clave && (
               <ul className="lista series-del-grupo">
                 {g.series.map((s, i) => {
-                  const actual = { ejercicio: g.ejercicio, series: s.series, repeticiones: s.repeticiones, peso: s.peso, unidad: s.unidad }
+                  const actual = { ejercicio: g.ejercicio, series: s.series, repeticiones: s.repeticiones, peso: s.peso, unidad: s.unidad, minutos: s.minutos, km: s.km }
                   const suya = s.unidad ?? unidadDe(g.ejercicio)
                   return (
                     <FilaSimple key={s.id} fecha="" titulo={`Fila ${i + 1}`} detalle={textoSerie(actual, unidadDe(g.ejercicio))}
-                      alBorrar={() => eliminarRegistro(s.id).then(alCambiar)} sinAcciones={editando === s.id} alEditar={() => setEditando(s.id)}>
+                      alBorrar={() => eliminarRegistro(s.id).then(alCambiar)} sinAcciones={editando === s.id} alEditar={s.minutos ? undefined : () => setEditando(s.id)}>
                       {editando === s.id && (
                         <EditarSerie actual={actual} unidad={suya} alCancelar={() => setEditando(null)}
                           alGuardar={async nueva => { await corregirSerie(s.id, nueva, suya); setEditando(null); await Promise.all([cargar(), alCambiar()]) }} />
@@ -420,6 +431,22 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
             {Object.entries(PARTES).map(([c, n]) => <option key={c} value={c}>{n}</option>)}
           </select>
         </label>
+        {esCardio ? (
+          <fieldset className="series-gym">
+            <legend>Cardio</legend>
+            <div className="serie-fila">
+              <Pasos titulo="Minutos" que="minutos" alSumar={paso => setMinutos(conPaso(minutos, paso * 5, 1))}>
+                <input required inputMode="numeric" maxLength={3} value={minutos} placeholder="Min" aria-label="Minutos de cardio" onChange={ev => setMinutos(ev.target.value)} />
+              </Pasos>
+              {km !== null && (
+                <Pasos titulo="Km" que="km" alSumar={paso => setKm(conPaso(km, paso * 0.5, 0))}>
+                  <input inputMode="decimal" maxLength={6} value={km} placeholder="Km" aria-label="Kilómetros" onChange={ev => setKm(ev.target.value)} />
+                </Pasos>
+              )}
+            </div>
+            {km === null && <button type="button" className="enlace" onClick={() => setKm('')}>+ Agregar km</button>}
+          </fieldset>
+        ) : (
         <fieldset className="series-gym">
           <legend>Series</legend>
           <div className="chips segmentado" role="radiogroup" aria-label="Unidad del peso">
@@ -449,6 +476,7 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
             onClick={() => { autollenadas.current = false; setFilas([...filas, { ...filas[filas.length - 1], series: '1' }]); setPregunta(null) }}>+ Serie distinta</button>
           <small className="ayuda">Si todas salieron iguales, una sola fila: 4 series, {unidad === 'lb' ? '135 lb' : '60 kg'}, 10 reps. Si alguna varió, "+ Serie distinta" copia la anterior para que cambies solo eso. Con − y + el peso va de {unidad === 'lb' ? '5 en 5' : '2,5 en 2,5'}; vacío es con tu cuerpo. El ejercicio recuerda si lo registras en kilos o en libras.</small>
         </fieldset>
+        )}
         {pregunta ? (
           <div className="chips" role="group" aria-label="¿Quisiste decir…?">
             <span>¿Quisiste decir <strong>{pregunta.sugerido}</strong>?</span>
@@ -456,7 +484,7 @@ function Gym({ vista, idGym, metaDias, registros: delAno, enfocar, alCambiar, al
             <button type="button" className="chip" disabled={enviando} onClick={() => responder(escrito)}>No, es nuevo</button>
           </div>
         ) : <button className="principal" disabled={enviando}>
-          Guardar {totalSeries || ''} {totalSeries === 1 ? 'serie' : 'series'}
+          {esCardio ? 'Guardar cardio' : `Guardar ${totalSeries || ''} ${totalSeries === 1 ? 'serie' : 'series'}`}
         </button>}
         {aviso && <p role="status" className="aviso">{aviso}</p>}
         {error && <p role="alert" className="error">{error}</p>}
@@ -638,11 +666,16 @@ function ResumenSalud({ sesiones, hoy, metaDias, ejercicios, fichas, medidas, re
   const enRango = sesiones.filter(s => s.fecha >= r.desde && s.fecha <= r.hasta && s.fecha <= hoy)
   const dias = new Set(enRango.map(s => s.fecha)).size
   const series = enRango.reduce((t, s) => t + s.series, 0)
+  const cardio = minutosCardio(sesiones, r.desde, r.hasta, hoy)
   const recordsEnRango = records.filter(f => f >= r.desde && f <= r.hasta).length
   const cuando = enPeriodo(ventana, hoy)
   const peso = medidas.find(m => normalizar(m.nombre) === 'peso')
   const ultimoPeso = peso && registros.filter(x => x.id_seguimiento === peso.id_seguimiento).sort((a, b) => b.fecha.localeCompare(a.fecha))[0]
   const meta = ventana.escala === 'semana' ? metaDias : undefined
+  // calorías automáticas: con lo anotado y el último peso de Cuerpo
+  const kilosPersona = ultimoPeso && peso ? (peso.unidad?.toLowerCase() === 'lb' ? aKg(Number(ultimoPeso.valor), 'lb') : Number(ultimoPeso.valor)) : null
+  const kcal = calorias(sesiones, r.desde, r.hasta, hoy, kilosPersona)
+  const tendencia = siSigues(sesiones, hoy, metaDias)
   const entrenados = new Set(enRango.map(s => s.fecha))
   const semana = ventana.escala !== 'semana' ? [] : Array.from({ length: 7 }, (_, i) => {
     const fecha = new Date(Date.parse(r.desde) + i * 86400000).toISOString().slice(0, 10)
@@ -667,8 +700,18 @@ function ResumenSalud({ sesiones, hoy, metaDias, ejercicios, fichas, medidas, re
               <span className="cifra">{dias}{meta ? ` de ${meta}` : ''}</span>
               {meta && dias >= meta && <span className="estado en-meta">✓ Cumpliste tu meta</span>}
               {semana.length > 0 && <SemanaGym semana={semana} meta={meta && r.hasta >= hoy ? meta : null} enPagina />}
-              <p className="tenue">{[`${series} ${series === 1 ? 'serie' : 'series'}`, `${recordsEnRango} ${recordsEnRango === 1 ? 'récord' : 'récords'}`,
+              <p className="tenue">{[`${series} ${series === 1 ? 'serie' : 'series'}`, cardio > 0 && `${cardio} min de cardio`, `${recordsEnRango} ${recordsEnRango === 1 ? 'récord' : 'récords'}`,
                 ultimoPeso && peso && `Peso ${formatoValor('numero', ultimoPeso.valor, peso.unidad)}`].filter(Boolean).join(' · ')}</p>
+              {kcal.total > 0 && (
+                <>
+                  <p>≈ <strong>{kcal.total.toLocaleString('es-CO')} kcal</strong> <span className="tenue">quemadas {cuando}</span></p>
+                  <details className="de-donde">
+                    <summary className="enlace">¿De dónde sale?</summary>
+                    <p className="tenue">{kcal.pesas.toLocaleString('es-CO')} kcal de pesas (unos 2,5 minutos por serie con su descanso) y {kcal.cardio.toLocaleString('es-CO')} de cardio según su tipo,
+                      con {kcal.supuesto ? `${PESO_SUPUESTO} kg porque aún no anotas tu peso en Cuerpo` : `tu peso de ${formatoValor('numero', ultimoPeso!.valor, peso!.unidad)}`}. Es un aproximado.</p>
+                  </details>
+                </>
+              )}
             </div>
           </section>
           <QueTrabaje sesiones={sesiones} hoy={hoy} ventana={ventana} parteDe={parteDeEjercicio} />
@@ -677,28 +720,42 @@ function ResumenSalud({ sesiones, hoy, metaDias, ejercicios, fichas, medidas, re
           <Progreso sesiones={sesiones} hoy={hoy} ejercicios={ejercicios} fichas={fichas} ventana={ventana} alVer={() => alVer('historial')} />
         </>
       )}
+      {tendencia && (
+        <section aria-label="Si sigues así">
+          <h2>Si sigues así</h2>
+          <p>{SI_SIGUES[tendencia]}</p>
+        </section>
+      )}
       <CuerpoHoy medidas={medidas} registros={registros} ventana={ventana} hoy={hoy} alVer={() => alVer('cuerpo')} />
       {sesiones.length > 0 && <Impacto sesiones={sesiones} hoy={hoy} metaDias={metaDias} />}
     </>
   )
 }
 
+const SI_SIGUES = {
+  crece: 'Vas en camino a ganar fuerza y masa muscular: cumpliste tu meta casi todas las semanas y tus pesos van subiendo.',
+  quieto: 'Vas constante. Para seguir ganando fuerza y masa muscular, sube poco a poco el peso o las repeticiones.',
+  constancia: 'Lo primero es la constancia: cumple tu meta de días 3 de cada 4 semanas y los resultados llegan.',
+}
 const COLORES_PARTE = ['--salud', '--c1', '--c2', '--c3', '--c4', '--c5']
 // Series por parte del cuerpo en el período y, en una línea, las partes que no se trabajaron.
 function QueTrabaje({ sesiones, hoy, ventana, parteDe: parteDeEjercicio }: { sesiones: Sesion[]; hoy: string; ventana: Ventana; parteDe: (e: string) => Parte | null }) {
   const r = rangoDe(ventana.escala, ventana.ancla)
-  const filas = useMemo(() => seriesPorParte(sesiones, parteDeEjercicio, r.desde, r.hasta, hoy), [sesiones, parteDeEjercicio, r.desde, r.hasta, hoy])
+  // el cardio va en minutos, no en series: su barra se queda por fuera y se dice aparte
+  const filas = useMemo(() => seriesPorParte(sesiones, parteDeEjercicio, r.desde, r.hasta, hoy).filter(f => f.series > 0), [sesiones, parteDeEjercicio, r.desde, r.hasta, hoy])
+  const cardio = minutosCardio(sesiones, r.desde, r.hasta, hoy)
   const nombres = filas.map(f => f.parte ? PARTES[f.parte] : 'Sin parte')
   const series = useMemo(() => [{ nombre: 'Series', datos: filas.map(f => f.series), color: filas.map((_, i) => cssVar(COLORES_PARTE[i % COLORES_PARTE.length])) }], [filas])
-  const faltan = (Object.keys(PARTES) as Parte[]).filter(p => !filas.some(f => f.parte === p)).map(p => PARTES[p])
-  if (!filas.length) return null
+  const faltan = (Object.keys(PARTES) as Parte[]).filter(p => !filas.some(f => f.parte === p) && !(p === 'cardio' && cardio)).map(p => PARTES[p])
+  if (!filas.length && !cardio) return null
   const cuando = enPeriodo(ventana, hoy)
   return (
     <section>
       <h2>¿Qué trabajé?</h2>
-      <Barras etiquetas={nombres} series={series} horizontal leyenda={false}
+      {filas.length > 0 && <Barras etiquetas={nombres} series={series} horizontal leyenda={false}
         formato={v => `${v} ${v === 1 ? 'serie' : 'series'}`} formatoEje={v => `${v}`} colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
-        descripcion={`Series por parte del cuerpo ${cuando}: ${filas.map((f, i) => `${nombres[i]} ${f.series}`).join(', ')}`} />
+        descripcion={`Series por parte del cuerpo ${cuando}: ${filas.map((f, i) => `${nombres[i]} ${f.series}`).join(', ')}`} />}
+      {cardio > 0 && <p><strong className="cifra-media">{cardio}</strong> <span className="tenue">min de cardio {cuando}</span></p>}
       {faltan.length > 0 && <p className="tenue">{`${cuando.charAt(0).toUpperCase()}${cuando.slice(1)} no trabajaste: ${faltan.join(', ')}.`}</p>}
     </section>
   )
@@ -878,7 +935,7 @@ function Progreso({ sesiones, hoy, ejercicios, fichas, ventana, alVer }: { sesio
   // un ejercicio se lee en su unidad; "Todos" compara en kg, que es como se guarda
   const u: Unidad = fichas.get(actual)?.unidad_peso ?? 'kg'
   const record = p.record !== null ? ` · récord ${kg(p.record, u)}` : ''
-  const partes = [...Object.keys(PARTES) as Parte[], null].map(c => ({ parte: c, suyos: ejercicios.filter(e => ((fichas.get(e)?.parte_cuerpo as Parte | null | undefined) ?? parteDe(e)) === c) })).filter(g => g.suyos.length)
+  const partes = [...(Object.keys(PARTES) as Parte[]).filter(p => p !== 'cardio'), null].map(c => ({ parte: c, suyos: ejercicios.filter(e => ((fichas.get(e)?.parte_cuerpo as Parte | null | undefined) ?? parteDe(e)) === c) })).filter(g => g.suyos.length)
   const subieron = cambios.filter(c => c.cambio > 0).length
   return (
     <section>
@@ -1142,7 +1199,7 @@ function HistorialSalud({ gym, medidas, registros, alCambiar }: {
         if (elegidos.Ejercicio) return { modo: 'maximo', pregunta: `Peso máximo en ${ejercicios.get(elegidos.Ejercicio) ?? 'el ejercicio'}`, formato: (v: number) => kg(v, unidadDe(elegidos.Ejercicio)) }
         if (medida) return { modo: 'maximo', pregunta: `Tu ${medida.nombre.toLowerCase()}`, formato: (v: number) => formatoValor('numero', v, medida.unidad) }
         // sin filtro: series del gym (las viejas "4 × 10" cuentan 4)
-        return { modo: 'conteo', pregunta: 'Series de gym de cada día', cuanto: (r: RegistroGuardado) => r.id_seguimiento === gym.id_seguimiento ? series.get(r.id_registro)?.cantidad_series ?? 1 : 0 }
+        return { modo: 'conteo', pregunta: 'Series de gym de cada día', cuanto: (r: RegistroGuardado) => r.id_seguimiento === gym.id_seguimiento ? (series.get(r.id_registro)?.minutos ? 0 : series.get(r.id_registro)?.cantidad_series ?? 1) : 0 }
       }}
       total={lista => {
         const entreno = new Set(lista.filter(r => r.id_seguimiento === gym.id_seguimiento).map(r => r.fecha)).size
@@ -1151,7 +1208,8 @@ function HistorialSalud({ gym, medidas, registros, alCambiar }: {
       fila={r => {
         const s = series.get(r.id_registro)
         const medida = seguimientos.find(x => x.id_seguimiento === r.id_seguimiento)
-        const detalle = s ? textoSerie({ series: s.cantidad_series, repeticiones: s.cantidad_repeticiones, peso: s.peso_kilogramos === null ? null : Number(s.peso_kilogramos), unidad: s.unidad_peso }, unidadDe(r.id_etiqueta))
+        const detalle = s ? textoSerie({ series: s.cantidad_series ?? 0, repeticiones: s.cantidad_repeticiones ?? 0, peso: s.peso_kilogramos === null ? null : Number(s.peso_kilogramos), unidad: s.unidad_peso,
+          minutos: s.minutos, km: s.distancia_km === null ? null : Number(s.distancia_km) }, unidadDe(r.id_etiqueta))
           : formatoValor('numero', r.valor, medida?.unidad)
         return <FilaSimple key={r.id_registro} fecha={r.fecha} titulo={nombreDe(r)} detalle={detalle} alBorrar={() => eliminarRegistro(r.id_registro).then(alCambiar)} />
       }}

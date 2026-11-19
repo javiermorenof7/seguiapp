@@ -42,7 +42,7 @@ const SUELTAS = /^(?:[a-z]\s+){1,3}/i
 // "1 de Julio a 30 de Septiembre": es el periodo del informe, no un movimiento
 const PERIODO = /^\s+a\s+\d{1,2}\s+de\s/i
 
-function leerFecha(linea: string, ano: number): { fecha: string; resto: string } | null {
+function leerFecha(linea: string, ano: number): { fecha: string; resto: string; conAno: boolean } | null {
   if (!FECHA.test(linea)) linea = linea.replace(SUELTAS, '')
   const m = FECHA.exec(linea)
   if (!m || PERIODO.test(linea.slice(m[0].length))) return null
@@ -55,7 +55,7 @@ function leerFecha(linea: string, ano: number): { fecha: string; resto: string }
   // "JUL 01" (Banco Caja Social): mes y luego día
   else { dia = Number(m[11]); mes = MESES.indexOf(m[10].toLowerCase()) + 1; a = ano }
   if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null
-  return { fecha: `${a}-${dos(mes)}-${dos(dia)}`, resto: linea.slice(m[0].length) }
+  return { fecha: `${a}-${dos(mes)}-${dos(dia)}`, resto: linea.slice(m[0].length), conAno: !!(m[1] || m[6] || m[9]) }
 }
 
 /** "1.234,56", "1,234.56", "$ 25.000", "(1.000,00)" o "1.000,00-" a centavos. */
@@ -76,15 +76,28 @@ function anoDe(lineas: string[]): number {
   return Number(anos.sort((a, b) => anos.filter(x => x === b).length - anos.filter(x => x === a).length)[0] ?? new Date().getFullYear())
 }
 
+// Un extracto de noviembre a enero con fechas sin año: donde el mes salta (dic → ene, o ene → dic si va al revés) cambia el año.
+// shortcut: si el texto trae un solo año se toma como el del final del periodo (así lo escribe Banco Caja Social); con un extracto real que cruce de año, revisarlo.
+function corregirAnos(salida: Fila[], sinAno: boolean[], lineas: string[], ano: number) {
+  const meses = salida.map(f => Number(f.fecha.slice(5, 7)))
+  const corte = meses.findIndex((m, i) => i > 0 && sinAno[i] && sinAno[i - 1] && Math.abs(meses[i - 1] - m) >= 6)
+  if (corte < 0) return
+  const anos = new Set((lineas.join(' ').match(/\b20\d{2}\b/g) ?? []).map(Number))
+  const inicio = anos.has(ano + 1) ? ano : ano - 1
+  const sube = meses[corte - 1] > meses[corte]
+  salida.forEach((f, i) => { if (sinAno[i]) f.fecha = `${(i < corte) === sube ? inicio : inicio + 1}${f.fecha.slice(4)}` })
+}
+
 function filas(lineas: string[], antes: number[]): Fila[] {
   const ano = anoDe(lineas)
   const salida: Fila[] = []
+  const sinAno: boolean[] = []
   // la fila que trae su descripción en el renglón de la fecha ya está completa: lo que sigue es pie de página
   let completa = false
   for (const cruda of lineas) {
     let linea = cruda.trim()
     const f = leerFecha(linea, ano)
-    if (f) { salida.push({ fecha: f.fecha, textos: [], montos: [] }); linea = f.resto.trim(); completa = false }
+    if (f) { salida.push({ fecha: f.fecha, textos: [], montos: [] }); sinAno.push(!f.conAno); linea = f.resto.trim(); completa = false }
     const montos = linea.match(MONTO) ?? []
     const fila = salida[salida.length - 1]
     if (!fila) { antes.push(...montos.map(leerCentavos)); continue }
@@ -95,6 +108,7 @@ function filas(lineas: string[], antes: number[]): Fila[] {
     if (texto && /[a-záéíóúñ]/i.test(texto) && !completa && fila.textos.length < 2 && texto.length <= 80) fila.textos.push(texto)
     if (f && fila.textos.length) completa = true
   }
+  corregirAnos(salida, sinAno, lineas, ano)
   return salida
 }
 

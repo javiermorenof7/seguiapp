@@ -5,9 +5,10 @@ import { normalizar } from './parseo'
 export interface Reparto { basicos: number; personales: number; ahorro: number; avisos: string[] }
 
 // Porcentajes del ingreso del mes. Un gasto sin grupo ni categoría cuenta como personal.
-export function cincuentaTreintaVeinte(movimientos: Movimiento[], mes: string, grupoDeEtiqueta: Map<string, string | null>): Reparto | null {
+// esperado: lo que falta recibir de los ingresos fijos del mes (pronóstico); con el ingreso real ya anotado vale 0
+export function cincuentaTreintaVeinte(movimientos: Movimiento[], mes: string, grupoDeEtiqueta: Map<string, string | null>, esperado = 0): Reparto | null {
   const delMes = movimientos.filter(m => mesDe(m.fecha) === mes)
-  const ingresos = delMes.filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.valor, 0)
+  const ingresos = delMes.filter(m => m.tipo === 'ingreso').reduce((s, m) => s + m.valor, 0) + esperado
   if (!ingresos) return null
   let basicos = 0, personales = 0, ahorro = 0
   for (const m of delMes) {

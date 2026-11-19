@@ -661,7 +661,7 @@ function ResumenSalud({ sesiones, hoy, metaDias, ejercicios, fichas, medidas, re
           acciones={[volver, { texto: '+ Registrar ejercicio', hacer: () => alVer('gym') }]} />
       ) : (
         <>
-          <section className="resumen-finanzas" aria-label="Días entrenados">
+          <section className="resumen-finanzas resumen-salud" aria-label="Días entrenados">
             <div>
               <p className="tenue">Días entrenados {cuando}</p>
               <span className="cifra">{dias}{meta ? ` de ${meta}` : ''}</span>
@@ -683,12 +683,13 @@ function ResumenSalud({ sesiones, hoy, metaDias, ejercicios, fichas, medidas, re
   )
 }
 
+const COLORES_PARTE = ['--salud', '--c1', '--c2', '--c3', '--c4', '--c5']
 // Series por parte del cuerpo en el período y, en una línea, las partes que no se trabajaron.
 function QueTrabaje({ sesiones, hoy, ventana, parteDe: parteDeEjercicio }: { sesiones: Sesion[]; hoy: string; ventana: Ventana; parteDe: (e: string) => Parte | null }) {
   const r = rangoDe(ventana.escala, ventana.ancla)
   const filas = useMemo(() => seriesPorParte(sesiones, parteDeEjercicio, r.desde, r.hasta, hoy), [sesiones, parteDeEjercicio, r.desde, r.hasta, hoy])
   const nombres = filas.map(f => f.parte ? PARTES[f.parte] : 'Sin parte')
-  const series = useMemo(() => [{ nombre: 'Series', datos: filas.map(f => f.series), color: cssVar('--c1') }], [filas])
+  const series = useMemo(() => [{ nombre: 'Series', datos: filas.map(f => f.series), color: filas.map((_, i) => cssVar(COLORES_PARTE[i % COLORES_PARTE.length])) }], [filas])
   const faltan = (Object.keys(PARTES) as Parte[]).filter(p => !filas.some(f => f.parte === p)).map(p => PARTES[p])
   if (!filas.length) return null
   const cuando = enPeriodo(ventana, hoy)
@@ -714,7 +715,7 @@ function Constancia({ sesiones, hoy, ventana, alVer }: { sesiones: Sesion[]; hoy
   const total = sesiones.filter(s => s.fecha >= r.desde && s.fecha <= r.hasta && s.fecha <= hoy).reduce((t, s) => t + s.series, 0)
   const etiquetas = grupos.map((g, i) => ventana.escala === 'semana' ? 'LMXJVSD'[i] : ventana.escala === 'mes' ? diaMes(g.desde) : MESES[Number(g.desde.slice(5, 7)) - 1])
   const titulos = grupos.map((g, i) => ventana.escala === 'semana' ? g.desde.split('-').reverse().join('/') : ventana.escala === 'mes' ? `Semana del ${etiquetas[i]}` : `${etiquetas[i]} ${g.desde.slice(0, 4)}`)
-  const series = useMemo(() => [{ nombre: 'Series', color: cssVar('--c1'),
+  const series = useMemo(() => [{ nombre: 'Series', color: cssVar('--salud'),
     datos: grupos.map(g => g.futuro ? null : sesiones.filter(s => s.fecha >= g.desde && s.fecha <= g.hasta).reduce((t, s) => t + s.series, 0)) }], [grupos, sesiones])
   const nSeries = (v: number) => `${Math.round(v)} ${Math.round(v) === 1 ? 'serie' : 'series'}`
   return (
@@ -734,7 +735,7 @@ function Impacto({ sesiones, hoy, metaDias }: { sesiones: Sesion[]; hoy: string;
   const cumple = metaDias ? 'cuando cumples tu meta' : `con ${r.umbral} ${r.umbral === 1 ? 'día' : 'días'} o más`
   const etiquetas = [metaDias ? `Cumpliste (${r.cumplidas.semanas} sem.)` : `${r.umbral}+ días (${r.cumplidas.semanas} sem.)`,
     metaDias ? `No cumpliste (${r.otras.semanas} sem.)` : `Menos (${r.otras.semanas} sem.)`]
-  const series = useMemo(() => [{ nombre: 'Récords por semana', datos: [r.cumplidas.promedio, r.otras.promedio], color: cssVar('--c1') }], [r])
+  const series = useMemo(() => [{ nombre: 'Récords por semana', datos: [r.cumplidas.promedio, r.otras.promedio], color: cssVar('--salud') }], [r])
   // sin 2 semanas de cada lado no hay con qué comparar: el bloque no aparece
   if (r.cumplidas.semanas < 2 || r.otras.semanas < 2) return null
   return (
@@ -868,7 +869,7 @@ function Progreso({ sesiones, hoy, ejercicios, fichas, ventana, alVer }: { sesio
   const cambios = useMemo(() => !todos ? [] : ejercicios
     .map(e => ({ ejercicio: e, cambio: cambioPeso(pesoPorDia(sesiones, e, r.desde).filter(p => p.fecha <= r.hasta)) }))
     .filter((c): c is { ejercicio: string; cambio: number } => c.cambio !== null).sort((a, b) => b.cambio - a.cambio), [todos, ejercicios, sesiones, r.desde, r.hasta])
-  const seriesTodos = useMemo(() => [{ nombre: 'Cambio de peso', datos: cambios.map(c => c.cambio), color: cssVar('--c1') }], [cambios])
+  const seriesTodos = useMemo(() => [{ nombre: 'Cambio de peso', datos: cambios.map(c => c.cambio), color: cssVar('--salud') }], [cambios])
   if (!actual || !p) return null
   const cambio = cambioPeso(puntos)
   const cuando = enPeriodo(ventana, hoy)
@@ -905,7 +906,7 @@ function Progreso({ sesiones, hoy, ejercicios, fichas, ventana, alVer }: { sesio
               ? <p><strong className="cifra-media">{conSigno(enUnidad(ultimo.valor, u) - enUnidad(antes.valor, u), u)}</strong> <span className="tenue">{kg(ultimo.valor, u)} el {diaMes(ultimo.fecha)} frente a {kg(antes.valor, u)} el {diaMes(antes.fecha)}{record}</span></p>
               : <p className="tenue">Aún no hay dos días con peso en {actual}{record}.</p>}
           {puntos.length > 1 && (
-            <Grafico puntos={puntos} color={cssVar('--c1')} colorMeta={cssVar('--tenue')} formato={v => kg(v, u)} destacados={records} desde={r.desde} hasta={r.hasta}
+            <Grafico puntos={puntos} color={cssVar('--salud')} colorMeta={cssVar('--tenue')} formato={v => kg(v, u)} destacados={records} desde={r.desde} hasta={r.hasta}
               descripcion={`Mayor peso de cada día en ${actual}; los puntos grandes son cada récord nuevo`} />
           )}
         </>

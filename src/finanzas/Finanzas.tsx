@@ -371,7 +371,8 @@ export default function Finanzas({ seguimientos, registros, abrir, alVolver, alC
                 {metasAhorro && <MetasDelMes metas={metasAhorro.metas}
                   ahorros={metasAhorro.ahorros.map(r => ({ fecha: r.fecha, valor: r.valor, tipo: 'ahorro' as const, id_etiqueta: r.id_etiqueta }))} alVer={() => setPestana('ahorro')} />}
                 {deudas && <DeudasHoy deudas={deudas} alVer={() => setPestana('deudas')} />}
-                <Reparto movimientos={reparto} mes={esAno ? `${ano}-01` : mesVer} categorias={datos.categorias} />
+                <Reparto movimientos={reparto} mes={esAno ? `${ano}-01` : mesVer} categorias={datos.categorias}
+                  esperado={esAno ? 0 : cuentasVer.porRecibir.reduce((t, f) => t + f.falta, 0)} />
                 <MesAMes meses={mesAMes(todos, esAno ? finAno : mesVer)} />
               </>
             )}
@@ -656,9 +657,9 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
 }
 
 // 50-30-20: una fila por parte, cada una con su barra contra su meta (los básicos y personales "hasta", el ahorro "desde").
-function Reparto({ movimientos, mes, categorias }: { movimientos: Movimiento[]; mes: string; categorias: Categoria[] }) {
-  const r = useMemo(() => cincuentaTreintaVeinte(movimientos, mes, new Map(categorias.map(c => [c.id_etiqueta, c.grupo]))),
-    [movimientos, mes, categorias])
+function Reparto({ movimientos, mes, categorias, esperado }: { movimientos: Movimiento[]; mes: string; categorias: Categoria[]; esperado: number }) {
+  const r = useMemo(() => cincuentaTreintaVeinte(movimientos, mes, new Map(categorias.map(c => [c.id_etiqueta, c.grupo])), esperado),
+    [movimientos, mes, categorias, esperado])
   if (!r) return null
   const partes = [
     { nombre: 'Básicos', valor: r.basicos, meta: 50, bien: r.basicos <= 50, texto: 'hasta 50 %' },
@@ -669,7 +670,8 @@ function Reparto({ movimientos, mes, categorias }: { movimientos: Movimiento[]; 
   return (
     <section>
       <h2>¿Cómo reparto mis ingresos? (50-30-20)</h2>
-      <p className="tenue">{salioMas ? 'Este mes salió más de lo que entró: por eso los porcentajes suman más de 100 %.' : 'Cada parte como % de lo que entró este mes.'}</p>
+      <p className="tenue">{salioMas ? `Este mes salió más de lo que ${esperado ? 'entra con lo que falta recibir' : 'entró'}: por eso los porcentajes suman más de 100 %.`
+        : esperado ? `Pronóstico: cuenta ${pesos(esperado)} que falta recibir.` : 'Cada parte como % de lo que entró este mes.'}</p>
       <ul className="lista">
         {partes.map(p => (
           <li key={p.nombre} className="meta-avance">
@@ -688,6 +690,8 @@ function Reparto({ movimientos, mes, categorias }: { movimientos: Movimiento[]; 
 function Resumen({ cuentas, acumulado, ajuste, alVerRecibos, alVerIngresos, alAjustar }: { cuentas: Cuentas; acumulado: number; ajuste: string | null; alVerRecibos: () => void; alVerIngresos: () => void; alAjustar?: () => void }) {
   const { delMes, despues, pendientes, porRecibir: faltan } = cuentas
   const falta = faltan.reduce((t, f) => t + f.falta, 0)
+  // pronóstico: lo que entró más lo que falta de los fijos; al llegar el real, falta vale 0
+  const entra = delMes.ingresos + falta, salio = delMes.gastos + delMes.ahorro
   return (
     <section className="resumen-finanzas" aria-label="Saldo">
       <div>
@@ -706,11 +710,13 @@ function Resumen({ cuentas, acumulado, ajuste, alVerRecibos, alVerIngresos, alAj
             ({pesos(pendientes.reduce((t, p) => t + p.valor, 0))}) · <button className="enlace" onClick={alVerRecibos}>Ir a Facturas</button>
           </p>
         )}
-        {delMes.ingresos > 0 && (
+        {entra > 0 && (
           <>
-            <Avance valor={delMes.gastos + delMes.ahorro} tope={delMes.ingresos} color={cssVar(delMes.saldo < 0 ? '--fuera' : '--gastos')}
-              descripcion={`Salió ${pesos(delMes.gastos + delMes.ahorro)} de ${pesos(delMes.ingresos)} que entraron`} />
-            <p className="tenue">Ya salió el {Math.round(((delMes.gastos + delMes.ahorro) / delMes.ingresos) * 100)} % de lo que entró</p>
+            <Avance valor={salio} tope={entra} color={cssVar(salio > entra ? '--fuera' : '--gastos')}
+              descripcion={`Salió ${pesos(salio)} de ${pesos(entra)} que ${falta ? 'entran este mes con lo que falta recibir' : 'entraron'}`} />
+            <p className="tenue">{falta
+              ? `Va el ${Math.round((salio / entra) * 100)} % de lo que entra este mes (pronóstico con ${pesos(falta)} por recibir)`
+              : `Ya salió el ${Math.round((salio / entra) * 100)} % de lo que entró`}</p>
           </>
         )}
       </div>

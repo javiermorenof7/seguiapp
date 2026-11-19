@@ -18,7 +18,15 @@ export const MAX_ADICIONALES = 3
 // los que ya no son fijos se guardan por su historial pero no cuentan en el cupo de MAX_ADICIONALES
 export const MAX_GUARDADOS = 8
 export const DIAS_CERCA = 7
-export const hayCupo = (lista: Adicional[]) => lista.filter(a => a.monto).length < MAX_ADICIONALES && lista.length < MAX_GUARDADOS
+// Con los guardados llenos, el quitado más viejo que dejó de ser fijo hace más de 12 meses ya no sale en ningún gráfico: libera su cupo.
+export function liberarCupo(lista: Adicional[], mes: string): Adicional[] {
+  if (lista.length < MAX_GUARDADOS) return lista
+  const fin = (a: Adicional) => a.historial.at(-1)?.desde || a.desde
+  const viejo = lista.filter(a => !a.monto && fin(a) <= mesesAntes(mes, 12)).sort((x, y) => fin(x).localeCompare(fin(y)))[0]
+  return viejo ? lista.filter(a => a !== viejo) : lista
+}
+export const hayCupo = (lista: Adicional[], mes: string) =>
+  lista.filter(a => a.monto).length < MAX_ADICIONALES && liberarCupo(lista, mes).length < MAX_GUARDADOS
 // Identifica cada fijo: la fuente sola para el primero, fuente y clave para los adicionales.
 export const claveDe = (f: { id_etiqueta: string; clave?: string }) => f.clave ? `${f.id_etiqueta}:${f.clave}` : f.id_etiqueta
 
@@ -112,9 +120,10 @@ export function porRecibir(movimientos: Movimiento[], hoy: string, suyos: Fijo[]
 }
 
 // Fuente del fijo que aún no llega ese mes y cuyo faltante se parece (±10 %) a un ingreso del banco, en pesos;
-// si ninguno, el de día de pago a DIAS_CERCA o menos que reciba hasta 50 % más de lo que falta (subió el sueldo).
-// shortcut: una quincena suelta no se reconoce (vale la mitad del faltante), si hace falta comparar también contra monto / 2.
+// si ninguno, el de día de pago a DIAS_CERCA o menos que reciba hasta 50 % más de lo que falta (subió el sueldo);
+// si tampoco, una parte (quincena, anticipo, uno de varios pagos): cabe en lo que falta y vale al menos el 20 % del fijo.
 export const MAS_DE_LO_ESPERADO = 0.5
+export const PARTE_MINIMA = 0.2
 export function fuenteDeFijo(movimientos: Movimiento[], fecha: string, valor: number, suyos: Fijo[] = []): string | null {
   const faltan = porRecibir(movimientos, fecha, suyos)
   const parecido = faltan.find(f => Math.abs(valor - f.falta) <= f.falta * TOLERANCIA)
@@ -123,7 +132,10 @@ export function fuenteDeFijo(movimientos: Movimiento[], fecha: string, valor: nu
   const lejos = (f: Fijo) => Math.abs(Math.min(f.dia, diasDelMes(mesDe(fecha))) - dia)
   const mayor = faltan.filter(f => valor > f.falta && valor <= f.falta * (1 + MAS_DE_LO_ESPERADO) && lejos(f) <= DIAS_CERCA)
     .sort((a, b) => lejos(a) - lejos(b))[0]
-  return mayor?.id_etiqueta ?? null
+  if (mayor) return mayor.id_etiqueta
+  const parte = faltan.filter(f => valor <= f.falta * (1 + TOLERANCIA) && valor >= f.monto * PARTE_MINIMA)
+    .sort((a, b) => lejos(a) - lejos(b))[0]
+  return parte?.id_etiqueta ?? null
 }
 
 // Ingresos de cada fuente en los últimos "n" meses (incluido el actual); sin fuente va con id null.
@@ -156,8 +168,8 @@ export function conTramo(historial: unknown, mes: string, fijo: { monto: number;
 }
 
 // Un fijo adicional nuevo desde "mes": antes de ese mes no se espera.
-// shortcut: los que ya no son fijos siguen ocupando cupo (se guardan por su historial); si estorba, reusar el cupo del más viejo.
-export function nuevoAdicional(lista: Adicional[], nombre: string, mes: string, fijo: { monto: number; dia: number }): Adicional[] {
+export function nuevoAdicional(todos: Adicional[], nombre: string, mes: string, fijo: { monto: number; dia: number }): Adicional[] {
+  const lista = liberarCupo(todos, mes)
   let clave = ''
   while (!clave || lista.some(a => a.clave === clave)) clave = Math.random().toString(36).slice(2, 8)
   return [...lista, { clave, nombre: nombre.trim().slice(0, 40), ...fijo, desde: mes, historial: [{ desde: '', monto: null, dia: null }, { desde: mes, ...fijo }] }]

@@ -28,7 +28,7 @@ import Extracto from './Cuadrar'
 import { puedeCrear, TOPE } from './reglasCategorias'
 import type { MetaAhorro } from './metas'
 import { cincuentaTreintaVeinte, facturaParecida, gastoInusual, posibleRepetido, sugeridos } from './aprende'
-import { adicionales, anotados, cambiarAdicional, claveDe, conTramo, esperadoVsRecibido, estadoFijo, fijos, hayCupo as hayCupoFijo, historiales, MESES_FIJO, nuevoAdicional, porFuente, porRecibir, type EstadoFijo, type Fijo } from './ingresos'
+import { adicionales, anotados, cambiarAdicional, claveDe, conTramo, esperadoVsRecibido, estadoFijo, fijos, hayCupo as hayCupoFijo, historiales, MAX_ADICIONALES, MAX_GUARDADOS, MESES_FIJO, nuevoAdicional, porFuente, porRecibir, type EstadoFijo, type Fijo } from './ingresos'
 
 type Datos = Awaited<ReturnType<typeof obtenerFinanzas>>
 type Grupo = 'auto' | 'basico' | 'personal'
@@ -467,7 +467,7 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
   const factura = tipo === 'gasto' ? facturaParecida(datos.recibos, descripcion) : null
   const categoria: Categoria | null = lista.find(c => c.id_etiqueta === elegida) ?? propuesta
   const yaTieneFijo = !!categoria && (!!categoria.monto_fijo || adicionales(categoria).some(x => x.monto))
-  const puedeOtroFijo = !!categoria && hayCupoFijo(adicionales(categoria))
+  const puedeOtroFijo = !!categoria && hayCupoFijo(adicionales(categoria), fecha.slice(0, 7))
   // un préstamo por su entidad en lo escrito, o el primero si eligió la categoría Deudas
   const prestamo = tipo !== 'gasto' || factura ? null : (() => {
     const p = facturaParecida(prestamos.map(x => ({ ...x, nombre_servicio: x.nombre_entidad })), descripcion)
@@ -989,6 +989,7 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
   const nombre = (id: string | null) => fuentes.find(f => f.id_etiqueta === id)?.nombre ?? 'Sin fuente'
   const hoy = hoyIso()
   const suyos = useMemo(() => anotados(fuentes), [fuentes])
+  const aprendidos = useMemo(() => fijos(movimientos, mes), [movimientos, mes])
   const delMes = useMemo(() => {
     const falta = new Map(porRecibir(movimientos, hoy, suyos).map(f => [claveDe(f), f.falta]))
     const todos = fijos(movimientos, mes, suyos)
@@ -1047,7 +1048,7 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
             ))}
           </ul>
         ) : <p className="tenue">Un ingreso es fijo cuando llega de la misma fuente los últimos {MESES_FIJO} meses con un monto parecido, o cuando lo anotas aquí.</p>}
-        {fuentes.length > 0 && <AnotarFijo key={editando ? claveDe(editando) : ''} fuentes={fuentes} delMes={delMes} inicial={editando} alCerrar={() => setEditando(null)} alCambiar={alCambiar} />}
+        {fuentes.length > 0 && <AnotarFijo key={editando ? claveDe(editando) : ''} fuentes={fuentes} delMes={delMes} aprendidos={aprendidos} inicial={editando} alCerrar={() => setEditando(null)} alCambiar={alCambiar} />}
       </section>
       {recibido.some(m => m.esperado > 0) && (
         <section>
@@ -1070,8 +1071,9 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
 
 // El ingreso fijo anotado a mano: manda sobre el que aprende la app; vacío vuelve al aprendido.
 // "inicial": el fijo de la lista que se edita (anotado o aprendido), con su monto y su día; con clave, uno adicional de la fuente.
-function AnotarFijo({ fuentes, delMes, alCambiar, inicial, alCerrar }: {
-  fuentes: Categoria[]; delMes: Fijo[]; alCambiar: () => Promise<void>; inicial: Fijo | null; alCerrar: () => void
+// "aprendidos": lo que la app espera de cada fuente sin lo anotado, para volver a eso al quitar el anotado.
+function AnotarFijo({ fuentes, delMes, aprendidos, alCambiar, inicial, alCerrar }: {
+  fuentes: Categoria[]; delMes: Fijo[]; aprendidos: Fijo[]; alCambiar: () => Promise<void>; inicial: Fijo | null; alCerrar: () => void
 }) {
   const [abierto, setAbierto] = useState(!!inicial)
   const [id, setId] = useState(inicial?.id_etiqueta ?? fuentes[0].id_etiqueta)
@@ -1080,7 +1082,8 @@ function AnotarFijo({ fuentes, delMes, alCambiar, inicial, alCerrar }: {
   const [clave, setClave] = useState(inicial?.clave ?? '')
   const [nombreOtro, setNombreOtro] = useState('')
   const lista = fuente ? adicionales(fuente) : []
-  const puedeOtro = clave === '' && delMes.some(f => f.id_etiqueta === id) && hayCupoFijo(lista)
+  const tieneFijo = clave === '' && delMes.some(f => f.id_etiqueta === id)
+  const puedeOtro = tieneFijo && hayCupoFijo(lista, hoyIso().slice(0, 7))
   const [monto, setMonto] = useState(inicial ? String(inicial.monto) : fuente?.monto_fijo ? String(fuente.monto_fijo) : '')
   const [dia, setDia] = useState(inicial ? String(inicial.dia) : fuente?.dia_fijo ? String(fuente.dia_fijo) : '')
   const [confirmar, setConfirmar] = useState(false)
@@ -1115,9 +1118,11 @@ function AnotarFijo({ fuentes, delMes, alCambiar, inicial, alCerrar }: {
         setAbierto(false); setError(''); alCerrar()
         return
       }
-      // shortcut: "Quitar el anotado" no deja tramo; los meses pasados siguen con el último anotado, si molesta guardar el aprendido
       const antes = inicial ?? (fuente?.monto_fijo && fuente.dia_fijo ? { monto: fuente.monto_fijo, dia: fuente.dia_fijo } : null)
-      const historial = fijo || yaNoEsFijo ? conTramo(fuente?.historial_fijo, hoyIso().slice(0, 7), fijo, antes) : undefined
+      // al quitar el anotado, desde este mes se espera lo aprendido (o nada si no aprendió)
+      const aprendido = aprendidos.find(f => f.id_etiqueta === id)
+      const desdeHoy = fijo ?? (yaNoEsFijo || !aprendido ? null : { monto: aprendido.monto, dia: aprendido.dia })
+      const historial = conTramo(fuente?.historial_fijo, mes, desdeHoy, antes)
       await guardarFijo(id, fijo && { ...fijo, desde: fuente?.fecha_fijo_desde ?? `${hoyIso().slice(0, 7)}-01` }, yaNoEsFijo, historial)
       await alCambiar()
       setAbierto(false); setError(''); alCerrar()
@@ -1167,6 +1172,11 @@ function AnotarFijo({ fuentes, delMes, alCambiar, inicial, alCerrar }: {
             {clave === 'nuevo' && <button type="button" className="secundario" disabled={enviando} onClick={() => elegir(id)}>Cancelar</button>}
             {inicial && clave !== 'nuevo' && !confirmar && <button type="button" className="secundario" disabled={enviando} onClick={() => setConfirmar(true)}>Ya no es fijo</button>}
           </div>
+          {tieneFijo && !puedeOtro && (
+            <small className="ayuda">{lista.filter(a => a.monto).length >= MAX_ADICIONALES
+              ? `${fuente?.nombre} ya tiene ${MAX_ADICIONALES + 1} fijos: quita uno para agregar otro.`
+              : `${fuente?.nombre} guarda ${MAX_GUARDADOS} fijos con su historia; se libera un cupo cuando uno lleve más de un año sin ser fijo.`}</small>
+          )}
           {confirmar && (
             <div className="chips" role="group" aria-label="Confirmar">
               <span>La app deja de esperarlo hasta que lo vuelvas a anotar.</span>

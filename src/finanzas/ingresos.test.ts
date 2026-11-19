@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { adicionales, anotados, cambiarAdicional, hayCupo, nuevoAdicional, claveDe, conTramo, esperadoVsRecibido, estadoFijo, fijos, fuenteDeFijo, historiales, llegadas, porFuente, porRecibir } from './ingresos'
+import { adicionales, anotados, cambiarAdicional, hayCupo, liberarCupo, nuevoAdicional, claveDe, conTramo, esperadoVsRecibido, estadoFijo, fijos, fuenteDeFijo, historiales, llegadas, porFuente, porRecibir } from './ingresos'
 import type { Movimiento } from './calculos'
 import type { Categoria } from './parseo'
 
@@ -202,9 +202,9 @@ describe('varios fijos en una fuente', () => {
 
   it('el cupo cuenta solo los fijos activos', () => {
     const lleno = [1, 2, 3].reduce(l => nuevoAdicional(l, 'x', '2026-10', { monto: 1, dia: 1 }), [] as ReturnType<typeof adicionales>)
-    expect(hayCupo(lleno)).toBe(false)
+    expect(hayCupo(lleno, '2026-11')).toBe(false)
     const conQuitado = cambiarAdicional(lleno, lleno[0].clave, '2026-11', null)
-    expect(hayCupo(conQuitado)).toBe(true)
+    expect(hayCupo(conQuitado, '2026-11')).toBe(true)
     const otraVez = nuevoAdicional(conQuitado, 'y', '2026-11', { monto: 2, dia: 2 })
     expect(adicionales({ ...fuente, fijos_adicionales: otraVez })).toHaveLength(4)
     expect(anotados([{ ...fuente, fijos_adicionales: otraVez }])).toHaveLength(4)
@@ -219,5 +219,35 @@ describe('varios fijos en una fuente', () => {
       expect(estadoFijo(dos[0], pago, '2026-10-31', dos)).toBe('recibido')
       expect(porRecibir(pago, '2026-10-31', dos).map(f => claveDe(f))).toEqual(['sueldo:s2'])
     }
+  })
+
+  it('con 8 guardados libera el cupo del quitado de hace más de un año', () => {
+    type L = ReturnType<typeof adicionales>
+    const viejos = [1, 2, 3, 4, 5].reduce<L>(l => cambiarAdicional(nuevoAdicional(l, 'v', '2024-01', { monto: 1, dia: 1 }), '', '2024-01', null), [])
+    const sinFijo = viejos.map((a, i) => ({ ...a, monto: null, dia: null, historial: conTramo(a.historial, i === 0 ? '2024-06' : '2026-03', null) }))
+    const ocho = [1, 2, 3].reduce<L>(l => nuevoAdicional(l, 'a', '2025-01', { monto: 1, dia: 1 }), sinFijo)
+    expect(ocho).toHaveLength(8)
+    expect(hayCupo(ocho, '2026-11')).toBe(false)
+    const conUno = cambiarAdicional(ocho, ocho[7].clave, '2026-11', null)
+    expect(hayCupo(conUno, '2026-11')).toBe(true)
+    expect(liberarCupo(conUno, '2026-11').map(a => a.clave)).not.toContain(sinFijo[0].clave)
+    expect(nuevoAdicional(conUno, 'b', '2026-11', { monto: 2, dia: 2 })).toHaveLength(8)
+    expect(hayCupo(conUno.map((a, i) => i === 0 ? sinFijo[1] : a), '2026-11')).toBe(false)
+  })
+
+  it('el extracto sugiere la fuente de una parte del fijo (quincena, anticipo, varios pagos)', () => {
+    const tres = [{ id_etiqueta: 'sueldo', monto: 3000000, dia: 15 }]
+    expect(fuenteDeFijo([], '2026-10-15', 1500000, tres)).toBe('sueldo')
+    expect(fuenteDeFijo([ing('2026-10-15', 1500000)], '2026-10-30', 1500000, tres)).toBe('sueldo')
+    expect(fuenteDeFijo([], '2026-10-05', 1000000, tres)).toBe('sueldo')
+    expect(fuenteDeFijo([ing('2026-10-05', 1000000)], '2026-10-20', 2000000, tres)).toBe('sueldo')
+    expect(fuenteDeFijo([], '2026-10-15', 300000, tres)).toBeNull()
+  })
+
+  it('quitar el anotado deja desde ese mes lo aprendido sin cambiar los meses de antes', () => {
+    const historial = conTramo([], '2026-11', { monto: 3200000, dia: 30 }, { monto: 3000000, dia: 30 })
+    const quitado = conTramo(historial, '2026-12', { monto: 3000000, dia: 30 })
+    const f = { id_etiqueta: 'sueldo', nombre: 'Sueldo', grupo: null, palabras_clave: [], historial_fijo: quitado }
+    expect(esperadoVsRecibido(sueldo, '2027-01', 4, [], historiales([f])).map(m => m.esperado)).toEqual([3000000, 3200000, 3000000, 0])
   })
 })

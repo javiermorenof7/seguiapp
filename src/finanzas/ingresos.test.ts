@@ -58,6 +58,11 @@ describe('porFuente y esperadoVsRecibido', () => {
     const r = esperadoVsRecibido([...sueldo, ing('2026-10-30', 2900000), ing('2026-10-01', 50000, 'venta')], '2026-10', 2)
     expect(r).toEqual([{ mes: '2026-09', esperado: 3100000, recibido: 3000000 }, { mes: '2026-10', esperado: 3000000, recibido: 2900000 }])
   })
+  it('un mes pasado sin nada de ese fijo ya no lo espera; el último sí', () => {
+    expect(esperadoVsRecibido(sueldo, '2026-11', 3)).toEqual([
+      { mes: '2026-09', esperado: 3100000, recibido: 3000000 }, { mes: '2026-10', esperado: 0, recibido: 0 }, { mes: '2026-11', esperado: 0, recibido: 0 }])
+    expect(esperadoVsRecibido(sueldo, '2026-10', 1)).toEqual([{ mes: '2026-10', esperado: 3000000, recibido: 0 }])
+  })
 })
 
 describe('porRecibir', () => {

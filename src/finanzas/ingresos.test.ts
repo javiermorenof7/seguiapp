@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { esperadoVsRecibido, estadoFijo, fijos, porFuente } from './ingresos'
+import { esperadoVsRecibido, estadoFijo, fijos, fuenteDeFijo, porFuente, porRecibir } from './ingresos'
 import type { Movimiento } from './calculos'
 
 const ing = (fecha: string, valor: number, id_etiqueta: string | null = 'sueldo'): Movimiento => ({ fecha, valor, tipo: 'ingreso', id_etiqueta })
@@ -46,5 +46,24 @@ describe('porFuente y esperadoVsRecibido', () => {
   it('esperado del fijo frente a lo recibido de esa fuente', () => {
     const r = esperadoVsRecibido([...sueldo, ing('2026-10-30', 2900000), ing('2026-10-01', 50000, 'venta')], '2026-10', 2)
     expect(r).toEqual([{ mes: '2026-09', esperado: 0, recibido: 0 }, { mes: '2026-10', esperado: 3000000, recibido: 2900000 }])
+  })
+})
+
+describe('porRecibir', () => {
+  it('lo que falta del fijo en el mes, menos lo que ya llegó', () => {
+    expect(porRecibir(sueldo, '2026-10-10')).toEqual([{ id_etiqueta: 'sueldo', monto: 3000000, dia: 30, falta: 3000000 }])
+    expect(porRecibir([...sueldo, ing('2026-10-15', 1500000)], '2026-10-20')[0].falta).toBe(1500000)
+    expect(porRecibir([...sueldo, ing('2026-10-30', 2900000)], '2026-10-30')).toEqual([])
+  })
+  it('una quincena sola no lo deja recibido', () => {
+    expect(estadoFijo({ id_etiqueta: 'sueldo', monto: 3000000, dia: 30 }, [ing('2026-10-15', 1500000)], '2026-10-20')).toBe('pendiente')
+  })
+})
+
+describe('fuenteDeFijo', () => {
+  it('sugiere la fuente del fijo pendiente si el valor se parece al faltante', () => {
+    expect(fuenteDeFijo(sueldo, '2026-10-30', 2950000)).toBe('sueldo')
+    expect(fuenteDeFijo(sueldo, '2026-10-30', 200000)).toBeNull()
+    expect(fuenteDeFijo([...sueldo, ing('2026-10-30', 3000000)], '2026-10-31', 3000000)).toBeNull()
   })
 })

@@ -12,9 +12,10 @@ import { mover, rango as rangoDe } from '../historial/periodo'
 import SinDatos from '../SinDatos'
 import Historial, { FilaSimple } from '../historial/Historial'
 import Barras from '../finanzas/Barras'
+import { SemanaGym } from '../inicio/Minis'
 import { normalizar } from '../finanzas/parseo'
 import {
-  cambioPeso, coincidencias, comparar, conPaso, conSigno, constancia, enUnidad, faltaParaMeta, fechasDeRecord, recordsSegunMeta, indicesRecord, kg, leerSerie, parecido, parteDe, pasoDe, pesoPorDia,
+  cambioPeso, coincidencias, comparar, conPaso, conSigno, constancia, enUnidad, faltaParaMeta, fechasDeRecord, recordsSegunMeta, indicesRecord, kg, leerSerie, parecido, parteDe, pasoDe, pesoPorDia, seriesPorParte,
   PARTES, progreso, restarDias, seriesDeUltima, textoSerie, textoSeries,
   type Parte, type Sesion, type Unidad,
 } from './calculos'
@@ -642,6 +643,12 @@ function ResumenSalud({ sesiones, hoy, metaDias, ejercicios, fichas, medidas, re
   const peso = medidas.find(m => normalizar(m.nombre) === 'peso')
   const ultimoPeso = peso && registros.filter(x => x.id_seguimiento === peso.id_seguimiento).sort((a, b) => b.fecha.localeCompare(a.fecha))[0]
   const meta = ventana.escala === 'semana' ? metaDias : undefined
+  const entrenados = new Set(enRango.map(s => s.fecha))
+  const semana = ventana.escala !== 'semana' ? [] : Array.from({ length: 7 }, (_, i) => {
+    const fecha = new Date(Date.parse(r.desde) + i * 86400000).toISOString().slice(0, 10)
+    return fecha > hoy ? null : entrenados.has(fecha)
+  })
+  const parteDeEjercicio = useCallback((e: string) => (fichas.get(e)?.parte_cuerpo as Parte | null | undefined) ?? parteDe(e), [fichas])
   const volver = { texto: 'Volver a esta semana', hacer: () => alCambiarVentana({ escala: 'semana', ancla: hoy }) }
   return (
     <>
@@ -659,17 +666,40 @@ function ResumenSalud({ sesiones, hoy, metaDias, ejercicios, fichas, medidas, re
               <p className="tenue">Días entrenados {cuando}</p>
               <span className="cifra">{dias}{meta ? ` de ${meta}` : ''}</span>
               {meta && dias >= meta && <span className="estado en-meta">✓ Cumpliste tu meta</span>}
+              {semana.length > 0 && <SemanaGym semana={semana} meta={meta && r.hasta >= hoy ? meta : null} enPagina />}
               <p className="tenue">{[`${series} ${series === 1 ? 'serie' : 'series'}`, `${recordsEnRango} ${recordsEnRango === 1 ? 'récord' : 'récords'}`,
                 ultimoPeso && peso && `Peso ${formatoValor('numero', ultimoPeso.valor, peso.unidad)}`].filter(Boolean).join(' · ')}</p>
             </div>
           </section>
-          <Constancia sesiones={sesiones} hoy={hoy} ventana={ventana} alVer={() => alVer('gym')} />
+          <QueTrabaje sesiones={sesiones} hoy={hoy} ventana={ventana} parteDe={parteDeEjercicio} />
+          {/* en la semana la tira de días ya dice cuándo entrenaste */}
+          {ventana.escala !== 'semana' && <Constancia sesiones={sesiones} hoy={hoy} ventana={ventana} alVer={() => alVer('gym')} />}
           <Progreso sesiones={sesiones} hoy={hoy} ejercicios={ejercicios} fichas={fichas} ventana={ventana} alVer={() => alVer('historial')} />
         </>
       )}
       <CuerpoHoy medidas={medidas} registros={registros} ventana={ventana} hoy={hoy} alVer={() => alVer('cuerpo')} />
       {sesiones.length > 0 && <Impacto sesiones={sesiones} hoy={hoy} metaDias={metaDias} />}
     </>
+  )
+}
+
+// Series por parte del cuerpo en el período y, en una línea, las partes que no se trabajaron.
+function QueTrabaje({ sesiones, hoy, ventana, parteDe: parteDeEjercicio }: { sesiones: Sesion[]; hoy: string; ventana: Ventana; parteDe: (e: string) => Parte | null }) {
+  const r = rangoDe(ventana.escala, ventana.ancla)
+  const filas = useMemo(() => seriesPorParte(sesiones, parteDeEjercicio, r.desde, r.hasta, hoy), [sesiones, parteDeEjercicio, r.desde, r.hasta, hoy])
+  const nombres = filas.map(f => f.parte ? PARTES[f.parte] : 'Sin parte')
+  const series = useMemo(() => [{ nombre: 'Series', datos: filas.map(f => f.series), color: cssVar('--c1') }], [filas])
+  const faltan = (Object.keys(PARTES) as Parte[]).filter(p => !filas.some(f => f.parte === p)).map(p => PARTES[p])
+  if (!filas.length) return null
+  const cuando = enPeriodo(ventana, hoy)
+  return (
+    <section>
+      <h2>¿Qué trabajé?</h2>
+      <Barras etiquetas={nombres} series={series} horizontal leyenda={false}
+        formato={v => `${v} ${v === 1 ? 'serie' : 'series'}`} formatoEje={v => `${v}`} colorTexto={cssVar('--tinta')} colorLinea={cssVar('--linea')}
+        descripcion={`Series por parte del cuerpo ${cuando}: ${filas.map((f, i) => `${nombres[i]} ${f.series}`).join(', ')}`} />
+      {faltan.length > 0 && <p className="tenue">{`${cuando.charAt(0).toUpperCase()}${cuando.slice(1)} no trabajaste: ${faltan.join(', ')}.`}</p>}
+    </section>
   )
 }
 
@@ -705,12 +735,12 @@ function Impacto({ sesiones, hoy, metaDias }: { sesiones: Sesion[]; hoy: string;
   const etiquetas = [metaDias ? `Cumpliste (${r.cumplidas.semanas} sem.)` : `${r.umbral}+ días (${r.cumplidas.semanas} sem.)`,
     metaDias ? `No cumpliste (${r.otras.semanas} sem.)` : `Menos (${r.otras.semanas} sem.)`]
   const series = useMemo(() => [{ nombre: 'Récords por semana', datos: [r.cumplidas.promedio, r.otras.promedio], color: cssVar('--c1') }], [r])
+  // sin 2 semanas de cada lado no hay con qué comparar: el bloque no aparece
+  if (r.cumplidas.semanas < 2 || r.otras.semanas < 2) return null
   return (
     <section>
       <h2>¿Cumplir me hace más fuerte?</h2>
-      {r.cumplidas.semanas < 2 || r.otras.semanas < 2 ? (
-        <p className="tenue">Aún faltan semanas para comparar: hacen falta al menos 2 semanas {cumple} y 2 sin cumplir en las últimas 12.</p>
-      ) : (
+      {(
         <>
           <p><strong className="cifra-media">{decimal(r.cumplidas.promedio)}</strong> <span className="tenue">récords por semana {cumple} · {decimal(r.otras.promedio)} cuando no · últimas 12 semanas</span></p>
           <Barras etiquetas={etiquetas} series={series} horizontal leyenda={false}
@@ -816,9 +846,21 @@ const TODOS = '*'
 function Progreso({ sesiones, hoy, ejercicios, fichas, ventana, alVer }: { sesiones: Sesion[]; hoy: string; ejercicios: string[]; fichas: Datos['fichas']; ventana: Ventana; alVer: () => void }) {
   const r = rangoDe(ventana.escala, ventana.ancla)
   const [elegido, setElegido] = useState('')
-  // abre en el último ejercicio entrenado (las sesiones llegan de la más reciente a la más antigua)
+  // abre en el ejercicio con más días con peso en el período; si no hay, en el último entrenado (llegan del más reciente al más antiguo)
   const todos = elegido === TODOS
-  const actual = ejercicios.includes(elegido) ? elegido : sesiones.find(s => ejercicios.includes(s.ejercicio))?.ejercicio ?? ejercicios[0]
+  const masSeguido = useMemo(() => {
+    // empate: el que tiene más días con peso en toda su historia, para poder comparar
+    const dias = new Map<string, { periodo: Set<string>; siempre: Set<string> }>()
+    for (const s of sesiones) {
+      if (s.peso === null || s.fecha > r.hasta || !ejercicios.includes(s.ejercicio)) continue
+      const d = dias.get(s.ejercicio) ?? { periodo: new Set<string>(), siempre: new Set<string>() }
+      d.siempre.add(s.fecha)
+      if (s.fecha >= r.desde) d.periodo.add(s.fecha)
+      dias.set(s.ejercicio, d)
+    }
+    return [...dias].filter(([, d]) => d.periodo.size).sort((a, b) => b[1].periodo.size - a[1].periodo.size || b[1].siempre.size - a[1].siempre.size)[0]?.[0]
+  }, [sesiones, ejercicios, r.desde, r.hasta])
+  const actual = ejercicios.includes(elegido) ? elegido : masSeguido ?? sesiones.find(s => ejercicios.includes(s.ejercicio))?.ejercicio ?? ejercicios[0]
   const p = useMemo(() => actual ? progreso(sesiones, actual) : null, [sesiones, actual])
   const puntos = useMemo(() => actual ? pesoPorDia(sesiones, actual, r.desde).filter(p => p.fecha <= r.hasta) : [], [sesiones, actual, r.desde, r.hasta])
   const records = useMemo(() => ({ indices: indicesRecord(puntos), texto: 'récord' }), [puntos])
@@ -830,6 +872,8 @@ function Progreso({ sesiones, hoy, ejercicios, fichas, ventana, alVer }: { sesio
   if (!actual || !p) return null
   const cambio = cambioPeso(puntos)
   const cuando = enPeriodo(ventana, hoy)
+  // con pocos días en el período: el último día con peso frente al anterior, aunque sea de antes
+  const [antes, ultimo] = cambio === null ? pesoPorDia(sesiones, actual).filter(x => x.fecha <= r.hasta).slice(-2) : []
   // un ejercicio se lee en su unidad; "Todos" compara en kg, que es como se guarda
   const u: Unidad = fichas.get(actual)?.unidad_peso ?? 'kg'
   const record = p.record !== null ? ` · récord ${kg(p.record, u)}` : ''
@@ -837,7 +881,7 @@ function Progreso({ sesiones, hoy, ejercicios, fichas, ventana, alVer }: { sesio
   const subieron = cambios.filter(c => c.cambio > 0).length
   return (
     <section>
-      <div className="bloque-pie"><h2>¿Estoy subiendo de peso?</h2><button className="enlace" onClick={alVer}>Ver →</button></div>
+      <div className="bloque-pie"><h2>¿Estoy levantando más?</h2><button className="enlace" onClick={alVer}>Ver →</button></div>
       <Selector id="filtro-ejercicio" titulo="Ejercicio" icono="🏋️" valor={todos ? TODOS : actual} alCambiar={setElegido}>
         <option value={TODOS}>Todos</option>
         {partes.map(g => (
@@ -857,8 +901,10 @@ function Progreso({ sesiones, hoy, ejercicios, fichas, ventana, alVer }: { sesio
         <>
           {cambio !== null
             ? <p><strong className="cifra-media">{conSigno(enUnidad(puntos[puntos.length - 1].valor, u) - enUnidad(puntos[0].valor, u), u)}</strong> <span className="tenue">{cuando}{record}</span></p>
-            : <p className="tenue">Pocos registros con peso {cuando}{record}.</p>}
-          {puntos.length > 0 && (
+            : antes && ultimo
+              ? <p><strong className="cifra-media">{conSigno(enUnidad(ultimo.valor, u) - enUnidad(antes.valor, u), u)}</strong> <span className="tenue">{kg(ultimo.valor, u)} el {diaMes(ultimo.fecha)} frente a {kg(antes.valor, u)} el {diaMes(antes.fecha)}{record}</span></p>
+              : <p className="tenue">Aún no hay dos días con peso en {actual}{record}.</p>}
+          {puntos.length > 1 && (
             <Grafico puntos={puntos} color={cssVar('--c1')} colorMeta={cssVar('--tenue')} formato={v => kg(v, u)} destacados={records} desde={r.desde} hasta={r.hasta}
               descripcion={`Mayor peso de cada día en ${actual}; los puntos grandes son cada récord nuevo`} />
           )}

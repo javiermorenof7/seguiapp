@@ -73,7 +73,7 @@ export function fijos(movimientos: Movimiento[], mes: string, todos: Fijo[] = []
 // Lo que llegó en el mes a cada fijo de "delMes". Con un fijo en la fuente, todo lo de la fuente (como las quincenas);
 // con varios, cada pago va al fijo cuyo faltante se parece (±10 %) y cuyo día está a DIAS_CERCA o menos; si ninguno,
 // al de día más cercano entre los que aún aceptan ese monto (así una quincena no se va al otro sueldo).
-// Un pago que no encaja en ninguno no se le asigna a nadie (sí cuenta en lo recibido del mes).
+// Un pago mayor que cualquier faltante (subió el sueldo) va al pendiente de día más cercano.
 export function llegadas(delMes: Fijo[], movimientos: Movimiento[], mes: string): Map<string, number> {
   const llego = new Map(delMes.map(f => [claveDe(f), 0]))
   const deFuente = new Map<string, Fijo[]>()
@@ -82,11 +82,12 @@ export function llegadas(delMes: Fijo[], movimientos: Movimiento[], mes: string)
   for (const m of [...pagos].sort((a, b) => a.fecha.localeCompare(b.fecha))) {
     const suyos = deFuente.get(m.id_etiqueta!)!
     const dia = +m.fecha.slice(8, 10)
-    const caben = suyos
+    const pendientes = suyos
       .map(f => ({ f, falta: f.monto - llego.get(claveDe(f))!, lejos: Math.abs(f.dia - dia) }))
-      .filter(c => c.falta > 0 && m.valor <= c.falta * (1 + TOLERANCIA))
+      .filter(c => c.falta > 0)
+    const caben = pendientes.filter(c => m.valor <= c.falta * (1 + TOLERANCIA))
     const parecidos = caben.filter(c => Math.abs(c.falta - m.valor) <= c.falta * TOLERANCIA && c.lejos <= DIAS_CERCA)
-    const mejor = suyos.length === 1 ? suyos[0] : (parecidos.length ? parecidos : caben)
+    const mejor = suyos.length === 1 ? suyos[0] : (parecidos.length ? parecidos : caben.length ? caben : pendientes)
       .sort((a, b) => a.lejos - b.lejos || Math.abs(a.falta - m.valor) - Math.abs(b.falta - m.valor))[0]?.f
     if (mejor) llego.set(claveDe(mejor), llego.get(claveDe(mejor))! + m.valor)
   }

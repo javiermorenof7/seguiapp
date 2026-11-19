@@ -143,11 +143,11 @@ describe('varios fijos en una fuente', () => {
     expect([llego.get('arriendos'), llego.get('arriendos:a1')]).toEqual([0, 1200000])
   })
 
-  it('una quincena suma a su fijo y un pago que no encaja no se asigna', () => {
+  it('una quincena suma a su fijo y un pago mayor va al pendiente más cercano', () => {
     const sueldos = anotados([{ ...fuente, id_etiqueta: 'sueldo', monto_fijo: 3000000, dia_fijo: 15,
       fijos_adicionales: [{ clave: 's2', nombre: 'Otro', monto: 800000, dia: 1, desde: '2026-10', historial: [] }] }])
     const llego = llegadas(sueldos, [ing('2026-10-15', 1500000), ing('2026-10-30', 1500000), ing('2026-10-02', 5000000)], '2026-10')
-    expect([llego.get('sueldo'), llego.get('sueldo:s2')]).toEqual([3000000, 0])
+    expect([llego.get('sueldo'), llego.get('sueldo:s2')]).toEqual([3000000, 5000000])
   })
 
   it('el extracto sugiere la fuente del fijo que falta', () => {
@@ -201,5 +201,16 @@ describe('varios fijos en una fuente', () => {
     const otraVez = nuevoAdicional(conQuitado, 'y', '2026-11', { monto: 2, dia: 2 })
     expect(adicionales({ ...fuente, fijos_adicionales: otraVez })).toHaveLength(4)
     expect(anotados([{ ...fuente, fijos_adicionales: otraVez }])).toHaveLength(4)
+  })
+
+  it('un sueldo que llega mayor de lo esperado queda recibido', () => {
+    const dos = anotados([{ ...fuente, id_etiqueta: 'sueldo', monto_fijo: 6000000, dia_fijo: 30,
+      fijos_adicionales: [{ clave: 's2', nombre: 'Otro', monto: 1500000, dia: 5, desde: '2026-10', historial: [] }] }])
+    for (const valor of [6500000, 7000000]) {
+      const pago = [ing('2026-10-30', valor)]
+      expect(llegadas(dos, pago, '2026-10').get('sueldo')).toBe(valor)
+      expect(estadoFijo(dos[0], pago, '2026-10-31', dos)).toBe('recibido')
+      expect(porRecibir(pago, '2026-10-31', dos).map(f => claveDe(f))).toEqual(['sueldo:s2'])
+    }
   })
 })

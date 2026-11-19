@@ -168,7 +168,8 @@ button:disabled { opacity: .6; cursor: default; }
 }
 .lista li.recibo { grid-template-columns: 1fr auto auto auto; }
 .lista li.recibo > button { justify-self: end; }
-@media (max-width: 560px) { .lista li.recibo { grid-template-columns: 1fr auto; } .lista li.recibo > button { grid-column: 1 / -1; justify-self: stretch; } }
+.lista li.recibo > .enlaces { display: flex; flex-wrap: wrap; gap: 4px 16px; justify-self: end; }
+@media (max-width: 560px) { .lista li.recibo { grid-template-columns: 1fr auto; } .lista li.recibo > button { grid-column: 1 / -1; justify-self: stretch; } .lista li.recibo > .enlaces { grid-column: 1 / -1; justify-self: start; } }
 .lista li.recibo > form, .lista li.recibo > .acciones, .lista li.recibo > [role="alert"] { grid-column: 1 / -1; margin: 0; }
 .lista li.recibo > span:first-child .tenue { display: block; font-size: 14px; white-space: normal; }
 .lista .estado.en-meta { background: var(--en-meta); color: var(--fondo); }

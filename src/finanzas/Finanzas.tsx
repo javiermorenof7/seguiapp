@@ -996,9 +996,11 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
                 <span>{nombre(f.id_etiqueta)}<span className="tenue"> · día {f.dia}{esSuyo(f.id_etiqueta) ? ' · anotado' : ''}</span></span>
                 <strong>{pesos(f.monto)}</strong>
                 <span className={`estado ${ESTADO_FIJO[f.estado].clase}`}>{ESTADO_FIJO[f.estado].texto}</span>
-                {f.falta > 0 && <button className="enlace" onClick={() => alLlego({ monto: f.falta, id_etiqueta: f.id_etiqueta })}>
-                  Ya llegó{f.falta < f.monto ? ` (faltan ${pesos(f.falta)})` : ''}</button>}
-                <button className="enlace" aria-label={`Editar ${nombre(f.id_etiqueta)}`} onClick={() => setEditando(f)}>Editar</button>
+                <span className="enlaces">
+                  {f.falta > 0 && <button className="enlace" onClick={() => alLlego({ monto: f.falta, id_etiqueta: f.id_etiqueta })}>
+                    Ya llegó{f.falta < f.monto ? ` (faltan ${pesos(f.falta)})` : ''}</button>}
+                  <button className="enlace" aria-label={`Editar ${nombre(f.id_etiqueta)}`} onClick={() => setEditando(f)}>Editar</button>
+                </span>
               </li>
             ))}
           </ul>

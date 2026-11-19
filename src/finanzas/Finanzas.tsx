@@ -661,10 +661,13 @@ function Reparto({ movimientos, mes, categorias, esperado }: { movimientos: Movi
   const r = useMemo(() => cincuentaTreintaVeinte(movimientos, mes, new Map(categorias.map(c => [c.id_etiqueta, c.grupo])), esperado),
     [movimientos, mes, categorias, esperado])
   if (!r) return null
+  // la meta en pesos sale de lo que entra este mes (con el pronóstico si falta recibir)
+  const enPesos = (pct: number) => Math.round(r.pesos.ingresos * pct / 100)
   const partes = [
-    { nombre: 'Básicos', valor: r.basicos, meta: 50, bien: r.basicos <= 50, texto: 'hasta 50 %' },
-    { nombre: 'Personales', valor: r.personales, meta: 30, bien: r.personales <= 30, texto: 'hasta 30 %' },
-    { nombre: 'Ahorro', valor: r.ahorro, meta: 20, bien: r.ahorro >= 20, texto: 'desde 20 %', mal: 'Bajo' },
+    { nombre: 'Básicos', valor: r.basicos, meta: 50, bien: r.basicos <= 50, texto: 'hasta 50 %', dinero: `${pesos(r.pesos.basicos)} de hasta ${pesos(enPesos(50))}` },
+    { nombre: 'Personales', valor: r.personales, meta: 30, bien: r.personales <= 30, texto: 'hasta 30 %', dinero: `${pesos(r.pesos.personales)} de hasta ${pesos(enPesos(30))}` },
+    { nombre: 'Ahorro', valor: r.ahorro, meta: 20, bien: r.ahorro >= 20, texto: 'desde 20 %', mal: 'Bajo',
+      dinero: r.pesos.ahorro >= enPesos(20) ? `${pesos(r.pesos.ahorro)} de mínimo ${pesos(enPesos(20))}` : `${pesos(r.pesos.ahorro)} · faltan ${pesos(enPesos(20) - r.pesos.ahorro)} para el 20 %` },
   ]
   const salioMas = r.basicos + r.personales + r.ahorro > 100
   return (
@@ -679,6 +682,7 @@ function Reparto({ movimientos, mes, categorias, esperado }: { movimientos: Movi
             <span><strong>{Math.round(p.valor)} %</strong> <span className={`estado ${p.bien ? 'en-meta' : 'fuera'}`}>{p.bien ? '✓ Bien' : `✕ ${'mal' in p ? p.mal : 'Pasado'}`}</span></span>
             <Avance valor={p.valor} tope={p.meta} color={cssVar(p.bien ? '--en-meta' : '--fuera')}
               descripcion={`${p.nombre}: ${Math.round(p.valor)} % de los ingresos, meta ${p.texto}`} />
+            <span className="tenue dinero">{p.dinero}</span>
           </li>
         ))}
       </ul>

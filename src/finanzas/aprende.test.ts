@@ -25,6 +25,8 @@ describe('50-30-20', () => {
     const r = cincuentaTreintaVeinte(movimientos, '2026-10', grupos)!
     const conPronostico = cincuentaTreintaVeinte(movimientos, '2026-10', grupos, 1000000)!
     expect(conPronostico.basicos).toBeLessThan(r.basicos)
+    expect(conPronostico.pesos.ingresos).toBe(r.pesos.ingresos + 1000000)
+    expect(conPronostico.pesos.basicos).toBe(r.pesos.basicos)
     expect(cincuentaTreintaVeinte(movimientos, '2026-09', grupos, 1000000)).not.toBeNull()
   })
   it('sin ingresos no hay reparto', () => {

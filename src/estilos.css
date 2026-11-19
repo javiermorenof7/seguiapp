@@ -332,6 +332,7 @@ section:not([class]) + form.formulario { margin-top: 40px; }
 .cifra-media { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; }
 .lista li.meta-avance { grid-template-columns: 1fr auto; }
 .lista li.meta-avance .avance { grid-column: 1 / -1; margin: 4px 0 0; }
+.lista li.meta-avance .dinero { grid-column: 1 / -1; }
 .registrar-uno { margin-top: 24px; }
 .explica { max-width: 65ch; margin-bottom: 16px; }
 .mas > summary { cursor: pointer; color: var(--tenue); font-size: 14px; list-style: none; }

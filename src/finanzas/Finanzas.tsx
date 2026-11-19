@@ -435,6 +435,7 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
   const [fecha, setFecha] = useState(hoyIso())
   const [elegida, setElegida] = useState<string | null>(inicial?.id_etiqueta ?? null)
   const [idMeta, setIdMeta] = useState<string | null>(null)
+  const [esFijo, setEsFijo] = useState(false)
   const [grupo, setGrupo] = useState<Grupo>('auto')
   const [otraFecha, setOtraFecha] = useState(false)
   // viene elegida la última cuenta usada; nunca es obligatoria
@@ -498,9 +499,14 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
       // aprende solo cuando la persona eligió algo distinto de lo propuesto
       const aprende = !!categoria && !!leido.descripcion && categoria.id_etiqueta !== propuesta?.id_etiqueta
       if (aprende) await aprenderCategoria(normalizar(leido.descripcion), categoria.nombre).catch(() => {})
+      const idFijo = tipo === 'ingreso' && esFijo ? categoria?.id_etiqueta ?? idFuenteNueva : null
+      const dia = +fecha.slice(8, 10)
+      const quedoFijo = !!idFijo && await guardarFijo(idFijo, { monto: leido.valor, dia, desde: `${fecha.slice(0, 7)}-01` }).then(() => true, () => false)
       let mensaje = resultado === 'guardado'
         ? `${TEXTO[tipo]} registrado: ${pesos(leido.valor)}${fuente ? ` ${tipo === 'gasto' ? 'en' : 'de'} ${fuente.nombre}` : ''}.`
         : 'Sin conexión: quedó guardado en este equipo y se enviará al volver la conexión.'
+      if (quedoFijo) mensaje += ` Queda como fijo: se espera cada mes el día ${dia}.`
+      else if (idFijo) mensaje += ' No pude dejarlo como fijo: anótalo en Ingresos fijos del mes.'
       if (tipo === 'gasto' && categoria) {
         const presupuesto = presupuestos.get(categoria.id_etiqueta) ?? null
         const total = gastadoDe(categoria.id_etiqueta) + leido.valor
@@ -605,6 +611,9 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
           </div>
           {fuenteNueva && <small className="ayuda">Fuente nueva: «{fuenteNueva}». Se crea al guardar, o elige una de arriba.</small>}
           {tipo === 'ingreso' && !categoria && !hayCupo && descripcion.trim() && <small className="ayuda">Ya tienes {TOPE.ingreso} fuentes: elige una de arriba o se guarda sin fuente.</small>}
+          {!inicial && (categoria || fuenteNueva) && (
+            <label className="marca"><input type="checkbox" checked={esFijo} onChange={ev => setEsFijo(ev.target.checked)} /> Es fijo: me llega cada mes</label>
+          )}
         </fieldset>
       )}
       {tipo === 'ahorro' && metas.length > 0 && (

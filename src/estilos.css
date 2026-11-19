@@ -573,6 +573,8 @@ section .enlace, form .enlace, li .enlace { display: inline-flex; align-items: c
 .lista .opcion-banco .tenue { flex: 1 1 14em; white-space: normal; overflow-wrap: anywhere; }
 .fila-extracto .marca { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
 .fila-extracto .marca input { width: 20px; height: 20px; min-height: 0; }
+.formulario label.marca { display: flex; flex-direction: row; align-items: center; gap: 8px; min-height: 44px; }
+.formulario label.marca input { width: 20px; height: 20px; min-height: 0; flex: none; }
 .fila-extracto select { max-width: 100%; }
 .fila-extracto .monto-dudoso { width: 9em; border-color: var(--fuera); }
 .cuadre-acciones { position: sticky; bottom: 0; padding: 12px 0; background: var(--fondo); justify-self: stretch; }

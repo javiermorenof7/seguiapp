@@ -26,6 +26,13 @@ describe('fijos', () => {
       .toEqual([suyo, { id_etiqueta: 'arriendo', monto: 3000000, dia: 30 }])
     expect(porRecibir([], '2026-10-10', [suyo])).toEqual([{ ...suyo, falta: 2500000 }])
   })
+  it('el anotado solo se espera desde su mes; antes vale el aprendido', () => {
+    const suyo = { id_etiqueta: 'sueldo', monto: 2500000, dia: 5, desde: '2026-11' }
+    expect(fijos([], '2026-10', [suyo])).toEqual([])
+    expect(fijos(sueldo, '2026-10', [suyo])).toEqual([{ id_etiqueta: 'sueldo', monto: 3000000, dia: 30 }])
+    expect(fijos([], '2026-11', [suyo])).toEqual([suyo])
+    expect(anotados([{ id_etiqueta: 'sueldo', nombre: 'Sueldo', grupo: null, palabras_clave: [], monto_fijo: 2500000, dia_fijo: 5, fecha_fijo_desde: '2026-11-01' }])).toEqual([suyo])
+  })
   it('lee los anotados de las fuentes que tienen monto y día', () => {
     const fuente = { id_etiqueta: 'sueldo', nombre: 'Sueldo', grupo: null, palabras_clave: [] }
     expect(anotados([{ ...fuente, monto_fijo: 2500000, dia_fijo: 5 }, { ...fuente, id_etiqueta: 'otra' }])).toEqual([{ id_etiqueta: 'sueldo', monto: 2500000, dia: 5 }])
@@ -54,14 +61,10 @@ describe('porFuente y esperadoVsRecibido', () => {
       { id_etiqueta: null, datos: [0, 0, 0, 200000] },
     ])
   })
-  it('esperado del fijo frente a lo recibido de esa fuente', () => {
+  it('cada mes espera los fijos del mes que se ve y suma todo lo que llegó', () => {
     const r = esperadoVsRecibido([...sueldo, ing('2026-10-30', 2900000), ing('2026-10-01', 50000, 'venta')], '2026-10', 2)
-    expect(r).toEqual([{ mes: '2026-09', esperado: 3100000, recibido: 3000000 }, { mes: '2026-10', esperado: 3000000, recibido: 2900000 }])
-  })
-  it('un mes pasado sin nada de ese fijo ya no lo espera; el último sí', () => {
-    expect(esperadoVsRecibido(sueldo, '2026-11', 3)).toEqual([
-      { mes: '2026-09', esperado: 3100000, recibido: 3000000 }, { mes: '2026-10', esperado: 0, recibido: 0 }, { mes: '2026-11', esperado: 0, recibido: 0 }])
-    expect(esperadoVsRecibido(sueldo, '2026-10', 1)).toEqual([{ mes: '2026-10', esperado: 3000000, recibido: 0 }])
+    expect(r).toEqual([{ mes: '2026-09', esperado: 3000000, recibido: 3000000 }, { mes: '2026-10', esperado: 3000000, recibido: 2950000 }])
+    expect(esperadoVsRecibido(sueldo, '2026-11', 2)).toEqual([{ mes: '2026-10', esperado: 0, recibido: 0 }, { mes: '2026-11', esperado: 0, recibido: 0 }])
   })
 })
 

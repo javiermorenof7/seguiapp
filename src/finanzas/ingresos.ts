@@ -77,12 +77,43 @@ export function porFuente(movimientos: Movimiento[], mes: string, n = 6) {
   return { meses, series: [...series].map(([id_etiqueta, datos]) => ({ id_etiqueta, datos })) }
 }
 
-// Cada mes, lo esperado de los fijos del mes que se ve frente a todo lo que llegó.
-export function esperadoVsRecibido(movimientos: Movimiento[], mes: string, n = 6, suyos: Fijo[] = []) {
-  const esperado = fijos(movimientos, mes, suyos).reduce((s, f) => s + f.monto, 0)
+// Un tramo del historial del fijo: desde 'AAAA-MM' (vacío = antes del primer cambio), monto null = ya no es fijo.
+export interface Tramo { desde: string; monto: number | null; dia: number | null }
+
+// El historial de cada fuente, sin los tramos mal formados (lo escribe el navegador de la persona).
+export function historiales(fuentes: Categoria[]): Record<string, Tramo[]> {
+  const valido = (t: unknown): t is Tramo => {
+    const x = t as Tramo
+    return !!x && typeof x.desde === 'string' && /^(\d{4}-\d{2})?$/.test(x.desde) && (x.monto === null || (typeof x.monto === 'number' && x.monto > 0))
+  }
+  return Object.fromEntries(fuentes.flatMap(f => {
+    const tramos = Array.isArray(f.historial_fijo) ? f.historial_fijo.filter(valido).sort((a, b) => a.desde.localeCompare(b.desde)) : []
+    return tramos.length ? [[f.id_etiqueta, tramos]] : []
+  }))
+}
+
+// Agrega el tramo de "mes" (reemplaza el de ese mismo mes); en el primer cambio guarda también el valor de antes.
+export function conTramo(historial: unknown, mes: string, fijo: { monto: number; dia: number } | null, antes?: { monto: number; dia: number } | null): Tramo[] {
+  const previos = Array.isArray(historial) ? (historial as Tramo[]).filter(t => t.desde !== mes) : []
+  const base = !previos.length && antes ? [{ desde: '', monto: antes.monto, dia: antes.dia }] : []
+  return [...base, ...previos, { desde: mes, monto: fijo?.monto ?? null, dia: fijo?.dia ?? null }].slice(-120)
+}
+
+// Cada mes, lo esperado frente a todo lo que llegó: el mes que se ve con los fijos de hoy; uno pasado con lo que valía entonces
+// (el tramo vigente de cada fuente; antes del primer tramo, lo aprendido al cambiar o, si no hay, el de hoy).
+export function esperadoVsRecibido(movimientos: Movimiento[], mes: string, n = 6, suyos: Fijo[] = [], historial: Record<string, Tramo[]> = {}) {
+  const hoy = new Map(fijos(movimientos, mes, suyos).map(f => [f.id_etiqueta, f.monto]))
+  const ids = new Set([...hoy.keys(), ...Object.keys(historial)])
+  const valorEn = (id: string, m: string) => {
+    const tramos = historial[id] ?? []
+    const vigente = tramos.filter(t => t.desde <= m).at(-1)
+    if (vigente) return vigente.monto ?? 0
+    if (tramos.length) return fijos(movimientos, tramos[0].desde).find(f => f.id_etiqueta === id)?.monto ?? hoy.get(id) ?? 0
+    return hoy.get(id) ?? 0
+  }
   return Array.from({ length: n }, (_, i) => mesesAntes(mes, n - 1 - i)).map(m => ({
     mes: m,
-    esperado,
+    esperado: m === mes ? [...hoy.values()].reduce((s, v) => s + v, 0) : [...ids].reduce((s, id) => s + valorEn(id, m), 0),
     recibido: movimientos.filter(x => x.tipo === 'ingreso' && mesDe(x.fecha) === m).reduce((s, x) => s + x.valor, 0),
   }))
 }

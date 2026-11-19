@@ -315,3 +315,14 @@ describe('repetidoPosible', () => {
     expect(repetidoPosible(anotado('2026-10-10', 5_000_000), banco)).toBe(false)
   })
 })
+
+describe('bancos de las cuentas', () => {
+  it('la base acepta los mismos bancos que ofrece la app', async () => {
+    const { BANCOS } = await import('../datos')
+    const migraciones = import.meta.glob('../../supabase/migrations/*.sql', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
+    // la última migración que fija los bancos de la cuenta es la que vale
+    const ultima = Object.keys(migraciones).sort().map(k => migraciones[k]).filter(sql => /banco\s+in\s*\(/i.test(sql)).at(-1)!
+    const enBase = /banco\s+in\s*\(([^)]*)\)/i.exec(ultima)![1].match(/'[^']+'/g)!.map(b => b.slice(1, -1))
+    expect([...enBase].sort()).toEqual([...BANCOS].sort())
+  })
+})

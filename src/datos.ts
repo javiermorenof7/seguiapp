@@ -792,7 +792,7 @@ export async function borrarMiCuenta() {
 
 // ---------- Cuentas y extractos bancarios ----------
 
-export const BANCOS = ['Davivienda', 'Nequi', 'Banco Falabella', 'Banco Caja Social', 'Bancolombia', 'Otro'] as const
+export const BANCOS = ['Davivienda', 'Nequi', 'Banco Falabella', 'Banco Caja Social', 'Otro'] as const
 export interface Cuenta { id_cuenta: string; nombre: string; ultimos_digitos: string | null; banco: string | null; valor_ajuste_saldo: number | null }
 
 // Cómo se nombra una cuenta en toda la app: su nombre, con el banco y los dígitos si el nombre no los dice.

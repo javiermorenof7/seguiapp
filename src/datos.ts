@@ -206,7 +206,7 @@ export interface Presupuesto { id_meta: string; id_etiqueta: string; valor: numb
 // Lo que necesita la pantalla Finanzas además de los registros: categorías de Gastos, fuentes de Ingresos, presupuestos,
 // lo aprendido y los recibos con sus pagos de los últimos 4 meses (para los pendientes).
 export async function obtenerFinanzas(idGastos: string, desdePagos: string, idIngresos?: string) {
-  const etiquetas = (id: string) => supabase.from('etiqueta').select('id_etiqueta, nombre, grupo, palabras_clave, monto_fijo, dia_fijo, fecha_fijo_desde, sin_ingreso_fijo')
+  const etiquetas = (id: string) => supabase.from('etiqueta').select('id_etiqueta, nombre, grupo, palabras_clave, monto_fijo, dia_fijo, fecha_fijo_desde, sin_ingreso_fijo, historial_fijo')
     .eq('id_seguimiento', id).eq('estado', 'activo').order('nombre')
   const [categorias, fuentes, presupuestos, aprendido, recibos, pagos, deFacturas, dePrestamos] = await Promise.all([
     etiquetas(idGastos),
@@ -668,8 +668,9 @@ export async function corregirSerie(idRegistro: string, s: { series: number; rep
 }
 
 // Anota el ingreso fijo de una fuente, lo quita para volver al aprendido (null) o la marca como que ya no es fija.
-export async function guardarFijo(idEtiqueta: string, fijo: { monto: number; dia: number; desde: string } | null, yaNoEsFijo = false) {
-  revisar(await supabase.from('etiqueta').update({ monto_fijo: fijo?.monto ?? null, dia_fijo: fijo?.dia ?? null, fecha_fijo_desde: fijo?.desde ?? null, sin_ingreso_fijo: yaNoEsFijo }).eq('id_etiqueta', idEtiqueta))
+// "historial": los tramos para los meses pasados; sin él no se toca.
+export async function guardarFijo(idEtiqueta: string, fijo: { monto: number; dia: number; desde: string } | null, yaNoEsFijo = false, historial?: unknown[]) {
+  revisar(await supabase.from('etiqueta').update({ monto_fijo: fijo?.monto ?? null, dia_fijo: fijo?.dia ?? null, fecha_fijo_desde: fijo?.desde ?? null, sin_ingreso_fijo: yaNoEsFijo, ...(historial && { historial_fijo: historial }) }).eq('id_etiqueta', idEtiqueta))
 }
 
 // Los ingresos fijos anotados a mano, para el resumen de Inicio.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { anotados, esperadoVsRecibido, estadoFijo, fijos, fuenteDeFijo, porFuente, porRecibir } from './ingresos'
+import { anotados, conTramo, esperadoVsRecibido, estadoFijo, fijos, fuenteDeFijo, historiales, porFuente, porRecibir } from './ingresos'
 import type { Movimiento } from './calculos'
 
 const ing = (fecha: string, valor: number, id_etiqueta: string | null = 'sueldo'): Movimiento => ({ fecha, valor, tipo: 'ingreso', id_etiqueta })
@@ -67,6 +67,23 @@ describe('porFuente y esperadoVsRecibido', () => {
       { id_etiqueta: 'sueldo', datos: [3100000, 3000000, 3000000, 0] },
       { id_etiqueta: null, datos: [0, 0, 0, 200000] },
     ])
+  })
+  it('un mes pasado conserva lo que se esperaba entonces', () => {
+    const quitado = [{ id_etiqueta: 'sueldo', monto: 0, dia: 0, quitado: true }]
+    // quitado en nov. sin monto guardado: los meses de antes usan lo aprendido al quitarlo (sep. y oct.)
+    const conOct = [...sueldo, ing('2026-10-30', 3000000)]
+    expect(esperadoVsRecibido(conOct, '2026-11', 3, quitado, { sueldo: [{ desde: '2026-11', monto: null, dia: null }] }).map(m => m.esperado))
+      .toEqual([3000000, 3000000, 0])
+    // editado a 4 M en nov.: oct. sigue en 3 M
+    const editado = conTramo([], '2026-11', { monto: 4000000, dia: 30 }, { monto: 3000000, dia: 30 })
+    expect(editado).toEqual([{ desde: '', monto: 3000000, dia: 30 }, { desde: '2026-11', monto: 4000000, dia: 30 }])
+    const suyo = [{ id_etiqueta: 'sueldo', monto: 4000000, dia: 30 }]
+    expect(esperadoVsRecibido(conOct, '2026-11', 2, suyo, { sueldo: editado }).map(m => m.esperado)).toEqual([3000000, 4000000])
+    // el tramo del mismo mes se reemplaza y lo mal formado se descarta al leer
+    expect(conTramo(editado, '2026-11', null)).toEqual([{ desde: '', monto: 3000000, dia: 30 }, { desde: '2026-11', monto: null, dia: null }])
+    const fuente = { id_etiqueta: 'sueldo', nombre: 'Sueldo', grupo: null, palabras_clave: [] }
+    expect(historiales([{ ...fuente, historial_fijo: [{ desde: 'x', monto: 1, dia: 1 }, { desde: '2026-11', monto: -5, dia: 1 }, { desde: '2026-10', monto: 2, dia: 1 }] }]))
+      .toEqual({ sueldo: [{ desde: '2026-10', monto: 2, dia: 1 }] })
   })
   it('cada mes espera los fijos del mes que se ve y suma todo lo que llegó', () => {
     const r = esperadoVsRecibido([...sueldo, ing('2026-10-30', 2900000), ing('2026-10-01', 50000, 'venta')], '2026-10', 2)

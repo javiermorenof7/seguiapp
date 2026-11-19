@@ -28,7 +28,7 @@ import Extracto from './Cuadrar'
 import { puedeCrear, TOPE } from './reglasCategorias'
 import type { MetaAhorro } from './metas'
 import { cincuentaTreintaVeinte, facturaParecida, gastoInusual, posibleRepetido, sugeridos } from './aprende'
-import { anotados, esperadoVsRecibido, estadoFijo, fijos, MESES_FIJO, porFuente, porRecibir, type EstadoFijo, type Fijo } from './ingresos'
+import { anotados, conTramo, esperadoVsRecibido, estadoFijo, fijos, historiales, MESES_FIJO, porFuente, porRecibir, type EstadoFijo, type Fijo } from './ingresos'
 
 type Datos = Awaited<ReturnType<typeof obtenerFinanzas>>
 type Grupo = 'auto' | 'basico' | 'personal'
@@ -501,7 +501,8 @@ function NuevoMovimiento({ datos, metas, anteriores, tipoInicial, cuentasPago, i
       if (aprende) await aprenderCategoria(normalizar(leido.descripcion), categoria.nombre).catch(() => {})
       const idFijo = tipo === 'ingreso' && esFijo ? categoria?.id_etiqueta ?? idFuenteNueva : null
       const dia = +fecha.slice(8, 10)
-      const quedoFijo = !!idFijo && await guardarFijo(idFijo, { monto: leido.valor, dia, desde: `${fecha.slice(0, 7)}-01` }).then(() => true, () => false)
+      const quedoFijo = !!idFijo && await guardarFijo(idFijo, { monto: leido.valor, dia, desde: `${fecha.slice(0, 7)}-01` }, false,
+        conTramo(categoria?.historial_fijo, fecha.slice(0, 7), { monto: leido.valor, dia })).then(() => true, () => false)
       let mensaje = resultado === 'guardado'
         ? `${TEXTO[tipo]} registrado: ${pesos(leido.valor)}${fuente ? ` ${tipo === 'gasto' ? 'en' : 'de'} ${fuente.nombre}` : ''}.`
         : 'Sin conexión: quedó guardado en este equipo y se enviará al volver la conexión.'
@@ -979,7 +980,7 @@ function Ingresos({ movimientos, registros, mes, fuentes, idIngresos, idGastos, 
     const falta = new Map(porRecibir(movimientos, hoy, suyos).map(f => [f.id_etiqueta, f.falta]))
     return fijos(movimientos, mes, suyos).map(f => ({ ...f, estado: estadoFijo(f, movimientos, hoy), falta: falta.get(f.id_etiqueta) ?? 0 }))
   }, [movimientos, mes, hoy, suyos])
-  const recibido = useMemo(() => esperadoVsRecibido(movimientos, mes, 6, suyos), [movimientos, mes, suyos])
+  const recibido = useMemo(() => esperadoVsRecibido(movimientos, mes, 6, suyos, historiales(fuentes)), [movimientos, mes, suyos, fuentes])
   const esSuyo = (id: string) => suyos.some(f => f.id_etiqueta === id && !f.quitado)
   const [editando, setEditando] = useState<Fijo | null>(null)
 
@@ -1055,7 +1056,10 @@ function AnotarFijo({ fuentes, alCambiar, inicial, alCerrar }: { fuentes: Catego
   async function guardar(fijo: { monto: number; dia: number } | null, yaNoEsFijo = false) {
     setEnviando(true)
     try {
-      await guardarFijo(id, fijo && { ...fijo, desde: fuente?.fecha_fijo_desde ?? `${hoyIso().slice(0, 7)}-01` }, yaNoEsFijo)
+      // shortcut: "Quitar el anotado" no deja tramo; los meses pasados siguen con el último anotado, si molesta guardar el aprendido
+      const antes = inicial ?? (fuente?.monto_fijo && fuente.dia_fijo ? { monto: fuente.monto_fijo, dia: fuente.dia_fijo } : null)
+      const historial = fijo || yaNoEsFijo ? conTramo(fuente?.historial_fijo, hoyIso().slice(0, 7), fijo, antes) : undefined
+      await guardarFijo(id, fijo && { ...fijo, desde: fuente?.fecha_fijo_desde ?? `${hoyIso().slice(0, 7)}-01` }, yaNoEsFijo, historial)
       await alCambiar()
       setAbierto(false); setError(''); alCerrar()
     } catch (e) {

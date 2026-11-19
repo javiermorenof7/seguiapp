@@ -1,7 +1,7 @@
 // Lee lo que la persona escribe ("35 mil almuerzo") y propone la categoría con lo que ya aprendió.
 import { formatoValor } from '../indicadores'
 
-export interface Categoria { id_etiqueta: string; nombre: string; grupo: 'basico' | 'personal' | null; palabras_clave: string[]; monto_fijo?: number | null; dia_fijo?: number | null }
+export interface Categoria { id_etiqueta: string; nombre: string; grupo: 'basico' | 'personal' | null; palabras_clave: string[]; monto_fijo?: number | null; dia_fijo?: number | null; fecha_fijo_desde?: string | null }
 
 export const normalizar = (texto: string) =>
   texto.normalize('NFD').replace(/\p{Mn}/gu, '').replace(/\s+/g, ' ').toLowerCase().trim()

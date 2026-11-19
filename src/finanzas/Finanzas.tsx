@@ -1039,7 +1039,7 @@ function AnotarFijo({ fuentes, alCambiar }: { fuentes: Categoria[]; alCambiar: (
   async function guardar(fijo: { monto: number; dia: number } | null) {
     setEnviando(true)
     try {
-      await guardarFijo(id, fijo)
+      await guardarFijo(id, fijo && { ...fijo, desde: fuente?.fecha_fijo_desde ?? `${hoyIso().slice(0, 7)}-01` })
       await alCambiar()
       setAbierto(false); setError('')
     } catch (e) {
